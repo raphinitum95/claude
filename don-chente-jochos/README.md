@@ -41,7 +41,7 @@ Dropped: the second video (a GoDaddy stock "Timelapse of a Cold Winter Day" plac
 - **Address, hours, map and directions.** None of these were on the old site. The map only loads when tapped, which keeps the page fast.
 - **Catering lead form.** It posts to a form service if one is configured. Otherwise it opens the visitor's messaging app with the request pre-filled and addressed to the restaurant.
 - **SEO:** Restaurant, Menu (all 10 items with prices), FAQPage and VideoObject structured data; unique EN/ES titles and descriptions; Open Graph share image; sitemap with hreflang; a "What's a jocho?" section and FAQ aimed at real searches; semantic HTML and alt text on every photo.
-- **Performance:** self-hosted fonts, WebP images with `srcset`, lazy loading, no frameworks. Total JS is about 10 KB.
+- **Performance:** self-hosted fonts, WebP images with `srcset`, lazy loading, no frameworks. Total JS is about 13 KB.
 - **Accessibility:** skip link, focus styles, native `<dialog>`, reduced-motion support, and a visible label on every form field.
 - A Spanish-language browser landing on `/` gets a small "¿Prefieres español?" prompt. It never auto-redirects, because redirects hurt SEO.
 
