@@ -153,7 +153,6 @@
     <symbol id="i-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-nav" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 11 22 2l-9 19-2-8z"/></symbol>
     <symbol id="i-car" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 17H3v-5l2-5h10l4 5h2v5h-2M9 17h6"/><circle cx="7" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-    <symbol id="i-star" viewBox="0 0 24 24"><path fill="currentColor" d="m12 2 3 7h7l-5.5 4.5 2 7.5-6.5-4.5L5.5 21l2-7.5L2 9h7z"/></symbol>
     <symbol id="i-fb" viewBox="0 0 24 24"><path d="M14 8h3V4h-3a5 5 0 0 0-5 5v2H7v4h2v9h4v-9h3l1-4h-4V9a1 1 0 0 1 1-1z"/></symbol>
     <symbol id="i-ig" viewBox="0 0 24 24"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 8.2a3.2 3.2 0 1 1 0-6.4 3.2 3.2 0 0 1 0 6.4zM17.3 5.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zM21.9 7.1a5.8 5.8 0 0 0-1.6-4.1 5.8 5.8 0 0 0-4.1-1.6C14.6 1.3 9.4 1.3 7.8 1.4A5.8 5.8 0 0 0 3.7 3 5.8 5.8 0 0 0 2.1 7.1C2 8.7 2 13.9 2.1 15.5a5.8 5.8 0 0 0 1.6 4.1 5.8 5.8 0 0 0 4.1 1.6c1.6.1 6.8.1 8.4 0a5.8 5.8 0 0 0 4.1-1.6 5.8 5.8 0 0 0 1.6-4.1c.1-1.6.1-6.8 0-8.4zm-2.1 10.2a3.3 3.3 0 0 1-1.9 1.9c-1.3.5-4.4.4-5.9.4s-4.6.1-5.9-.4a3.3 3.3 0 0 1-1.9-1.9c-.5-1.3-.4-4.4-.4-5.9s-.1-4.6.4-5.9a3.3 3.3 0 0 1 1.9-1.9c1.3-.5 4.4-.4 5.9-.4s4.6-.1 5.9.4a3.3 3.3 0 0 1 1.9 1.9c.5 1.3.4 4.4.4 5.9s.1 4.6-.4 5.9z"/></symbol>
     <symbol id="i-tt" viewBox="0 0 24 24"><path d="M19.6 6.7a4.8 4.8 0 0 1-3.8-4.2V2h-3.4v13.4a2.9 2.9 0 1 1-2-2.8V9.2a6.3 6.3 0 1 0 5.4 6.2V8.6a8.2 8.2 0 0 0 4.8 1.5V6.7z"/></symbol>
@@ -220,12 +219,9 @@
                  alt="A loaded bacon-wrapped jocho held up in front of a colorful mural"
                  fetchpriority="high">
           </div>
-          <a class="badge-spin" href="#tv" aria-label="As seen on The Texas Bucket List: watch the episode">
-            <svg class="ring" viewBox="0 0 132 132" aria-hidden="true">
-              <defs><path id="ring-path" d="M66,66 m-50,0 a50,50 0 1,1 100,0 a50,50 0 1,1 -100,0"/></defs>
-              <text><textPath href="#ring-path">As seen on · The Texas Bucket List ·</textPath></text>
-            </svg>
-            <svg class="badge-spin__center" aria-hidden="true"><use href="#i-star"/></svg>
+          <a class="press-card" href="#tv" aria-label="As seen on The Texas Bucket List: watch the episode">
+            <span class="press-card__play" aria-hidden="true"><svg><use href="#i-play"/></svg></span>
+            <span><small>As seen on</small><b>The Texas Bucket List</b></span>
           </a>
         </div>
       </div>
@@ -254,7 +250,7 @@
     <!-- ============ WHAT'S A JOCHO ============ -->
     <section class="explainer" aria-labelledby="explainer-title">
       <div class="wrap explainer__grid">
-        <div class="reveal">
+        <div>
           <p class="eyebrow">Jocho 101</p>
           <h2 class="section-title" id="explainer-title">What's a jocho?</h2>
           <p>In northern Mexico, a hot dog is a <strong>jocho</strong>. They're a street-cart classic: grilled, wrapped in bacon, and loaded way past what fits in the bun. Don Chente brought that style to San Antonio's West Side.</p>
@@ -264,7 +260,7 @@
             <li><strong>Finish it</strong>Chile toreado, salsa, lime. Messy on purpose.</li>
           </ol>
         </div>
-        <figure class="anatomy reveal" style="margin:0">
+        <figure class="anatomy" style="margin:0">
           <img src="assets/img/jocho-al-pastor-1200.webp"
                srcset="assets/img/jocho-al-pastor-640.webp 640w, assets/img/jocho-al-pastor-1200.webp 1200w"
                sizes="(max-width: 860px) 92vw, 50vw"
@@ -294,7 +290,7 @@
         </div>
 
         <div class="menu-grid">
-          <article class="dish reveal" data-cat="jochos">
+          <article class="dish" data-cat="jochos">
             <div class="dish__img"><img src="assets/img/jocho-coahuilense-640.webp" width="640" height="853" loading="lazy" alt="Jocho Coahuilense next to a grilled jalapeño"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Jocho Coahuilense</h3><span class="price">$5</span></div>
@@ -303,7 +299,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="jochos">
+          <article class="dish" data-cat="jochos">
             <div class="dish__img"><img src="assets/img/jocho-norteno-640.webp" width="640" height="427" loading="lazy" alt="Jocho Norteño on a wooden board"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Jocho Norteño</h3><span class="price">$6</span></div>
@@ -312,7 +308,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="jochos">
+          <article class="dish" data-cat="jochos">
             <div class="dish__img"><img src="assets/img/jocho-ranchero-640.webp" width="640" height="960" loading="lazy" alt="Jocho Ranchero topped with asada, with grilled jalapeños and lime"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Jocho Ranchero</h3><span class="price">$10</span></div>
@@ -321,7 +317,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="jochos">
+          <article class="dish" data-cat="jochos">
             <div class="dish__img"><span class="dish__tag">Footlong</span><img src="assets/img/jocho-vaquero-640.webp" width="640" height="427" loading="lazy" alt="Footlong Jocho Vaquero loaded with asada"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Jocho Vaquero</h3><span class="price">$15</span></div>
@@ -330,7 +326,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="jochos">
+          <article class="dish" data-cat="jochos">
             <div class="dish__img"><span class="dish__tag">Footlong</span><img src="assets/img/jocho-al-pastor-640.webp" width="640" height="427" loading="lazy" alt="Footlong Jocho Al Pastor with cilantro and lime"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Jocho Al Pastor</h3><span class="price">$15</span></div>
@@ -339,7 +335,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="jochos">
+          <article class="dish" data-cat="jochos">
             <div class="dish__img"><span class="dish__tag dish__tag--magenta">Footlong · Queso</span><img src="assets/img/jocho-board-640.webp" width="640" height="427" loading="lazy" alt="Jocho Flameado on a wooden board"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Jocho Flameado</h3><span class="price">$12</span></div>
@@ -348,7 +344,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="tortillas">
+          <article class="dish" data-cat="tortillas">
             <div class="dish__img"><span class="dish__tag dish__tag--teal">5 per order</span><img src="assets/img/mini-tacos-640.webp" width="640" height="960" loading="lazy" alt="Mini tacos with cheese, onion, cilantro and lime"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Tacos</h3><span class="price">$15</span></div>
@@ -357,7 +353,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="tortillas">
+          <article class="dish" data-cat="tortillas">
             <div class="dish__img"><img src="assets/img/pirata-open-640.webp" width="640" height="853" loading="lazy" alt="Pirata: a big flour tortilla loaded with asada, cheese, onion and cilantro"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Pirata</h3><span class="price">$15</span></div>
@@ -366,7 +362,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="tortillas">
+          <article class="dish" data-cat="tortillas">
             <div class="dish__img"><img src="assets/img/gringa-640.webp" width="640" height="427" loading="lazy" alt="Gringa: a folded flour tortilla with al pastor and melted cheese"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Gringa</h3><span class="price">$15</span></div>
@@ -375,7 +371,7 @@
             </div>
           </article>
 
-          <article class="dish reveal" data-cat="tortillas">
+          <article class="dish" data-cat="tortillas">
             <div class="dish__img"><span class="dish__tag dish__tag--magenta">Asada + Pastor</span><img src="assets/img/campechana-640.webp" width="640" height="640" loading="lazy" alt="Campechana: a cheesy flour tortilla with asada and al pastor"></div>
             <div class="dish__body">
               <div class="dish__top"><h3>Campechana</h3><span class="price">$15</span></div>
@@ -407,12 +403,12 @@
     <!-- ============ TV FEATURE ============ -->
     <section class="tv" id="tv" aria-labelledby="tv-title">
       <div class="wrap tv__grid">
-        <div class="reveal">
+        <div>
           <p class="eyebrow">As seen on TV</p>
           <h2 class="section-title" id="tv-title">Watch us on The Texas Bucket List</h2>
           <p class="section-lede">The Texas Bucket List came through to find out what the hype is about. Press play and try not to get hungry.</p>
         </div>
-        <div class="yt reveal" data-id="NkneEQncr5M" data-title="The Texas Bucket List - Jocho's Don Chente in San Antonio">
+        <div class="yt" data-id="NkneEQncr5M" data-title="The Texas Bucket List - Jocho's Don Chente in San Antonio">
           <img src="https://i.ytimg.com/vi/NkneEQncr5M/hqdefault.jpg" alt="" loading="lazy" width="480" height="360">
           <button type="button" aria-label="Play video: The Texas Bucket List visits Jochos Don Chente">
             <span class="yt__play"><svg aria-hidden="true"><use href="#i-play"/></svg></span>
@@ -424,7 +420,7 @@
     <!-- ============ CATERING ============ -->
     <section class="catering" id="catering" aria-labelledby="catering-title">
       <div class="wrap catering__grid">
-        <div class="reveal">
+        <div>
           <p class="eyebrow">Having an event?</p>
           <h2 class="section-title" id="catering-title">We cater!</h2>
           <p class="section-lede">Bring the jocho cart to your party. Birthdays, quinceañeras, weddings, office lunches, game days. We grill on site and your guests talk about it for weeks.</p>
@@ -439,7 +435,7 @@
           </div>
         </div>
 
-        <form class="form reveal" id="catering-form" name="catering" method="post" action="#" novalidate>
+        <form class="form" id="catering-form" name="catering" method="post" action="#" novalidate>
           <h3>Get a catering quote</h3>
           <p>Tell us about your event. We usually reply within a day.</p>
           <input type="hidden" name="_subject" value="New catering request (website)">
@@ -530,7 +526,7 @@
         <p class="eyebrow">Come hungry</p>
         <h2 class="section-title" id="visit-title">Hours &amp; Location</h2>
         <div class="visit__grid" style="margin-top:32px">
-          <div class="visit__card reveal">
+          <div class="visit__card">
             <p class="status-pill" data-status role="status" hidden style="background:var(--cream-2)">
               <span class="status-pill__dot" aria-hidden="true"></span>
               <span class="status-pill__text"></span>
@@ -557,7 +553,7 @@
               <a class="btn btn--ghost" href="tel:+12104612955"><svg aria-hidden="true"><use href="#i-phone"/></svg> (210) 461-2955</a>
             </div>
           </div>
-          <div class="map reveal" data-src="https://www.google.com/maps?q=Jochos+Don+Chente,+12014+Potranco+Rd,+San+Antonio,+TX+78253&amp;output=embed">
+          <div class="map" data-src="https://www.google.com/maps?q=Jochos+Don+Chente,+12014+Potranco+Rd,+San+Antonio,+TX+78253&amp;output=embed">
             <button type="button" class="map__load" aria-label="Map showing Jochos Don Chente at 12014 Potranco Rd">
               <svg aria-hidden="true"><use href="#i-pin"/></svg>
               <span>Show the map</span>

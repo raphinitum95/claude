@@ -337,17 +337,35 @@
     });
   }
 
-  /* ---------- Reveal on scroll ---------- */
+  /* ---------- Section label stripes draw in once ---------- */
 
   if ("IntersectionObserver" in window) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
         if (en.isIntersecting) { en.target.classList.add("is-in"); io.unobserve(en.target); }
       });
-    }, { rootMargin: "0px 0px -8% 0px" });
-    $$(".reveal").forEach(function (el) { io.observe(el); });
+    }, { rootMargin: "0px 0px -10% 0px" });
+    $$(".eyebrow").forEach(function (el) { io.observe(el); });
   } else {
-    $$(".reveal").forEach(function (el) { el.classList.add("is-in"); });
+    $$(".eyebrow").forEach(function (el) { el.classList.add("is-in"); });
+  }
+
+  /* ---------- Ticker: drifts with the page scroll, never on its own ---------- */
+
+  var track = $(".marquee__track");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (track && !reduceMotion) {
+    var ticking = false;
+    var drift = function () {
+      var loop = track.scrollWidth / 2;
+      var x = (window.scrollY * 0.35) % loop;
+      track.style.transform = "translate3d(" + (-x) + "px, 0, 0)";
+      ticking = false;
+    };
+    window.addEventListener("scroll", function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(drift); }
+    }, { passive: true });
+    drift();
   }
 
   var year = $("[data-year]");

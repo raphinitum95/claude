@@ -290,7 +290,7 @@ h1, h2, h3 {
   position: relative;
   background: var(--char);
   color: #fff;
-  padding: calc(var(--header-h) + clamp(24px, 6vw, 72px)) 0 clamp(56px, 8vw, 110px);
+  padding: calc(var(--header-h) + clamp(24px, 6vw, 72px)) 0 clamp(40px, 6vw, 72px);
   overflow: hidden;
   isolation: isolate;
 }
@@ -380,93 +380,112 @@ h1, h2, h3 {
   aspect-ratio: 4 / 5;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transform: rotate(2deg);
   box-shadow: 0 40px 80px -30px rgb(0 0 0 / 0.8);
 }
 .hero__photo img { width: 100%; height: 100%; object-fit: cover; }
+/* The merch stripe, running from behind the photo off the right edge */
 .hero__stripe {
   position: absolute;
-  left: -14%; right: -14%;
-  bottom: 14%;
-  height: 72px;
+  left: 40%;
+  right: -100vw;
+  top: 58%;
+  height: 66px;
   background: var(--stripe);
-  transform: rotate(-8deg);
   z-index: -1;
-  box-shadow: var(--shadow);
 }
 
-.badge-spin {
+/* "As seen on" press card, pinned to the photo */
+.press-card {
   position: absolute;
-  top: -26px; left: -30px;
-  width: 132px; height: 132px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--mustard);
+  left: -28px;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px 10px 10px;
+  border-radius: 16px;
+  background: var(--cream);
   color: var(--ink);
   text-decoration: none;
-  box-shadow: var(--shadow);
-  transition: transform 0.3s var(--ease);
+  box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.7);
 }
-.badge-spin:hover { transform: scale(1.06); }
-.badge-spin svg.ring {
-  position: absolute;
-  inset: 0;
-  width: 100%; height: 100%;
-  animation: spin 16s linear infinite;
+.press-card__play {
+  flex: none;
+  width: 42px; height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--magenta);
+  color: #fff;
+  transition: transform 0.25s var(--ease);
 }
-.badge-spin text {
-  font-family: var(--font-body);
-  font-size: 11.5px;
+.press-card__play svg { width: 16px; height: 16px; margin-left: 2px; }
+.press-card:hover .press-card__play { transform: scale(1.08); }
+.press-card small {
+  display: block;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  fill: currentColor;
+  color: var(--ink-soft);
 }
-.badge-spin__center { width: 36px; height: 36px; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.press-card b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 1.3rem;
+  line-height: 1;
+  text-transform: uppercase;
+}
 
 @media (max-width: 860px) {
   .hero__grid { grid-template-columns: 1fr; }
   .hero__visual { max-width: 420px; margin: 20px auto 0; width: 88%; }
-  .badge-spin { width: 108px; height: 108px; top: -20px; left: -20px; }
+  .press-card { left: -12px; bottom: 18px; }
 }
 
-/* ---------- Marquee ---------- */
+/* ---------- Ticker ----------
+   Straight band that finishes the hero. It moves only with the page
+   scroll (see main.js), never on its own. */
 
 .marquee {
-  background: var(--mustard);
-  color: var(--ink);
-  overflow: hidden;
-  border-block: 3px solid var(--ink);
-  transform: rotate(-1.2deg);
-  margin: -14px -10px 0;
   position: relative;
-  z-index: 2;
+  background: var(--char);
+  color: var(--cream);
+  overflow: hidden;
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+  padding-bottom: 8px;
+}
+.marquee::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 8px;
+  background: var(--stripe-h);
 }
 .marquee__track {
   display: flex;
   width: max-content;
-  animation: marquee 32s linear infinite;
+  will-change: transform;
 }
 .marquee__group {
   display: flex;
   align-items: center;
-  gap: 28px;
-  padding: 14px 14px;
+  gap: 26px;
+  padding: 16px 13px;
   font-family: var(--font-display);
-  font-weight: 900;
-  font-size: clamp(1.3rem, 3vw, 2rem);
+  font-weight: 800;
+  font-size: clamp(1.15rem, 2.2vw, 1.6rem);
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   white-space: nowrap;
 }
+.marquee__group span:nth-child(4n + 3) { color: var(--mustard); }
 .marquee__group span.dot {
-  width: 18px; height: 18px;
-  border-radius: 4px;
+  width: 8px; height: 8px;
+  border-radius: 2px;
   background: var(--stripe);
-  transform: rotate(45deg);
 }
-@keyframes marquee { to { transform: translateX(-50%); } }
 
 /* ---------- Jocho explainer ---------- */
 
@@ -1260,14 +1279,14 @@ dialog::backdrop {
 .toast svg { width: 16px; height: 16px; }
 @media (max-width: 760px) { .toast { bottom: calc(96px + env(safe-area-inset-bottom)); } }
 
-/* ---------- Reveal on scroll ---------- */
+/* ---------- Section labels: the stripe draws in once ---------- */
 
-.js .reveal {
-  opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
+.js .eyebrow::before {
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.6s var(--ease) 0.1s;
 }
-.js .reveal.is-in { opacity: 1; transform: none; }
+.js .eyebrow.is-in::before { transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -1276,8 +1295,7 @@ dialog::backdrop {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .js .reveal { opacity: 1; transform: none; }
-  .marquee__track { animation: none; }
+  .js .eyebrow::before { transform: none; }
 }
 
 @media (max-width: 560px) {
