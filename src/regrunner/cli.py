@@ -294,6 +294,27 @@ def cmd_publish(args, cfg: Config) -> int:
     return 0
 
 
+def open_in_app_window(url: str) -> bool:
+    """Open ``url`` in a window of its own: Edge or Chrome in "app" mode (no tabs, no address bar, its own taskbar icon), so the UI
+    looks like a program and not one more tab. Uses the browser that is already installed (nothing is downloaded or installed).
+    False when neither is there or it would not start; the caller then falls back to the default browser."""
+    import subprocess
+    order = ("msedge", "chrome") if browsers.platform_key() == "win32" else ("chrome", "msedge")
+    for name in order:
+        exe = browsers.installed_executable(browsers.resolve(name))
+        if not exe:
+            continue
+        detach = ({"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if sys.platform == "win32"
+                  else {"start_new_session": True})           # closing the launcher window must not close the UI window with it
+        try:
+            subprocess.Popen([str(exe), f"--app={url}"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, **detach)
+            return True
+        except OSError:
+            continue
+    return False
+
+
 def cmd_serve(args, cfg: Config) -> int:
     import socket
     import threading
@@ -303,15 +324,20 @@ def cmd_serve(args, cfg: Config) -> int:
 
     from .web.app import create_app
     url = f"http://{args.host}:{args.port}"
+
+    def show_ui() -> None:
+        if not (args.app and open_in_app_window(url)):
+            webbrowser.open(url)
+
     with socket.socket() as probe:
         if probe.connect_ex((args.host, args.port)) == 0:
             print(f"Something is already listening on {url} - most likely regrunner is already running.")
-            if args.open:
-                webbrowser.open(url)
+            if args.open or args.app:
+                show_ui()
             return 0
     print(f"regrunner UI on {url}  (Ctrl+C to stop)")
-    if args.open:
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    if args.open or args.app:
+        threading.Timer(1.2, show_ui).start()
     config_path = args.config or (str(cfg.base_dir / "config.yaml") if (cfg.base_dir / "config.yaml").is_file() else None)
     uvicorn.run(create_app(cfg, config_path), host=args.host, port=args.port, log_level="warning")
     return 0
@@ -443,6 +469,8 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--open", action="store_true", help="open the UI in your default browser")
+    sv.add_argument("--app", action="store_true",
+                    help="open the UI in a window of its own (Edge or Chrome app mode); the default browser if neither is installed")
     sv.set_defaults(fn=cmd_serve)
 
     d = sub.add_parser("doctor", help="check the installation and configuration")

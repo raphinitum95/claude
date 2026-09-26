@@ -1,6 +1,6 @@
 # Context: design the Workbook Builder (the "Build" tab of the regrunner UI)
 
-You are picking up a **UI design task**. The user has already answered 53 clarifying questions, one at a time. The decisions below are final unless the user reopens one. Read this file fully before designing. Build the design as a Claude **Design canvas** (Artifact type "Design"). There is a companion file for the engineering work: `CONTEXT_workbook_builder_engineering.md`.
+You are picking up a **UI design task**. The user has already answered 53 clarifying questions, one at a time. The decisions below are final unless the user reopens one. Read this file fully before designing. Build the design as a Claude **Design canvas** (Artifact type "Design"). There is a companion file for the engineering work: `dev/claude/CONTEXT_workbook_builder_engineering.md`.
 
 ## The project in one paragraph
 

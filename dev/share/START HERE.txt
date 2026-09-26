@@ -1,0 +1,19 @@
+QA Regression - how to start
+============================
+
+1. Put this folder somewhere of your own, for example Documents. Avoid a OneDrive or network folder:
+   the tool writes screenshots and reports here while it runs.
+
+2. Windows: double-click "Start QA Regression.bat".
+   Mac:     double-click "Start QA Regression.command".
+
+   The first time, it sets itself up inside this folder. That takes a few minutes and needs the internet.
+   It needs Python 3.9 or newer; if Python is missing, the window says where to get it (no admin rights needed).
+   Nothing is installed in Program Files, and no admin rights are needed.
+
+   On Windows it also puts a "QA Regression" icon on your desktop. Use that icon from then on.
+
+3. QA Regression opens in a window of its own. A small black window also opens (on Windows it starts minimised
+   in the taskbar). Leave it open while you work: closing it stops QA Regression.
+
+The full user manual is README.md in this folder.
