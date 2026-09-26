@@ -32,3 +32,4 @@ The in-memory model the Build UI edits, the JSON it sees, and the server routes.
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+2026-09-26 · done: CONTRACT.md, workbook/builder.py (model, ops, undo/draft/save/history/diff), lint.builder_problems, web/build_api.py, tests (29 + 8) · next: PR into qa-regression

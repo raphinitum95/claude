@@ -83,6 +83,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Excel formula / function (`VLOOKUP`, `TEXT`, `NUMBERVALUE`...) | `workbook/formula.py` (`@function("NAME")`), `workbook/textfmt.py` | `test_formula.py`, `test_lookup_totp.py` (fast) |
 | Workbook reading, token substitution, blnExecute, write-back, Params rows | `workbook/model.py`, `workbook/sheet.py` | `test_model.py` (fast), `test_blank_params.py`, `test_variables_set.py`, `test_real_workbook.py` (fast, skips without the file) |
 | Writing workbooks (edit cells/rows/columns, hidden `_rr_*` sheets, save + backup, drafts, lock/external-change checks) | `workbook/writer.py` (`WorkbookEditor`) | `test_workbook_roundtrip.py` (`-k "not real"` = 2 s; the real-workbook cases take ~2.5 min) |
+| Workbook Builder model (tests/blocks/steps/variables JSON, ops, undo/draft/save/history/diff), builder problems, `/api/build/*` | `workbook/builder.py`, `lint.py` (`builder_problems`), `web/build_api.py`; the shapes are fixed in `dev/plan/CONTRACT.md` | `test_builder_model.py` (~10 s, real workbooks included), `test_build_api.py` (2 s). **Restart UI** for build_api changes |
 | API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates | `workbook/api.py`, `workbook/api_template.py`, `engine/api_runner.py` | `test_api_tests.py`, `test_api_purchase_flavour.py` |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
 | Workers, several workbooks at once, joining a run, progress, shutdown/cancel | `engine/runner.py`, `engine/pool.py`, `engine/inbox.py`, `engine/diagnostics.py` | `test_multi_run.py`, `test_progress_and_parked_worker.py`, `test_shutdown.py`, `test_py39_compat.py` |
@@ -145,7 +146,7 @@ src/regrunner/
   browsers.py   301   browser registry, resolve/probe/pick_default, identity of the browser a run used
   totp.py       162   RFC 6238 codes; reserve_window() so two logins never get the same code
   insight.py    134   read-only workbook questions for UI/CLI (tests, flows, summary)
-  lint.py       134   workbook lint
+  lint.py       290   workbook lint + builder_problems (the Build tab's live problems, on the builder model JSON)
   preflight.py  152   doctor + UI readiness checks
   publish.py    243   shared copy (report.html + summary.txt) to publish.dir
   signin.py      87   one-time SSO sign-in → storage state
@@ -165,12 +166,14 @@ src/regrunner/
   workbook/
     model.py 575 (Workbook, TestCase, TestRuntime, prepare_row) · sheet.py 262 · formula.py 755 · textfmt.py 156
     writer.py 1400 (WorkbookEditor: patches only the XML an edit touches; row insert/delete/move rewrite every reference)
+    builder.py 1850 (Workbook Builder model: build_model, apply_ops, BuildDocument undo/draft/save/history/diff, BuildStore; CONTRACT.md)
     api.py 495 · api_template.py 113
   selectors/  spec.py resolve.py xpath2css.py migrate.py harvest.py
   reporting/  results.py (data model) html_report.py console.py from_events.py
   web/
     app.py 1081   FastAPI: create_app, RunManager, cli_flags(), routes under /api/...
     presence.py   UiPresence: which UI windows are open (/api/ui/hello, /api/ui/goodbye) for serve --exit-when-closed
+    build_api.py  /api/build/* routes (register_build_routes: one line in create_app); later builder phases add their own modules
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
 
@@ -181,7 +184,7 @@ tests/
   workbook_factory.py  build_workbook()/build_flow(): synthetic workbooks with the real 26 columns and formula tricks;
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            52 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            54 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -255,6 +258,9 @@ Unverified on real sites: Okta per-account limits, real polling/third-party traf
 **Workbook Builder (2026-09-26): built in phases** by separate sessions following `dev/plan/PLAN.md` (status table at its end). PRs go into `qa-regression`.
 P01 (writer) done: everything that writes a workbook goes through `workbook/writer.py`, never openpyxl `save` (it drops printer settings,
 customXml, dynamic-array metadata and cached values). Untested here: opening an edited file in real Excel (no Excel/LibreOffice Calc in the cloud).
+P02 (model, contract, problems, `/api/build/*`) done: `dev/plan/CONTRACT.md` is the interface every later phase builds on. The builder reads cells
+as written (never evaluates formulas); blocks come from section rows (text in column A, no Method: the real workbooks' page headings) until a
+block op writes the `BLOCK` column; a formula in blnExecute makes a step a locked legacy card; new keywords exist in the model only (engine: P03/P07).
 
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
