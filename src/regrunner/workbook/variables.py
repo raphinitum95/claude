@@ -202,8 +202,10 @@ class Substituted:
 Lookup = Callable[[str], "tuple[str | None, bool]"]              # NAME -> (value or None, is it a Params column of the test)
 
 
-def substitute(text: str, lookup: Lookup, secret: Callable[[str], "str | None"], *, keep: set[str] | None = None) -> Substituted:
-    """Replace ``{SECRET:NAME}`` and ``{NAME}`` in ``text``.  ``keep``: names that stay as written (``{TAB}`` in a SendKeys value)."""
+def substitute(text: str, lookup: Lookup, secret: Callable[[str], "str | None"], *, keep: set[str] | None = None,
+               soft: set[str] | None = None) -> Substituted:
+    """Replace ``{SECRET:NAME}`` and ``{NAME}`` in ``text``.  ``keep``: names that stay as written (``{TAB}`` in a SendKeys value).  ``soft``: names
+    that stay as written when nothing gives them a value, instead of failing the step (key names in older sheets' other steps)."""
     out = Substituted(text)
     out.unmapped = UNMAPPED_RE.findall(text)
 
@@ -220,6 +222,8 @@ def substitute(text: str, lookup: Lookup, secret: Callable[[str], "str | None"],
         if keep and name.upper() in keep:
             return m.group(0)
         value, is_param = lookup(name)
+        if value is None and soft and name.upper() in soft and not is_param:
+            return m.group(0)
         if value is None:
             (out.blank_params if is_param else out.missing).append(name)
             return m.group(0)

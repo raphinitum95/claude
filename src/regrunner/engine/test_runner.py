@@ -417,7 +417,7 @@ class TestRunner:
     def _next_row(self, runtime, row: int, step: PreparedStep, record: StepRecord, flow, loops: list[dict]) -> int:
         """The row after ``step``: past the IF's steps when it was false (or could not be decided), into / past a loop."""
         if step.method == "IF" and row in flow.end_of and self._branch is not True:
-            target = flow.else_of.get(row, flow.end_of[row])
+            target = flow.else_of.get(row, flow.end_of[row]) if self._branch is False else flow.end_of[row]     # undecided: neither side runs
             self._skip_rows(runtime, row + 1, target, f"IF at row {row} was {'false' if self._branch is False else 'not decided'}")
             return target + 1
         if step.method == "ITERATION_START" and row in flow.end_of:

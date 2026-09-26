@@ -537,7 +537,8 @@ class TestRuntime:
         """``{NAME}`` / ``{SECRET:NAME}`` / ``{?NAME}`` in the text columns (CONTRACT.md 1.2).  An IF keeps its condition as written (it reads the
         variables itself); a SendKeys value keeps ``{TAB}``, ``{ENTER}``... (keys, not variables)."""
         from ..engine.keys import SPECIAL
-        keep = {k.upper() for k in SPECIAL} if step.method in _KEY_METHODS else None
+        keys = {k.upper() for k in SPECIAL}
+        keep = keys if step.method in _KEY_METHODS else None
         for column in INLINE_COLUMNS:
             if column not in step.values:
                 continue
@@ -552,7 +553,7 @@ class TestRuntime:
                 continue
             found: list[str] = []
             done = substitute(text, lambda n: self.value_of(n, found),
-                              lambda n: secret_value(n, self.environment), keep=keep if column == "VALUE" else None)
+                              lambda n: secret_value(n, self.environment), keep=keep if column == "VALUE" else None, soft=keys)
             step.inline_names.extend(n.upper() for n in INLINE_RE.findall(text) if not (keep and column == "VALUE" and n.upper() in keep))
             step.unmapped.extend(done.unmapped)
             step.missing_vars.extend(done.missing)

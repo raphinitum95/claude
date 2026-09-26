@@ -78,6 +78,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Browser crash / OOM / disconnect / driver death = `NOT_RUN` + whole-test re-run | `engine/session.py` (`mark_infra`, `check_infra`), `engine/test_runner.py` (`_not_run_step`), `engine/runner.py` (`run_case`, `restart_driver`) | `test_infra_rerun.py` |
 | Output / Output_Property / Exact_Match / Contains / "actual" values | `engine/actions.py`, `engine/test_runner.py` (`_output_of`), `engine/outcome.py` | `test_outcome.py` (fast), `test_output_value_property.py`, `test_output_value_actual.py`, `test_option_text.py` |
 | Pass/fail rules (Ignore_not_existing_object etc.) | `engine/outcome.py` (port of legacy `validateresults`) | `test_outcome.py` (fast) |
+| Flow keywords (SET_VARIABLE, IF/ELSE/END_IF, ITERATION_START/END, CALL_TEST, JSON_READ), `{NAME}` / `{SECRET:NAME}` in cells, the run's variable pool, `_rr_environments` (required vars refuse the run) | `workbook/variables.py`, `workbook/model.py` (`prepare_row`, `value_of`, `record`, `plan`), `engine/test_runner.py` (`FlowControl`, row loop jumps, `run_called`, masking), `engine/actions.py` (handlers), `engine/order.py` (Needs/Provides), `preflight.py` (`environment_problem`) | `test_flow_variables.py` (fast), `test_flow_keywords.py` (mock site + one web API check) |
 | One test's step loop: stop rules, captcha stop, blank params, skipped rows hint | `engine/test_runner.py` | `test_stop_after_failures.py`, `test_skipped_rows_hint.py`, `test_blank_params.py`, `test_captcha.py` |
 | Failed-step evidence (detail, diagnosis, full-page screenshot, saved HTML) | `engine/failure_capture.py` | `test_failure_capture.py`, `test_full_page_screenshot.py` |
 | Excel formula / function (`VLOOKUP`, `TEXT`, `NUMBERVALUE`...) | `workbook/formula.py` (`@function("NAME")`), `workbook/textfmt.py` | `test_formula.py`, `test_lookup_totp.py` (fast) |
@@ -147,7 +148,7 @@ src/regrunner/
   totp.py       162   RFC 6238 codes; reserve_window() so two logins never get the same code
   insight.py    134   read-only workbook questions for UI/CLI (tests, flows, summary)
   lint.py       290   workbook lint + builder_problems (the Build tab's live problems, on the builder model JSON)
-  preflight.py  152   doctor + UI readiness checks
+  preflight.py  161   doctor + UI readiness checks; environment_problem (required environment variables, runner + server)
   publish.py    243   shared copy (report.html + summary.txt) to publish.dir
   signin.py      87   one-time SSO sign-in → storage state
   runmeta.py     25   run.json;  priority.py 24 (nice)
@@ -164,7 +165,8 @@ src/regrunner/
     settle.py 61 · enabled.py 97 · keys.py 87 · outcome.py 83 · order.py 243 · schedule.py 72 · pool.py 100
     inbox.py 115 · throttle.py 71 · captcha.py 65 · ask.py 118 · failure_capture.py 449 · api_runner.py 343 · diagnostics.py 17
   workbook/
-    model.py 575 (Workbook, TestCase, TestRuntime, prepare_row) · sheet.py 262 · formula.py 755 · textfmt.py 156
+    model.py 812 (Workbook, TestCase, TestRuntime, prepare_row, value_of, plan) · sheet.py 262 · formula.py 755 · textfmt.py 156
+    variables.py 339 (VariablePool, environment table, secret_value, {NAME} substitute, IF conditions, flow_map of IF/loops)
     writer.py 1400 (WorkbookEditor: patches only the XML an edit touches; row insert/delete/move rewrite every reference)
     builder.py 1850 (Workbook Builder model: build_model, apply_ops, BuildDocument undo/draft/save/history/diff, BuildStore; CONTRACT.md)
     api.py 495 · api_template.py 113
@@ -183,8 +185,9 @@ tests/
                        /bin/slow?ms= /bin/hang /bin/forever); *.html pages per scenario (slow, cpu, never_load, okta, alert...)
   workbook_factory.py  build_workbook()/build_flow(): synthetic workbooks with the real 26 columns and formula tricks;
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
+  flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            54 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            56 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -262,6 +265,11 @@ P02 (model, contract, problems, `/api/build/*`) done: `dev/plan/CONTRACT.md` is 
 as written (never evaluates formulas); blocks come from section rows (text in column A, no Method: the real workbooks' page headings) until a
 block op writes the `BLOCK` column; a formula in blnExecute makes a step a locked legacy card; new keywords exist in the model only (engine: P03/P07).
 
+P03 (engine I) done: the run-wide variable pool (`RunCtx.pool`; every name a step saves, any test, read as `{NAME}`), Needs/Provides ordering,
+SET_VARIABLE / JSON_READ / IF / loops / CALL_TEST (a called test's steps are reported as the caller's steps after the CALL_TEST step, via
+`_CallBus`), `_rr_environments` (required vars refuse the run: `EnvironmentMissing` + `env_missing` event, and HTTP 422 `env_missing` from
+`/api/runs`), `{SECRET:NAME}` masked in events/results/reports/network.jsonl/review items. `step_skipped` is now emitted (IF sides not taken).
+
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
@@ -277,6 +285,8 @@ Gotchas:
 - Writer: rows a move carries keep relative row refs at the same distance (running counts `=COUNTA($B$1:B15)` stay "row above");
   `$` refs follow their cell. New text is written as inline strings; after any change `fullCalcOnLoad` makes Excel recalculate.
 - Measure before claiming numbers (sizes, timings) to the user.
+- `{NAME}` is replaced on the prepared step only, never written into the sheet state (a loop runs the row again); the Output_Value as written is
+  cached per row (`_authored_output`) because `record()` writes the result over it. Planning (`runtime.plan()`) must use a pool of its own.
 - While a JS dialog is open the page answers nothing (evaluate/screenshot hang): code that probes the page must check `session.pending_dialog` first.
 - Patient waits must stay bounded by *evidence*: only the page's own requests count as "working" (third-party / polling / animation never do).
 - Wrap new runner work or deliberate waits in `timing.span("runner"|"wait", kind)` (`timing_of(ctx)` in actions) so the time split stays honest.

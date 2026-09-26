@@ -79,6 +79,22 @@ async def test_if_runs_only_the_side_whose_condition_holds_and_reports_the_other
     assert [s.name for s in results_from_events(run_dir).tests[0].steps] == [s.name for s in test.steps]
 
 
+async def test_an_if_that_cannot_be_decided_fails_and_runs_neither_side(make_cfg, tmp_path):
+    wb = book(tmp_path / "a.xlsx", {"T": [
+        ("IF", "compare two unknowns", {"Value": "{NOBODY} = {ALSO_NOBODY}", "Ignore_not_existing_object": "Y"}),
+        ("SET_VARIABLE", "yes side", {"Output_Value": "SIDE", "Value": "yes"}),
+        ("ELSE", "", {}),
+        ("SET_VARIABLE", "no side", {"Output_Value": "SIDE", "Value": "no"}),
+        ("END_IF", "", {}),
+        ("SET_VARIABLE", "after", {"Output_Value": "DONE", "Value": "y"}),
+    ]})
+    result, events, _ = await run(make_cfg, wb, ["T"])
+    (test,) = result.tests
+    assert [s.name for s in test.steps] == ["compare two unknowns", "after"]
+    assert test.steps[0].status == "FAILED" and "ALSO_NOBODY has no value" in test.steps[0].error
+    assert [e["name"] for e in events if e["type"] == "step_skipped"] == ["yes side", "no side"]
+
+
 async def test_a_loop_repeats_its_steps_once_per_enabled_data_row_reading_that_row(make_cfg, tmp_path):
     wb = book(tmp_path / "a.xlsx", {"T": [
         ("SET_VARIABLE", "start empty", {"Output_Value": "ALL"}),
