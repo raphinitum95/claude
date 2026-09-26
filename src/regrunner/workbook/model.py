@@ -539,7 +539,10 @@ class TestRuntime:
         from ..engine.keys import SPECIAL
         keep = {k.upper() for k in SPECIAL} if step.method in _KEY_METHODS else None
         for column in INLINE_COLUMNS:
-            if column not in step.values or (column == "VALUE" and step.method == "IF"):
+            if column not in step.values:
+                continue
+            if column == "VALUE" and step.method == "IF":                   # (read by the IF itself; listed for Needs / Provides)
+                step.inline_names.extend(n.upper() for n in INLINE_RE.findall(cell_text(step.values[column])))
                 continue
             cell = step.values[column]
             if is_blank(cell) or isinstance(cell, ErrorText):
