@@ -14,7 +14,14 @@ Event types (all carry ``type``, ``ts`` and ``run_id``):
     step_started   test, step, total_steps, row, name, action
     step_passed    test, step, total_steps, row, name, action, status, duration_ms, expected, actual,
     step_failed      error, locator, notes, screenshot, [timing]  (step_failed also on FAILED status; timing: engine/timing.py)
-    step_skipped   test, step, row, name, reason
+    step_skipped   test, step (None), total_steps, row, name, action, reason     a planned step that does not run (the IF above it was false...)
+    variable_set   test, step, row, name, value, cell, by_hand   a value a person supplied (by_hand) or a step saved into the run's variables
+                   (cell "run variable": not a Params column); value is masked when secret; the step's own ``sets`` list it too
+    branch_taken   test, step, row, condition, result (bool)        an IF step decided
+    iteration_started  test, step, row, sheet, iteration, of        a loop (ITERATION_START) begins its n-th data row (1-based)
+    call_started   test, step, row, called, status ("RUNNING")      CALL_TEST starts another test; its steps follow as steps of this test
+    call_finished  test, step, row, called, status                  ...and it ended (status of the called test)
+    env_missing    environment, variables:[..], message             a required environment variable has no value: the run did not start
     screenshot_saved  test, step, path, kind
     console_error  test, step, kind, message, url          (kind: console|pageerror)
     network_error  test, step, kind, url, status, method, message   (kind: requestfailed|http_error)

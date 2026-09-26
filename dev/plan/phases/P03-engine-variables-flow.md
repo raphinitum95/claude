@@ -29,3 +29,4 @@ Make the new flow keywords run, exactly as the builder writes them.
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+2026-09-26 · Done: variable pool + Needs/Provides order, SET_VARIABLE, JSON_READ, IF/ELSE/END_IF, loops, CALL_TEST, `_rr_environments` (runner + server refuse), `{SECRET:NAME}` masking; tests `test_flow_variables.py`, `test_flow_keywords.py` · Next: review (PR into qa-regression)

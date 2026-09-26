@@ -28,6 +28,7 @@ from ..reporting.results import RunResult, TestResult
 from ..selectors.harvest import HarvestStore
 from ..selectors.resolve import SelectorMap
 from ..workbook.model import TestCase, Workbook
+from ..workbook.variables import VariablePool
 from .diagnostics import dump_tasks
 from .api_runner import ApiTestRunner
 from .ask import Asker
@@ -65,6 +66,14 @@ class RunOptions:
 
 class SelectionError(ValueError):
     pass
+
+
+class EnvironmentMissing(SelectionError):
+    """A required environment variable has no value for the run's environment: the run refuses to start (CONTRACT.md 1.4)."""
+
+    def __init__(self, message: str, environment: str, variables: list[str]):
+        super().__init__(message)
+        self.environment, self.variables = environment, variables
 
 
 def select_cases(cases: list[TestCase], options: RunOptions, cfg: Config) -> list[TestCase]:
@@ -141,6 +150,7 @@ class RunCtx:
     browser_info: dict[str, Any]
     started: float = field(default_factory=time.perf_counter)
     shared: dict[tuple[str, int, int], Any] = field(default_factory=dict)      # parameter cells finished tests wrote (a policy number...): the tests that come after read them
+    pool: VariablePool = field(default_factory=VariablePool)                   # the run's shared variables ({NAME}, SET_VARIABLE, CALL_TEST: CONTRACT.md 1.2)
     results: dict[str, TestResult] = field(default_factory=dict)
     tasks: set = field(default_factory=set)                                    # the tests being run (so a forced stop can end them)
     partial: dict[str, TestResult] = field(default_factory=dict)               # what a test had recorded when it was stopped by force
@@ -199,6 +209,10 @@ def _load_and_plan(options: RunOptions, cfg: Config, headless: bool) -> RunPlan:
         raise SelectionError(
             "Refusing to run against PROD: these flows place real transactions (purchases, emails). "
             "Pass --allow-prod (or set runner.allow_prod: true) if that is really what you want.")
+    from ..preflight import environment_problem
+    problem, missing = environment_problem(workbook, environment)
+    if problem:
+        raise EnvironmentMissing(problem, environment, missing)
     # Plan every test (dry run, no browser) so progress has honest totals.
     plans: dict[str, list[int]] = {}
     flows: list[Flow] = []
@@ -525,7 +539,8 @@ class Engine:
                     runner = TestRunner(workbook=ctx.workbook, case=case, browser_getter=self.get_window if at_window else get_browser, cfg=cfg, bus=bus,
                                         run_dir=ctx.run_dir, selector_map=ctx.selector_map, cancel=ctx.cancel,
                                         planned_rows=ctx.plans[case.id], worker=n, harvest=ctx.harvest, devices=self.devices,
-                                        attempt=attempt, throttle=throttle, asker=ctx.asker, visible=at_window or not ctx.plan.headless, shared=ctx.shared)
+                                        attempt=attempt, throttle=throttle, asker=ctx.asker, visible=at_window or not ctx.plan.headless, shared=ctx.shared,
+                                        pool=ctx.pool, pw=self.pw)
                 ctx.partial[case.id] = runner.result
                 try:
                     res = await asyncio.wait_for(runner.run(), timeout=cfg.runner.test_timeout_s)
@@ -868,7 +883,14 @@ async def execute_many(optionses: list[RunOptions], cfg: Config, buses: list[Eve
                 raise SelectionError("Runs that share workers share their browser: pass one --browser for all of them.")
     except browsers.BrowserError as err:
         raise SelectionError(str(err)) from err
-    plans = [await plan_run(options, cfg, kind) for options in optionses]                   # every run is worked out before any of them is created
+    plans = []
+    for i, options in enumerate(optionses):                                                  # every run is worked out before any of them is created
+        try:
+            plans.append(await plan_run(options, cfg, kind))
+        except EnvironmentMissing as err:
+            if buses and i < len(buses) and buses[i] is not None:
+                buses[i].emit("env_missing", environment=err.environment, variables=err.variables, message=str(err))
+            raise
     if any(c.kind != "api" for p in plans for c in p.cases):          # start the browser once before anything is created: one that cannot start is one clear
         try:                                                          # message, not the same launch error in every test, and it gives the version for the record
             found = await browsers.probe(kind, headless=headless, cached=True)

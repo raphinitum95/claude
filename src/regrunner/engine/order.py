@@ -5,6 +5,9 @@ Tests run side by side, but one may need what another produces: ``Purchase`` wri
 
 * **data** - a test reads a parameter that a test of the run with the *same parameter row* sets (found by a dry run of every test, no browser),
   and that test comes earlier in the DataSheets list (the legacy runner ran them in that order, so a later test never fed an earlier one);
+* **variables** (Needs / Provides, Q21) - a test uses ``{NAME}`` that neither its Params row nor the environment table gives, and another test of the
+  run saves NAME (Output_Value ``NAME`` / ``{NAME}``, SET_VARIABLE, or a test it calls does): it waits for that test.  Earlier tests in DataSheets
+  are preferred; when only a later one provides the name, the later one goes first;
 * **chains** - an order fixed by hand: ``[Purchase#1, ViewPolicy#1, Cancellation#1]`` means each waits for the one before it, whatever happened to it.
   Data cannot say that ViewPolicy comes before Cancellation (both only read the policy number), a chain can.
 
@@ -32,12 +35,16 @@ class Flow:
     reads: dict[str, dict[str, Any]] = field(default_factory=dict)      # PARAMETER -> {param, rows, blank}
     sets: set[str] = field(default_factory=set)                          # PARAMETERS its steps set
     writes: set[tuple] = field(default_factory=set)                      # an API test: the cells (sheet, row, column) its response can fill in
+    needs: set[str] = field(default_factory=set)                         # {NAME}s it reads from the run's shared variables (Needs)
+    provides: set[str] = field(default_factory=set)                      # names it saves into them (Provides)
+    calls: list[str] = field(default_factory=list)                       # tests its CALL_TEST steps run
 
     @classmethod
     def of(cls, case, index: int, runtime=None) -> "Flow":
         flow = cls(id=case.id, index=index, kind=case.kind, param_sheet=case.param_sheet, param_row=case.param_row, sheet=case.sheet)
         if runtime is not None and case.kind != "api":
             flow.reads, flow.sets = dict(runtime.reads), set(runtime.sets)
+            flow.needs, flow.provides, flow.calls = set(runtime.pool_reads), set(runtime.pool_sets), list(runtime.calls)
             for info in flow.reads.values():                             # a Params cell that is =PurchaseUS!FB3 reads what an API test fills in
                 key = info.get("key")
                 raw = runtime.params_sheet.data.cells.get((key[1], key[2])) if key and runtime.params_sheet is not None else None
@@ -149,6 +156,43 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
                                                + (f" {' / '.join(available)} does: add it to the run, or you will be asked for the value." if available
                                                   else " You will be asked for the value when the step is reached.")})
 
+    # variables (Needs / Provides): a test that reads {NAME} from the run's pool waits for the tests that save NAME
+    def provides(q: Flow, seen: frozenset = frozenset()) -> set[str]:
+        out = set(q.provides)
+        for called in q.calls:                                     # what a test it calls saves, it provides too
+            target = next((x for x in flows if x.id.upper() == called.upper() or x.sheet.upper() == called.upper()), None)
+            if target is not None and target.id not in seen:
+                out |= provides(target, seen | {q.id})
+        return out
+
+    offered = {q.id: provides(q) for q in sel}
+    for f in sel:
+        for name in sorted(f.needs - offered[f.id]):
+            makers = [q for q in sel if q.id != f.id and name in offered[q.id]]
+            earlier = [q.id for q in makers if q.index < f.index]
+            producers = earlier or [q.id for q in makers]
+            if not producers:
+                elsewhere = [q.id for q in flows if q.id not in chosen and name in provides(q)]
+                order.notes.append({"kind": "missing", "test": f.id, "param": name, "available": elsewhere,
+                                    "message": f"{f.id} uses {{{name}}}, which nothing in this run sets."
+                                               + (f" {' / '.join(elsewhere)} does: add it to the run." if elsewhere
+                                                  else " The step that uses it will fail unless an environment value or a person gives it.")})
+                continue
+            took = []
+            for q in producers:
+                if q in order.deps[f.id]:
+                    took.append(q)
+                elif depends_on(q, f.id):
+                    order.notes.append({"kind": "conflict", "test": f.id, "message": f"{f.id} uses {{{name}}}, which {q} sets, but {q} already waits for "
+                                                                                   f"{f.id}. It will not wait for it."})
+                else:
+                    order.deps[f.id].append(q)
+                    took.append(q)
+            if took:
+                order.data.setdefault(f.id, {})[name] = took
+                order.notes.append({"kind": "waits", "test": f.id, "param": name, "on": took, "blank": True,
+                                    "message": f"{f.id} waits for {' and '.join(took)}, which set{'s' if len(took) == 1 else ''} {{{name}}}."})
+
     # streams: the tests that hang together (data + chains), in the order they will run in
     explicit = {t: list(d) for t, d in order.deps.items()}
     ids = [f.id for f in sel]
@@ -185,7 +229,8 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
             todo.extend(links[x])
         members = set(group)
         group.sort(key=lambda x: (level_of(x, members), by_id[x].index))
-        params = sorted({info["param"] for x in group for info in by_id[x].reads.values() if info["param"].upper() in order.data.get(x, {})})
+        params = sorted({info["param"] for x in group for info in by_id[x].reads.values() if info["param"].upper() in order.data.get(x, {})}
+                        | {"{" + n + "}" for x in group for n in order.data.get(x, {}) if n in by_id[x].needs})
         order.streams.append({"tests": group, "levels": {x: level_of(x, members) for x in group}, "params": params})
         tops: dict[int, list[str]] = {}
         for x in group:

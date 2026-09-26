@@ -50,7 +50,7 @@ def results_from_events(run_dir: Path) -> RunResult:
                 fallback_used=bool(e.get("fallback")), notes=list(e.get("notes", [])), ended_at=e["ts"], duration_ms=e.get("duration_ms", 0),
                 screenshot=e.get("screenshot"), screenshot_full=e.get("screenshot_full"), sets=list(e.get("sets", [])), detail=e.get("detail", ""), diagnosis=e.get("diagnosis")))
             test.variables.extend({**w, "seq": e["step"], "row": e.get("row", 0), "step": e.get("name", ""), "by_hand": False} for w in e.get("sets", []))
-        elif kind == "variable_set" and test:
+        elif kind == "variable_set" and test and e.get("by_hand", True):          # (a value a step saved is in that step's ``sets`` already)
             test.variables.append({"name": e.get("name", ""), "value": e.get("value", ""), "stored": e.get("value", ""), "cell": e.get("cell", ""),
                                    "seq": e.get("step", 0), "row": 0, "step": "", "by_hand": bool(e.get("by_hand"))})
         elif kind == "screenshot_saved" and test:
