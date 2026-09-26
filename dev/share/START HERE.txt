@@ -14,6 +14,13 @@ QA Regression - how to start
    It also puts a "QA Regression" icon on your desktop. Use that icon from then on
    (on a Mac you can drag it to the Dock).
 
+   Mac says it "can't be opened" or "Apple could not verify" it? That is macOS being careful with files that came
+   from a download, email or Teams, not a problem with the tool. Allow it once, for the whole folder:
+     - Open Terminal, type   xattr -dr com.apple.quarantine   and a space, drag this folder onto the Terminal window,
+       press Enter, then double-click "Start QA Regression.command" again. (No admin rights needed.)
+     - Or: System Settings > Privacy & Security, scroll down, "Open Anyway" next to the message about the file.
+   If the message names your company or IT instead, the block is IT's: ask them to allow the folder.
+
 3. QA Regression opens in a window of its own. A small black window also opens (on Windows it starts minimised
    in the taskbar). Leave it open while you work: closing it stops QA Regression.
 

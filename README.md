@@ -72,7 +72,9 @@ the next start reinstalls the packages by itself. To start over, delete `.venv`.
 (git-ignored) with only what is needed to run the tool: the launchers, `src/`, the config files, this manual, a one-page
 `START HERE.txt` and the workbooks (`--no-workbooks` leaves them out). It never includes `dev/`, `tests/`, `.claude/`, `secrets.env`,
 `.auth/`, `runs/` or `.venv/`. The other person unzips it (for example into Documents, not a OneDrive or network folder) and
-double-clicks the launcher.
+double-clicks the launcher. On a Mac, a folder that arrived by download, email or Teams is quarantined, so macOS refuses the
+`.command` ("Apple could not verify…"): run `xattr -dr com.apple.quarantine "<folder>"` once (no admin rights), or use
+*Open Anyway* in System Settings → Privacy & Security. `START HERE.txt` walks through it. A copy made with `git clone` is not affected.
 
 **By hand (for developers).**
 
