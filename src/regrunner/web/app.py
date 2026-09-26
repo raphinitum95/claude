@@ -41,11 +41,12 @@ from ..engine.order import chains_file, clean_chains, load_chains, plan_order, s
 from ..engine.runner import RunOptions, SelectionError, new_run_id, select_cases
 from ..events import now_iso, read_events
 from ..preflight import browser_check, run_preflight, token_state
-from ..runmeta import read_meta, update_meta
+from ..runmeta import new_batch_id, read_meta, update_meta
 from ..signin import SignInError, SignInSession
 from ..workbook.model import Workbook
 from .build_api import register_build_routes
 from .presence import UiPresence
+from .run_batch import register_batch_routes
 
 STATIC = Path(__file__).parent / "static"
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._ -]+")
@@ -110,6 +111,8 @@ class StartRun(BaseModel):
     allow_prod: bool = False
     confirm_prod: str = ""                        # must be the word PROD when the run targets PROD
     chains: list[list[Annotated[str, Field(max_length=120)]]] | None = Field(default=None, max_length=50)     # tests that run one after another; None = the saved ones
+    batch_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._-]{0,40}$")    # "Add tests to this batch": join an existing batch instead of starting a new one
+    batch_label: str | None = Field(default=None, max_length=120)
 
     @model_validator(mode="after")
     def _one_way_of_naming_the_workbooks(self):
@@ -394,13 +397,19 @@ class RunManager:
                                  "same browser and the same headed / headless choice. Change it to match, or wait for them or cancel them.",
                                  next((r for r in p.run_ids if self.is_active(r)), p.run_ids[0]))
 
+        # A batch is only a label (dev/plan/CONTRACT.md): several workbooks launched together get one automatically, so the UI can show
+        # them as one; "Add tests to this batch" instead names an existing one (``req.batch_id``).  Either way every entry is still its
+        # own run, folder, results.json and report - nothing here changes what runs or how.
+        batch_id = req.batch_id or (new_batch_id(self.existing_batch_ids()) if len(entries) > 1 else None)
+        batch_fields = {"batch_id": batch_id, "batch_label": req.batch_label} if batch_id else {}
         for e in entries:                                          # from here on the runs exist: a folder each, listed as running
             e.run_id = new_run_id(cfg, e.environment)
             e.run_dir = self.run_dir(e.run_id)
             e.run_dir.mkdir(parents=True, exist_ok=True)
             e.tokens = command_tokens(e.path.name, cli_flags(self._alone(req, e), cfg, e.environment))
             update_meta(e.run_dir, run_id=e.run_id, workbook=str(e.path), environment=e.environment, started_at=now_iso(), status="RUNNING",
-                        command=" ".join(t["t"] for t in e.tokens), command_tokens=e.tokens, test_ids=e.test_ids, tests=len(e.test_ids))
+                        command=" ".join(t["t"] for t in e.tokens), command_tokens=e.tokens, test_ids=e.test_ids, tests=len(e.test_ids),
+                        **batch_fields)
         load_env_file(cfg.base_dir / "secrets.env")                # pick up tokens edited since the UI started
 
         joined: list[Entry] = []
@@ -418,7 +427,8 @@ class RunManager:
             raise ApiError(409, refused[0][1], "join")
         started = [e for e in entries if all(e is not r[0] for r in refused)]
         first = started[0]
-        return {"run_id": first.run_id, "run_ids": [e.run_id for e in started], "command": " ".join(t["t"] for t in batch_tokens(req, cfg, [e.path.name for e in entries], "PROD" if prod else "")),
+        return {"run_id": first.run_id, "run_ids": [e.run_id for e in started], "batch_id": batch_id,
+                "command": " ".join(t["t"] for t in batch_tokens(req, cfg, [e.path.name for e in entries], "PROD" if prod else "")),
                 "runs": [{"run_id": e.run_id, "workbook": e.path.name, "tests": len(e.test_ids)} for e in started], "joined": bool(joined),
                 "refused": [{"workbook": e.path.name, "reason": why} for e, why in refused]}
 
@@ -634,6 +644,10 @@ class RunManager:
                     out.append(meta)
         return sorted(out, key=lambda m: m.get("started_at", ""), reverse=True)[:limit]
 
+    def existing_batch_ids(self) -> set[str]:
+        """So a new batch (a UI label: web/run_batch.py) never reuses one already on disk, however briefly."""
+        return {m["batch_id"] for m in self.list_runs(1000) if m.get("batch_id")}
+
 
 # -------------------------------------------------------------------------------------------------
 class NoCacheStatic(StaticFiles):
@@ -700,6 +714,7 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
     app = FastAPI(title="regrunner", docs_url=None, redoc_url=None, lifespan=lifespan)
     mgr = RunManager(cfg, config_path)
     register_build_routes(app, mgr)                       # /api/build/*: the Workbook Builder (web/build_api.py)
+    register_batch_routes(app, mgr)                        # /api/batches/*: batch grouping and last-run estimates (web/run_batch.py)
     wb_cache: dict[tuple, Any] = {}
 
     # -- request guard -------------------------------------------------------------------------------

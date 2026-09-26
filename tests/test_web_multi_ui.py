@@ -19,35 +19,35 @@ async def tick_both(page):
     await pick_only(page, "mock.xlsx")
     await page.locator('input[name=workbook][value="bad.xlsx"]').check(force=True)
     await js_until(page, f"{CHECKED} === 'bad.xlsx,mock.xlsx'")
-    await expect(page.locator('section[data-key="tests-bad.xlsx"] input.cb').first).to_be_visible()
-    await js_until(page, "document.querySelectorAll('section[data-key^=tests-] input.cb:checked').length === 4")      # both workbooks have been read
+    await expect(page.locator('[data-key="tests-bad.xlsx"] input.cb').first).to_be_visible()
+    await js_until(page, "document.querySelectorAll('[data-key^=tests-] input.cb:checked').length === 4")      # both workbooks have been read
 
 
 async def test_each_ticked_workbook_gets_its_own_tests_and_the_command_and_button_cover_all_of_them(web):
     async with open_ui(web) as page:
         await wait_ready(page)
         await tick_both(page)
-        assert await page.locator("h2", has_text="Tests").count() == 2                                       # a Tests card per workbook
+        assert await page.locator("h2", has_text="Tests").count() == 1                                       # one merged Tests card, one group per workbook
         await command_is(page, "regrunner run mock.xlsx --all bad.xlsx --all")
         await expect(page.get_by_role("button", name="Run 4 tests in 2 workbooks")).to_be_enabled()
         assert "one per workbook, on 2 shared workers" in await page.locator("#launch-books").inner_text()
         assert "2 workbooks read" in await page.locator("#preflight").inner_text()
 
-        bad_tests = page.locator('section[data-key="tests-bad.xlsx"]')
+        bad_tests = page.locator('[data-key="tests-bad.xlsx"]')
         await bad_tests.locator('label[data-key="FlowY"] input').uncheck()                                   # what runs is decided per workbook
         await command_is(page, "regrunner run mock.xlsx --all bad.xlsx --tests FlowX")
         await expect(page.get_by_role("button", name="Run 3 tests in 2 workbooks")).to_be_enabled()
-        await expect(page.locator('section[data-key="tests-mock.xlsx"] input.cb:checked')).to_have_count(2)
+        await expect(page.locator('[data-key="tests-mock.xlsx"] input.cb:checked')).to_have_count(2)
         await bad_tests.get_by_role("button", name="None").click()
         await expect(page.get_by_role("button", name="Select tests to run")).to_be_disabled()               # a ticked workbook with nothing ticked in it blocks the run...
         assert "No tests selected · bad.xlsx" in await page.locator("#preflight").inner_text()
-        await bad_tests.get_by_role("button", name="Workbook defaults").click()
+        await bad_tests.get_by_role("button", name="Defaults").click()
         await expect(page.get_by_role("button", name="Run 4 tests in 2 workbooks")).to_be_enabled()
 
         await page.locator('input[name=workbook][value="bad.xlsx"]').uncheck(force=True)                     # ...and unticking the workbook takes it out
         await command_is(page, "regrunner run mock.xlsx --all")
         await expect(page.get_by_role("button", name="Run 2 tests", exact=True)).to_be_enabled()
-        assert await page.locator('section[data-key="tests-bad.xlsx"]').count() == 0
+        assert await page.locator('[data-key="tests-bad.xlsx"]').count() == 0
         assert not page.errors, page.errors
 
 
@@ -55,7 +55,7 @@ async def test_the_request_carries_one_entry_per_workbook_and_the_settings_once(
     async with open_ui(web) as page:
         await wait_ready(page)
         await tick_both(page)
-        await page.locator('section[data-key="tests-bad.xlsx"] label[data-key="FlowY"] input').uncheck()
+        await page.locator('[data-key="tests-bad.xlsx"] label[data-key="FlowY"] input').uncheck()
         await page.get_by_role("button", name="QA", exact=True).click()
         await page.get_by_role("button", name="More workers").click()
         await command_is(page, "regrunner run mock.xlsx --all bad.xlsx --tests FlowX --env QA --workers 3")
@@ -80,7 +80,7 @@ async def test_a_workbook_that_cannot_be_read_can_be_removed_and_the_others_carr
         async with open_ui(web) as page:                                                                     # (the newest workbook, this one, is ticked when the page opens)
             await expect(page.get_by_text("Could not read junk-multi.xlsx.")).to_be_visible(timeout=20_000)
             await page.locator('input[name=workbook][value="mock.xlsx"]').check(force=True)
-            await expect(page.locator('section[data-key="tests-mock.xlsx"] input.cb:checked')).to_have_count(2)
+            await expect(page.locator('[data-key="tests-mock.xlsx"] input.cb:checked')).to_have_count(2)
             await expect(page.get_by_text("Could not read junk-multi.xlsx.")).to_be_visible()
             await expect(page.locator(".btn-lg")).to_be_disabled()
             assert "junk-multi.xlsx could not be read" in await page.locator("#preflight").inner_text()
@@ -92,29 +92,30 @@ async def test_a_workbook_that_cannot_be_read_can_be_removed_and_the_others_carr
         (web.root / "workbooks" / "junk-multi.xlsx").unlink(missing_ok=True)
 
 
-async def test_several_workbooks_run_from_the_screen_and_each_run_says_who_it_shares_the_workers_with(web):
+async def test_several_workbooks_run_together_as_one_batch_and_each_run_says_which_batch_it_is_part_of(web):
     async with open_ui(web) as page:
         await wait_ready(page)
         await tick_both(page)
-        await page.locator('section[data-key="tests-mock.xlsx"] label[data-key="FlowB"] input').uncheck()
-        await page.locator('section[data-key="tests-bad.xlsx"] label[data-key="FlowY"] input').uncheck()
+        await page.locator('[data-key="tests-mock.xlsx"] label[data-key="FlowB"] input').uncheck()
+        await page.locator('[data-key="tests-bad.xlsx"] label[data-key="FlowY"] input').uncheck()
         await page.get_by_role("button", name="Run 2 tests in 2 workbooks").click()
-        await page.wait_for_selector("text=Now running", timeout=30_000)
-        first = re.search(r"/run/([\w.-]+)", page.url).group(1)
-        strip = page.locator("#shares")
-        await expect(strip).to_contain_text("Sharing workers with")
-        await expect(strip.locator("button")).to_have_count(1)
+        await js_until(page, "location.hash.startsWith('#/batch/')", timeout=30)
+        batch_id = re.search(r"/batch/([\w.-]+)", page.url).group(1)
+        await page.wait_for_selector("text=2 tests across 2 workbooks", timeout=30_000)
         await expect(page.locator("aside .side-run")).to_have_count(2)                                        # both runs are in the sidebar
         await js_until(page, "document.querySelectorAll('aside .bar').length === 2")                        # ...and both are going
-        await expect(page.get_by_text("Started 2 runs on shared workers")).to_be_visible()
-        other = await strip.locator("button").get_attribute("data-id")
-        assert other and other != first
-        title_first = await page.locator("h1").inner_text()
-        await strip.locator("button").click()                                                              # the chip opens the other run
-        await js_until(page, f"location.hash === '#/run/{other}'")
-        await expect(page.locator("h1")).not_to_have_text(title_first)
-        await expect(page.locator("#shares")).to_contain_text(title_first.replace(".xlsx", "") + ".xlsx")
-        done = {rid: web.wait_finished(rid, 240) for rid in (first, other)}
+        await expect(page.get_by_text(f"Started 2 runs on shared workers as batch {batch_id}")).to_be_visible()
+        await expect(page.locator('[data-key^="wbrow-"]')).to_have_count(2)                                  # one progress row per workbook
+
+        with web.client() as c:
+            run_ids = c.get(f"/api/batches/{batch_id}").json()["run_ids"]
+        assert len(run_ids) == 2
+        await page.evaluate(f"location.hash = '#/run/{run_ids[0]}'")                                          # a run opened on its own still says which batch it is part of
+        await js_until(page, f"document.body.innerText.includes('part of batch {batch_id}')")
+        await page.locator(f'[data-act=\"open-batch\"][data-id=\"{batch_id}\"]').click()
+        await js_until(page, f"location.hash === '#/batch/{batch_id}'")
+
+        done = {rid: web.wait_finished(rid, 240) for rid in run_ids}
         assert {d["meta"]["status"] for d in done.values()} == {"PASSED", "FAILED"}                          # mock passes, bad fails: each run has its own verdict
         assert not page.errors, page.errors
 

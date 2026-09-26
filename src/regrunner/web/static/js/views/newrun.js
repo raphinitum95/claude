@@ -2,10 +2,11 @@
 // next to the Run button is built by the server from the very same request the button sends.
 import { html, raw, cx } from '../util.js';
 import { icon, pill } from '../icons.js';
-import { num, bytes, modified, plural } from '../fmt.js';
+import { num, bytes, modified, plural, dur } from '../fmt.js';
 import { banner, btn } from './shell.js';
 import { filterWorkbooks, highlight, recentlyRun, MORE } from '../wbfilter.js';
 import { browserLabel, browserChip } from '../browsers.js';
+import { wbColor } from '../runstate.js';
 
 // ---- derived form state ---------------------------------------------------------------------------------
 // Several workbooks can be chosen: each is a run of its own on one set of workers, with its own tests and run order; the settings are shared.
@@ -32,7 +33,8 @@ export const effEnv = (S) => envList(S).join(' + ');
 export const hasProd = (S) => envList(S).includes('PROD');
 export const booksReady = (S) => S.nr.books.length > 0 && S.nr.books.every((n) => S.nr.bk[n].load === 'ok');
 
-/** The exact request the Run button sends (and the command preview is built from).  One workbook: the plain form; several: one entry each. */
+/** The exact request the Run button sends (and the command preview is built from).  One workbook: the plain form; several: one entry each.
+ *  ``S.nr.joinBatch`` ("Add tests to this batch", from the live batch view) names an existing batch to join instead of starting a new one. */
 export function buildRequest(S, extra = {}) {
   const f = S.nr;
   const picks = f.books.map((name) => {
@@ -48,7 +50,8 @@ export function buildRequest(S, extra = {}) {
     screenshots: f.shots, retries: f.retries, seed: f.seed === '' ? null : Number(f.seed), pdf: f.pdf, harvest: f.harvest,
     headed: f.headed, nice: f.nice, no_report: f.noReport,
   };
-  return picks.length === 1 ? { ...picks[0], ...shared, ...extra } : { workbooks: picks, ...shared, ...extra };
+  const batch = f.joinBatch ? { batch_id: f.joinBatch.id } : {};
+  return picks.length === 1 ? { ...picks[0], ...shared, ...batch, ...extra } : { workbooks: picks, ...shared, ...batch, ...extra };
 }
 
 /** What the server knows about one browser (installed here?), or undefined until the preflight answers. */
@@ -117,7 +120,7 @@ export function preflightItems(S) {
       if (!chosenTests(S, n).length) items.push({ kind: 'err', label: multi ? `No tests selected · ${n}` : 'No tests selected', detail: `Pick at least one test to run${multi ? `, or untick ${n}` : ''}.` });
     }
     for (const { name, run } of runningNow(S)) {
-      items.push({ kind: 'err', label: `Already running · ${name}`, detail: `${name} is being run right now (${run.run_id}). Two runs of one workbook would place the same orders twice: wait for it or cancel it.` });
+      items.push({ kind: 'err', label: `Already running · ${name}`, detail: `${name} is being run right now (${run.run_id}). Two runs of one workbook would place the same orders twice: wait for it or cancel it first.` });
     }
   }
   const asking = allChosen(S).filter((t) => t.asks > 0);
@@ -129,7 +132,7 @@ export function preflightItems(S) {
     const streams = loadedNames.reduce((a, n) => a + (f.bk[n].order ? f.bk[n].order.streams.length : 0), 0);
     items.push(failed ? { kind: 'warn', label: 'Run order', detail: `Could not be worked out${multi ? ` for ${failed}` : ''} (${f.bk[failed].orderError}). The run works it out itself when it starts.` }
       : waiting ? { kind: 'pend', label: 'Run order', detail: 'Working out which tests wait for which…' }
-      : { kind: 'ok', label: 'Run order', detail: streams ? `${streams} stream${streams === 1 ? '' : 's'}: a test that uses a value another test sets waits for it; streams that do not touch each other run side by side. See Run order below the tests.`
+      : { kind: 'ok', label: 'Run order', detail: streams ? `${streams} stream${streams === 1 ? '' : 's'}: a test that uses a value another test sets waits for it; streams that do not touch each other run side by side. See Run plan below the tests.`
                                                         : 'No test waits for another: everything runs side by side.' });
   }
   const problems = loadedNames.flatMap((n) => (f.bk[n].order ? f.bk[n].order.notes : []).filter((x) => x.kind === 'missing' || x.kind === 'conflict').map((x) => ({ ...x, wb: n })));      // from the server: what nothing sets, what a chain contradicts
@@ -275,34 +278,50 @@ ${bookNotes(S)}
 </section>`;
 }
 
-// ---- section: tests -------------------------------------------------------------------------------------------
-function tagSet(S, name) {
+// ---- section: tests (one list, grouped by workbook) --------------------------------------------------------------
+/** {tag: [{wb, id}]} across every chosen workbook, so one tag chip picks that tag's tests wherever they are, not just in one workbook. */
+function tagsAcrossBooks(S) {
   const tags = {};
-  for (const t of formTests(S, name)) for (const g of t.tags || []) (tags[g] = tags[g] || []).push(t.id);
+  for (const name of S.nr.books) for (const t of formTests(S, name)) for (const g of t.tags || []) (tags[g] = tags[g] || []).push({ wb: name, id: t.id });
   return tags;
 }
 
-/** The tests of one chosen workbook.  A card per workbook: which tests run is decided for each on its own. */
-function testsCard(S, name, index) {
+/** The test(s) another test waits for, in its own workbook (the Run plan below works this out); shown here as a small chip on the row,
+ *  so a dependency is visible while picking tests, not only after. */
+function waitChip(S, name, id) {
+  const o = S.nr.bk[name].order;
+  const waits = o ? (o.deps[id] || []) : [];
+  if (!waits.length) return '';
+  return html`<span class="tag tag-acc" title="Uses a value ${waits.length === 1 ? 'that test sets' : 'those tests set'}">${icon('clock', 11)} after ${waits.join(', ')}</span>`;
+}
+
+/** One workbook's tests inside the merged list: its own select-all/none/defaults and its own rows, folded shut on request. */
+function testsGroup(S, name, index) {
   const f = S.nr;
   const b = f.bk[name];
   const multi = f.books.length > 1;
   const tests = formTests(S, name);
   const maxSteps = Math.max(1, ...tests.map((t) => t.steps));
-  const tags = tagSet(S, name);
-  const chosen = chosenTests(S, name).map((t) => t.id).sort().join('|');
-  const fromConfig = S.cfg && Object.keys(S.cfg.tags || {}).some((g) => tags[g]);
+  const chosen = chosenTests(S, name);
+  const total = tests.length;
+  const allOn = total > 0 && chosen.length === total;
+  const open = !multi || b.open !== false;
   const w = html`data-wb="${name}"`;
-  return html`<section class="card" style="padding: 22px 0 8px" data-key="tests-${name}">
-<div style="display: flex; align-items: center; gap: 12px; padding: 0 22px; flex-wrap: wrap">${index === 0 ? html`<div class="step-n">2</div>` : ''}<h2 class="ttl">Tests</h2>
-${multi ? html`<span class="chip mono" style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" title="${name}">${icon('grid', 14)} ${name}</span>` : ''}
-<span class="mono" style="font-size: 12.5px; color: var(--tx2)">${chosenTests(S, name).length} of ${tests.length} selected</span>
+  const groupHeader = multi
+    ? html`<div style="display: flex; align-items: center; gap: 12px; padding: 14px 22px; background: var(--surface2)">
+<button ${w} data-act="${chosen.length ? 'sel-none' : 'sel-all'}" aria-label="${chosen.length ? 'Deselect' : 'Select'} all tests in ${name}" style="display: inline-flex">
+<span aria-hidden="true" style="width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid ${chosen.length ? 'var(--acc)' : 'var(--line2)'}; background: ${allOn ? 'var(--acc)' : 'transparent'}; color: var(--bg); display: grid; place-items: center">${allOn ? icon('check', 13) : (chosen.length ? raw('<span style="width: 9px; height: 2px; border-radius: 1px; background: var(--acc); display: block"></span>') : '')}</span></button>
+<span style="width: 4px; height: 30px; border-radius: 4px; background: ${wbColor(name, f.books)}"></span>
+<button ${w} data-act="toggle-fold" style="display: flex; flex-direction: column; min-width: 0; flex: 1; text-align: left">
+<b style="font-size: 14px">${shortName(name)}</b><span class="mono" style="font-size: 11px; color: var(--tx3)">${chosen.length} of ${total} tests selected</span></button>
+<button class="lnk" data-act="sel-defaults" ${w}>Defaults</button><button class="lnk" data-act="sel-all" ${w}>All</button><button class="lnk" data-act="sel-none" ${w}>None</button>
+<button class="icon-btn" style="width: 28px; height: 28px" data-act="toggle-fold" ${w} aria-label="Show or hide ${name}'s tests">${open ? '▾' : '▸'}</button></div>`
+    : html`<div style="display: flex; align-items: center; gap: 14px; padding: 4px 22px 0"><span class="mono" style="font-size: 12.5px; color: var(--tx2)">${chosen.length} of ${total} selected</span>
 <div style="margin-left: auto; display: flex; align-items: center; gap: 14px">
-<button class="lnk" data-act="sel-defaults" ${w}>Workbook defaults</button><button class="lnk" data-act="sel-all" ${w}>All</button><button class="lnk" data-act="sel-none" ${w}>None</button></div></div>
-${Object.keys(tags).length ? html`<div style="display: flex; align-items: center; gap: 10px; padding: 14px 22px 4px; flex-wrap: wrap"><span class="lbl">Tags</span>
-${Object.entries(tags).map(([g, ids]) => html`<button class="${cx('chip', ids.slice().sort().join('|') === chosen && 'chip-acc')}" data-act="sel-tag" data-tag="${g}" ${w} aria-pressed="${String(ids.slice().sort().join('|') === chosen)}">${g} · ${ids.length}</button>`)}
-<span style="font-size: 12px; color: var(--tx3)">${fromConfig ? 'from config.yaml' : 'from the workbook'}</span></div>` : ''}
-<div style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 118px 92px; gap: 16px; padding: 9px 22px; border-top: 1px solid var(--line); background: var(--surface2); margin-top: 14px">
+<button class="lnk" data-act="sel-defaults" ${w}>Workbook defaults</button><button class="lnk" data-act="sel-all" ${w}>All</button><button class="lnk" data-act="sel-none" ${w}>None</button></div></div>`;
+  return html`<div data-key="tests-${name}" style="${index ? 'border-top: 1px solid var(--line)' : ''}">
+${groupHeader}
+${open ? html`<div style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 118px 92px; gap: 16px; padding: 9px 22px; border-top: 1px solid var(--line); background: var(--surface2); margin-top: ${multi ? 0 : 14}px">
 <span></span><span class="lbl">Test</span><span class="lbl">Steps</span><span class="lbl">Flags</span></div>
 ${b.load === 'loading' ? [1, 2, 3].map(() => html`<div style="padding: 12px 22px; border-top: 1px solid var(--line)"><div class="skel" style="height: 40px"></div></div>`) : ''}
 ${b.load === 'ok' && !tests.length ? html`<div style="padding: 22px; border-top: 1px solid var(--line); color: var(--tx2)">This workbook has no UI test sheets.</div>` : ''}
@@ -310,19 +329,44 @@ ${tests.map((t) => {
     const on = !!b.sel[t.id];
     return html`<label class="trow" data-key="${t.id}" style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 118px 92px; gap: 16px; align-items: center; padding: 12px 22px; border-top: 1px solid var(--line); cursor: ${t.runnable ? 'pointer' : 'not-allowed'}; background: ${on ? 'var(--acc-soft)' : 'transparent'}">
 <input type="checkbox" class="cb" ${on ? raw('checked') : ''} ${t.runnable ? '' : raw('disabled')} data-change="toggle-test" data-id="${t.id}" ${w} aria-label="Run ${t.id}${multi ? ` in ${name}` : ''}">
-<div style="min-width: 0"><div style="display: flex; align-items: center; gap: 9px"><span class="mono" style="font-weight: 600; font-size: 13.5px">${t.id}</span>${t.kind === 'api' ? html`<span class="tag" title="An API test: sends a request and checks the JSON answer; no browser">API</span>` : ''}<span class="mono" style="font-size: 11px; color: var(--tx3)">${t.scenario}</span></div>
+<div style="min-width: 0"><div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap"><span class="mono" style="font-weight: 600; font-size: 13.5px">${t.id}</span>${t.kind === 'api' ? html`<span class="tag" title="An API test: sends a request and checks the JSON answer; no browser">API</span>` : ''}<span class="mono" style="font-size: 11px; color: var(--tx3)">${t.scenario}</span>${waitChip(S, name, t.id)}</div>
 <div style="color: var(--tx2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.description}</div></div>
 <div><div class="mono" style="font-size: 13px">${t.steps}</div><div class="bar" style="height: 4px; margin-top: 6px"><div style="width: ${Math.round((100 * t.steps) / maxSteps)}%"></div></div></div>
 <div style="display: flex; flex-direction: column; gap: 5px; align-items: flex-start">
 ${t.enabled ? html`<span class="tag tag-acc">default Y</span>` : ''}
 ${t.runnable ? '' : html`<span class="tag tag-fail" title="The parameter sheet has no row with blnExecute=Y">no param row</span>`}</div></label>`;
+  })}` : ''}
+</div>`;
+}
+
+/** The whole "what to run" list: one card, one tag row spanning every chosen workbook, and one fold group per workbook. */
+function testsSection(S) {
+  const f = S.nr;
+  if (!f.books.length) return '';
+  const multi = f.books.length > 1;
+  const tags = tagsAcrossBooks(S);
+  const chosenKey = allChosen(S).map((t) => `${t.wb}/${t.id}`).sort().join('|');
+  const totalTests = f.books.reduce((a, n) => a + formTests(S, n).length, 0);
+  const totalChosen = allChosen(S).length;
+  const fromConfig = S.cfg && Object.keys(S.cfg.tags || {}).some((g) => tags[g]);
+  return html`<section class="card" style="padding: 22px 0 8px">
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 22px; flex-wrap: wrap"><div class="step-n">2</div><h2 class="ttl">Tests</h2>
+<span class="mono" style="font-size: 12.5px; color: var(--tx2)">${totalChosen} of ${totalTests} selected${multi ? ` · ${f.books.length} workbooks` : ''}</span></div>
+${Object.keys(tags).length ? html`<div style="display: flex; align-items: center; gap: 10px; padding: 14px 22px 4px; flex-wrap: wrap"><span class="lbl">Tags</span>
+${Object.entries(tags).map(([g, items]) => {
+    const key = items.map((x) => `${x.wb}/${x.id}`).sort().join('|');
+    const on = key === chosenKey;
+    return html`<button class="${cx('chip', on && 'chip-acc')}" data-act="sel-tag" data-tag="${g}" aria-pressed="${String(on)}">${g} · ${items.length}</button>`;
   })}
+<span style="font-size: 12px; color: var(--tx3)">${fromConfig ? 'from config.yaml' : 'from the workbook'}</span></div>` : ''}
+${f.books.map((name, i) => testsGroup(S, name, i))}
 </section>`;
 }
 
-// ---- section: run order ---------------------------------------------------------------------------------------------
-/** Which tests wait for which, in one chosen workbook.  Tests that use a value another test sets wait for it; a chain fixes an order by hand (arrows). */
-function orderCard(S, name, index) {
+// ---- section: run plan (one plan, Order and Timeline views) -------------------------------------------------------
+/** One workbook's chains inside the combined Order view: identical to what used to be its own "Run order" card, just without
+ *  the card chrome (the Run plan section around it supplies that once, for every workbook). */
+function orderGroup(S, name) {
   const f = S.nr;
   const b = f.bk[name];
   const o = b.order;
@@ -333,16 +377,16 @@ function orderCard(S, name, index) {
   if (!streams.length && !hints.length && !b.chains.length) return '';
   const w = html`data-wb="${name}"`;
   const arrow = (id, dir, glyph, label, off) => html`<button class="stp" style="width: 30px; height: 28px" data-act="order-move" data-id="${id}" data-dir="${dir}" ${w} aria-label="${label} ${id}${multi ? ` in ${name}` : ''}" ${off ? raw('disabled') : ''}>${glyph}</button>`;
-  return html`<section class="card" style="padding: 22px 0 6px" id="${index === 0 ? 'run-order' : `run-order-${index + 1}`}" data-key="order-${name}">
-<div style="display: flex; align-items: center; gap: 12px; padding: 0 22px; flex-wrap: wrap"><h2 class="ttl">Run order</h2>
-${multi ? html`<span class="chip mono" style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" title="${name}">${icon('grid', 14)} ${name}</span>` : ''}
+  return html`<div data-key="order-${name}" style="padding: 16px 22px${multi ? '; border-top: 1px solid var(--line)' : ''}">
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+${multi ? html`<span style="width: 4px; height: 20px; border-radius: 3px; background: ${wbColor(name, f.books)}"></span><b style="font-size: 13.5px">${shortName(name)}</b>` : ''}
 <span class="chip mono">${streams.length} stream${streams.length === 1 ? '' : 's'}</span>
 <div style="margin-left: auto; display: flex; align-items: center; gap: 14px">
 ${b.chainsDirty ? html`<span class="mono" style="font-size: 11.5px; color: var(--warn)">not saved</span>` : b.chainsSource === 'saved' ? html`<span class="mono" style="font-size: 11.5px; color: var(--tx3)">saved for this workbook</span>` : ''}
 ${b.chainsDirty ? html`<button class="lnk" data-act="order-save" ${w}>Save this order</button>` : ''}
 ${b.chains.length ? html`<button class="lnk" data-act="order-reset" ${w}>Clear chains</button>` : ''}</div></div>
-<p style="font-size: 12.5px; color: var(--tx2); margin: 8px 22px 12px">A test that uses a value another test sets waits for it. Streams that do not touch each other run side by side. Use the arrows to make tests in a stream run one after another in the order shown.</p>
-${streams.map((st, i) => html`<div style="border-top: 1px solid var(--line); padding: 12px 22px 8px" data-key="stream-${i}">
+<p style="font-size: 12.5px; color: var(--tx2); margin: 8px 0 12px">A test that uses a value another test sets waits for it. Streams that do not touch each other run side by side. Use the arrows to make tests in a stream run one after another in the order shown.</p>
+${streams.map((st, i) => html`<div style="${i ? 'border-top: 1px solid var(--line); ' : ''}padding: 12px 0 8px" data-key="stream-${i}">
 <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 6px"><span class="lbl">Stream ${i + 1}</span>${st.params.map((x) => html`<span class="tag tag-acc">${x}</span>`)}</div>
 ${st.tests.map((t, k) => {
     const waits = (o.deps[t] || []).filter((d) => st.tests.includes(d));
@@ -351,7 +395,104 @@ ${st.tests.map((t, k) => {
 <div style="min-width: 0"><b class="mono" style="font-size: 13px">${t}</b>${(formTests(S, name).find((x) => x.id === t) || {}).kind === 'api' ? html` <span class="tag">API</span>` : ''}<div class="mono" style="font-size: 11.5px; color: var(--tx3)">${waits.length ? `waits for ${waits.join(', ')}` : 'starts first'}</div></div>
 <div style="display: flex; gap: 4px">${arrow(t, -1, '↑', 'Run earlier:', k === 0)}${arrow(t, 1, '↓', 'Run later:', k === st.tests.length - 1)}</div></div>`;
   })}</div>`)}
-${hints.map((x) => html`<div style="display: flex; gap: 10px; padding: 11px 22px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--tx2)" data-key="hint-${x.test}"><span style="color: var(--warn); display: inline-flex; margin-top: 1px">${icon('warn', 16)}</span><span>${x.message}</span></div>`)}
+${hints.map((x) => html`<div style="display: flex; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--tx2)" data-key="hint-${x.test}"><span style="color: var(--warn); display: inline-flex; margin-top: 1px">${icon('warn', 16)}</span><span>${x.message}</span></div>`)}
+</div>`;
+}
+
+/** The Order view: every chosen workbook's chains, one after another.  Kept as ``#run-order`` (unchanged id) so it still means
+ *  "there is something to order" - absent when nothing waits for anything and no chain is set, exactly as before. */
+function runOrderView(S) {
+  const groups = S.nr.books.map((name) => orderGroup(S, name)).filter(Boolean);
+  return groups.length ? html`<div id="run-order">${groups}</div>` : '';
+}
+
+/** HLFET-style list scheduling for the Timeline view: the heaviest remaining chain (its own duration plus whatever still
+ *  depends on it) starts first, on whichever worker frees up soonest once the tests it waits for have finished.  Pure and
+ *  small enough to check on its own (no DOM here): dev/scratchpad had a standalone check before this went in. */
+export function planTimeline(nodes, workerCount) {
+  const byId = new Map(nodes.map((n, i) => [n.id, { ...n, index: i }]));
+  const children = new Map(nodes.map((n) => [n.id, []]));
+  for (const n of nodes) for (const d of n.deps) if (children.has(d)) children.get(d).push(n.id);
+  const weight = new Map();
+  const weightOf = (id) => {
+    if (weight.has(id)) return weight.get(id);
+    weight.set(id, Infinity);                              // cycle guard (should not happen: deps come from a DAG)
+    const kids = children.get(id) || [];
+    const w = byId.get(id).dur + Math.max(0, ...kids.map(weightOf));
+    weight.set(id, w);
+    return w;
+  };
+  for (const n of nodes) weightOf(n.id);
+  const lanes = Array.from({ length: Math.max(1, workerCount) }, (_, i) => ({ n: i + 1, freeAt: 0, bars: [] }));
+  const finishAt = new Map();
+  const scheduled = new Set();
+  const remaining = new Set(nodes.map((n) => n.id));
+  while (remaining.size) {
+    const ready = [...remaining].filter((id) => byId.get(id).deps.every((d) => !byId.has(d) || scheduled.has(d)));
+    if (!ready.length) break;                              // a cycle: stop rather than loop forever
+    ready.sort((a, b) => weightOf(b) - weightOf(a) || byId.get(a).index - byId.get(b).index);
+    const id = ready[0];
+    const node = byId.get(id);
+    const depsFinish = Math.max(0, ...node.deps.map((d) => finishAt.get(d) || 0));
+    let best = 0;
+    for (let i = 1; i < lanes.length; i++) if (lanes[i].freeAt < lanes[best].freeAt) best = i;
+    const start = Math.max(lanes[best].freeAt, depsFinish);
+    const finish = start + node.dur;
+    lanes[best].bars.push({ id, wb: node.wb, color: node.color, start, dur: node.dur, finish, label: node.label });
+    lanes[best].freeAt = finish;
+    finishAt.set(id, finish);
+    scheduled.add(id);
+    remaining.delete(id);
+  }
+  return { lanes, end: Math.max(0, ...lanes.map((l) => l.freeAt)) };
+}
+
+/** Seconds to lay each chosen test out with, in one consistent unit: its own last run when one is known; else its step count
+ *  scaled by the average seconds/step of the tests that do have a last run; else (no history at all for any of them) the
+ *  step count itself. */
+function estimatedSeconds(S, chosen) {
+  const of = (t) => (S.nr.durations[t.wb] || {})[t.id];
+  const known = chosen.map(of).filter((v) => v != null);
+  if (!known.length) return { unit: 'steps', seconds: (t) => Math.max(1, t.steps || 1) };
+  const withBoth = chosen.filter((t) => of(t) != null && t.steps);
+  const ratio = withBoth.length ? withBoth.reduce((a, t) => a + of(t) / t.steps, 0) / withBoth.length : 1;
+  return { unit: 'seconds', seconds: (t) => { const v = of(t); return v != null ? Math.max(1, v) : Math.max(1, Math.round((t.steps || 1) * ratio)); } };
+}
+
+function timelineView(S) {
+  const chosen = allChosen(S);
+  if (!chosen.length) return html`<div style="padding: 16px 22px; color: var(--tx2); font-size: 12.5px">Nothing picked yet.</div>`;
+  const est = estimatedSeconds(S, chosen);
+  const nodes = chosen.map((t) => {
+    const o = S.nr.bk[t.wb].order;
+    const deps = ((o && o.deps[t.id]) || []).map((d) => `${t.wb}::${d}`);
+    return { id: `${t.wb}::${t.id}`, wb: t.wb, color: wbColor(t.wb, S.nr.books), dur: est.seconds(t), deps, label: t.id };
+  });
+  const { lanes, end } = planTimeline(nodes, Math.max(1, S.nr.workers));
+  const scale = end || 1;
+  return html`<div style="padding: 12px 22px 6px; display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--tx2); flex-wrap: wrap">
+<span>${est.unit === 'seconds' ? 'Estimated from each test’s last run.' : 'No run history yet: laid out by step count instead of time.'} Longest chains start first.</span>
+<span style="flex-grow: 1"></span><b style="color: var(--tx)">${est.unit === 'seconds' ? `≈ ${dur(end)}` : `${num(end)} steps, longest lane`}</b><span style="color: var(--tx3)">on ${lanes.length} worker${lanes.length === 1 ? '' : 's'}</span></div>
+<div style="padding: 6px 22px 18px; display: flex; flex-direction: column; gap: 5px">
+${lanes.map((l) => html`<div style="display: flex; align-items: center; gap: 8px" data-key="tl-${l.n}"><span class="mono" style="width: 64px; font-size: 11px; color: var(--tx3)">worker ${l.n}</span>
+<div style="flex: 1; position: relative; height: 26px; border-radius: 6px; background: var(--track)">
+${l.bars.map((b) => html`<span title="${shortName(b.wb)} · ${b.label}" style="position: absolute; left: ${(100 * b.start / scale).toFixed(2)}%; width: ${Math.max((100 * b.dur / scale) - 0.4, 0.6).toFixed(2)}%; top: 2px; bottom: 2px; border-radius: 5px; padding: 0 6px; display: flex; align-items: center; font-size: 11px; font-weight: 600; color: var(--acc-tx); background: ${b.color}; overflow: hidden; white-space: nowrap">${(b.dur / scale) > 0.06 ? b.label : ''}</span>`)}
+</div></div>`)}
+</div>`;
+}
+
+function runPlanSection(S) {
+  const f = S.nr;
+  if (!f.books.length) return '';
+  const view = f.planView || 'order';
+  const order = view === 'order' ? runOrderView(S) : '';
+  return html`<section class="card" style="padding: 22px 0">
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 22px; flex-wrap: wrap"><h2 class="ttl" style="font-size: 17px">Run plan</h2>
+<span style="font-size: 12.5px; color: var(--tx3)">One plan for everything you picked</span><span style="flex-grow: 1"></span>
+<div class="seg" style="width: 220px"><button class="${cx(view === 'order' && 'on')}" data-act="plan-view" data-val="order">Order</button><button class="${cx(view === 'timeline' && 'on')}" data-act="plan-view" data-val="timeline">Timeline</button></div></div>
+${view === 'order'
+    ? (order || html`<div style="padding: 16px 22px; color: var(--tx2); font-size: 12.5px">${allChosen(S).length ? 'Every picked test runs on its own: nothing waits for anything else.' : 'Pick some tests to see how they would run.'}</div>`)
+    : timelineView(S)}
 </section>`;
 }
 
@@ -439,20 +580,6 @@ ${toggle('nice', 'Low OS priority', '', f.nice ? 'Off adds --no-nice' : 'On adds
 }
 
 // ---- right column -------------------------------------------------------------------------------------------------------
-function plan(S, sorted) {
-  const k = Math.max(1, Math.min(S.nr.workers, sorted.length));
-  const lanes = Array.from({ length: k }, (_, i) => ({ name: `W${i + 1}`, items: [], total: 0, pad: 0 }));
-  const multi = S.nr.books.length > 1;
-  for (const t of sorted) {
-    const lane = lanes.reduce((m, x) => (x.total < m.total ? x : m), lanes[0]);
-    lane.items.push({ id: multi ? `${shortName(t.wb)} · ${t.id}` : t.id, steps: t.steps });
-    lane.total += t.steps;
-  }
-  const longest = Math.max(0, ...lanes.map((l) => l.total));
-  lanes.forEach((l) => { l.pad = Math.max(0, longest - l.total) || (l.items.length ? 0 : 1); });
-  return { lanes, longest, idle: S.nr.workers - k };
-}
-
 function tokenSpan(t) {
   const color = { cmd: 'var(--tx)', arg: 'var(--tx2)', flag: 'var(--acc)', value: 'var(--tx)' }[t.k] || 'var(--tx)';
   return html`<span style="color: ${color}; white-space: nowrap">${t.t}</span> `;      // a real space, so the text copies and reads as a command
@@ -480,10 +607,12 @@ function launchCard(S) {
   const pool = poolState(S);
   const emptyBook = f.books.some((name) => f.bk[name].load === 'ok' && !chosenTests(S, name).length);
   const blocked = n === 0 || !booksReady(S) || emptyBook || runningNow(S).length > 0 || pool.kind === 'mismatch' || f.starting || (S.pre && !bc) || (bc && bc.status === 'err');       // the picked browser must have been checked, and be ready
+  const joining = f.joinBatch;
   const label = f.starting ? 'Starting…' : !f.books.length ? 'Pick a workbook' : n === 0 || emptyBook ? 'Select tests to run' : isProd ? 'Review and run on PROD…'
-    : `Run ${n} test${n === 1 ? '' : 's'}${multi ? ` in ${f.books.length} workbooks` : ''}`;
+    : joining ? `Add ${n} test${n === 1 ? '' : 's'} to batch ${joining.id}` : `Run ${n} test${n === 1 ? '' : 's'}${multi ? ` in ${f.books.length} workbooks` : ''}`;
   const tone = isProd ? ['var(--fail-soft)', 'var(--fail-line)', 'var(--fail)'] : ['var(--warn-soft)', 'var(--warn-line)', 'var(--warn)'];
   return html`<section class="card" style="padding: 22px; display: flex; flex-direction: column; gap: 18px; box-shadow: var(--glow); border-color: var(--acc-line)">
+${joining ? html`<div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--tx2)"><span class="chip chip-acc">${icon('plus', 12)} adding to batch ${joining.id}</span><button class="lnk" data-act="leave-batch">start a new batch instead</button></div>` : ''}
 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px">
 <div><div class="lbl">Tests</div><div class="disp" style="font-size: 34px; font-weight: 700; line-height: 1.15">${n}</div></div>
 <div><div class="lbl">Steps</div><div class="disp" style="font-size: 34px; font-weight: 700; line-height: 1.15">${num(steps)}</div></div>
@@ -499,21 +628,6 @@ ${isProd ? 'This places real orders and sends real emails. You will be asked to 
 <button class="btn btn-ghost btn-sm" style="margin-left: auto; padding: 0 8px" data-act="copy-cmd">${icon('copy', 14)} Copy</button></div>
 <div class="code" aria-label="Command line for this run"><span style="color: var(--tx3)">$ </span>${f.cmd ? f.cmd.tokens.map(tokenSpan) : html`<span style="color: var(--tx3)">…</span>`}</div></div>
 </section>`;
-}
-
-function planCard(S) {
-  const sorted = allChosen(S).slice().sort((a, b) => b.steps - a.steps);
-  const { lanes, longest, idle } = plan(S, sorted);
-  return html`<section class="card" style="padding: 22px">
-<div style="display: flex; align-items: center; gap: 12px"><h2 class="ttl" style="font-size: 17px">Execution plan</h2><span class="chip mono" style="margin-left: auto">longest first</span></div>
-<p style="color: var(--tx2); font-size: 12.5px; margin-top: 8px">Tests run in parallel across workers, never within one test. ${S.nr.books.length > 1 ? 'The workers are shared by all the workbooks: a free worker goes to the workbook with the fewest tests going, and takes its longest waiting test.' : 'A free worker takes the longest waiting test.'}</p>
-<div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px">
-${lanes.map((lane) => html`<div style="display: flex; align-items: center; gap: 10px" data-key="${lane.name}"><div class="mono" style="width: 26px; font-size: 11.5px; color: var(--tx3)">${lane.name}</div>
-<div style="flex: 1; display: flex; gap: 4px; height: 36px; min-width: 0">
-${lane.items.map((it) => html`<div style="flex: ${it.steps} 1 0; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 9px; border-radius: 8px; background: var(--acc-soft); border: 1px solid var(--acc-line); font: 500 11px var(--f-mono); overflow: hidden; white-space: nowrap"><span style="overflow: hidden; text-overflow: ellipsis">${it.id}</span><span style="color: var(--tx3)">${it.steps}</span></div>`)}
-<div style="flex: ${lane.pad} 1 0"></div></div></div>`)}</div>
-<div style="display: flex; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--tx2); flex-wrap: wrap">
-<span class="tag">${idle > 0 ? `${idle} idle worker${idle === 1 ? '' : 's'}` : `all ${S.nr.workers} workers busy`}</span><span class="tag">longest lane ${num(longest)} steps</span></div></section>`;
 }
 
 function checkCard(S) {
@@ -591,6 +705,6 @@ export function newRunView(S) {
 <p style="color: var(--tx2); font-size: 15.5px; max-width: 640px; margin: 0">Pick one or more workbooks, choose the tests, launch. Each workbook is a run of its own, and they share the workers. Everything runs headless in the background at lowered priority, so your keyboard, mouse and focus stay yours.</p></div>
 ${formBanner(S)}
 <div class="split">
-<div class="col">${workbookCard(S)}${f.books.map((name, i) => html`${testsCard(S, name, i)}${orderCard(S, name, i)}`)}${settingsCard(S)}</div>
-<div class="col">${launchCard(S)}${planCard(S)}${checkCard(S)}${preflightCard(S)}</div></div></div>`;
+<div class="col">${workbookCard(S)}${testsSection(S)}${runPlanSection(S)}${settingsCard(S)}</div>
+<div class="col">${launchCard(S)}${checkCard(S)}${preflightCard(S)}</div></div></div>`;
 }

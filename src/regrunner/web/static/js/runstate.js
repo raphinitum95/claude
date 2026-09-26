@@ -275,3 +275,53 @@ export function finalVars(list) {
 export function varsOfRun(run) {
   return run.order.flatMap((id) => finalVars(run.tests[id].vars).map((v) => ({ test: id, ...v })));
 }
+
+// ---- batches: several runs (one per workbook) shown as one live view --------------------------------------------------------
+// A small fixed palette so a workbook reads as the same colour everywhere it appears (the New run screen's Timeline plan,
+// the live batch view's worker cards and progress rows): picked for contrast in both themes, never computed from the name
+// (two workbooks whose names hash alike would otherwise share a colour).
+const WB_PALETTE = ['#5CC8FF', '#B58AFF', '#43D69B', '#F4B84A', '#FF7062', '#5CE1E6', '#FF9F5C', '#8AD1FF'];
+export const wbColor = (name, allNames) => WB_PALETTE[Math.max(0, allNames.indexOf(name)) % WB_PALETTE.length];
+
+// A batch is only a label (dev/plan/CONTRACT.md): each workbook is still its own run, tracked by the reducer above exactly as
+// when it is viewed alone.  What follows only combines already-derived run states; it never touches ``apply``.
+// An "entry" is ``{ id: runId, workbook: shortName, color, run: runState, meta }`` (built by views/live.js / actions.js).
+
+/** Whether an entry's run is still going (the same rule ``liveView`` uses for one run). */
+export const entryActive = (e) => e.run.status === 'RUNNING' && !(e.meta && e.meta.active === false);
+
+/** Every running test across every run of the batch, tagged with its entry (so the workbook and its colour are known), sorted by worker.
+ *  Workers are shared by the whole batch (one subprocess, one pool: engine/pool.py), so worker numbers never collide between entries. */
+export function batchLanes(entries) {
+  return entries.flatMap((e) => lanes(e.run).map((t) => ({ ...t, entry: e })))
+    .sort((a, b) => (a.worker ?? 99) - (b.worker ?? 99));
+}
+
+/** One row per run: its own counts and elapsed/remaining time, for a per-workbook progress row. */
+export function batchRows(entries, nowMs) {
+  return entries.map((e) => {
+    const active = entryActive(e);
+    return { entry: e, active, counts: counts(e.run), ...timing(e.run, nowMs, active) };
+  });
+}
+
+/** Totals over every run of the batch, for the header line ("19 tests across 3 workbooks · 58%"). */
+export function batchTotals(entries) {
+  const rows = entries.map((e) => counts(e.run));
+  const sum = (k) => rows.reduce((a, c) => a + c[k], 0);
+  return { done: sum('done'), total: sum('total'), failedSteps: sum('failedSteps'), running: sum('running'), pending: sum('pending'),
+    passedTests: sum('passedTests'), failedTests: sum('failedTests') + sum('otherTests'), notRunTests: sum('notRunTests') };
+}
+
+/** Every test of the batch that finished without simply passing, newest first: the "Failed so far" list (opens before the batch ends). */
+export function batchFailedSoFar(entries) {
+  const out = [];
+  for (const e of entries) {
+    for (const id of e.run.order) {
+      const t = e.run.tests[id];
+      if (t.status === 'QUEUED' || t.status === 'RUNNING' || t.status === 'PASSED') continue;
+      out.push({ entry: e, test: t, last: t.fails[t.fails.length - 1] || null, endedMs: t.endedMs || 0 });
+    }
+  }
+  return out.sort((a, b) => b.endedMs - a.endedMs);
+}

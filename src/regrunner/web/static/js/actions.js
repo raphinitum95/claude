@@ -2,7 +2,7 @@
 // (wired by data-act / data-change / data-input attributes in the views).
 import { S, rerender, freshForm, freshBook } from './state.js';
 import { api, upload, openSocket, ApiError } from './api.js';
-import { newRun, applyAll } from './runstate.js';
+import { newRun, applyAll, wbColor } from './runstate.js';
 import { buildRequest, chosenTests, formTests, hasProd, allChosen, booksReady, checkName, poolState } from './views/newrun.js';
 import { toast, copyText, debounce } from './util.js';
 import { filterWorkbooks, PAGE, MORE } from './wbfilter.js';
@@ -75,6 +75,7 @@ export async function selectWorkbook(name, { quiet = false } = {}) {
     loadAudit(name);
     refreshCommand();
     refreshOrder(name);
+    refreshDurations();
   } catch (e) {
     if (f.bk[name] !== b) return;
     b.load = 'error'; b.info = null;
@@ -93,6 +94,19 @@ export function deselectWorkbook(name) {
   remember();
   touched();
 }
+
+/** Each chosen workbook's most recent finished run, so the Run plan's Timeline view can size tests by how long they actually
+ *  took instead of guessing from step counts.  A workbook nobody has run yet is simply left out by the server. */
+export const refreshDurations = debounce(async () => {
+  const f = S.nr;
+  const names = f.books.filter((n) => f.bk[n].load === 'ok');
+  if (!names.length) return;
+  try {
+    const data = await api('/api/batches/last-durations', { method: 'POST', body: { workbooks: names } });
+    f.durations = { ...f.durations, ...data };
+    rerender();
+  } catch (e) { /* the Timeline view falls back to step counts */ }
+}, 150);
 
 async function loadAudit(name) {
   const f = S.nr;
@@ -194,9 +208,12 @@ export async function launch(confirmed = false) {
     const req = buildRequest(S, hasProd(S) ? { allow_prod: true, confirm_prod: 'PROD' } : {});
     const res = await api('/api/runs', { method: 'POST', body: req });
     S.modal = null; f.starting = false;
+    const joining = f.joinBatch;
+    f.joinBatch = null;
     await loadRuns();
-    location.hash = `#/run/${res.run_id}`;
-    if (res.runs && res.runs.length > 1) toast(`Started ${res.runs.length} runs on shared workers. The others are in the sidebar.`, 5000);
+    location.hash = res.batch_id ? `#/batch/${res.batch_id}` : `#/run/${res.run_id}`;
+    if (joining) toast(`Added to batch ${joining.id}.`, 4000);
+    else if (res.runs && res.runs.length > 1) toast(`Started ${res.runs.length} runs on shared workers as batch ${res.batch_id}.`, 5000);
     else if (res.joined) toast('Joined the workers of the run in progress.', 4000);
     if (res.refused && res.refused.length) toast(`Not started: ${res.refused.map((r) => `${r.workbook} (${r.reason})`).join('; ')}`, 9000);
   } catch (e) {
@@ -216,6 +233,7 @@ export function closeRun() {
   token += 1;
   clearTimeout(retryTimer);
   if (socket) { socket.onclose = null; try { socket.close(); } catch (e) { /* already closed */ } socket = null; }
+  closeBatch();
   S.view = null;
 }
 
@@ -224,7 +242,7 @@ const pickMode = (d) => (d.active ? 'live' : d.results && (d.meta.status !== 'IN
 export async function openRun(id) {
   closeRun();
   const my = token;
-  S.view = { id, loading: true, mode: null, run: newRun(id), results: null, meta: null, files: null, conn: 'idle', expanded: {},
+  S.view = { kind: 'run', id, loading: true, mode: null, run: newRun(id), results: null, meta: null, files: null, conn: 'idle', expanded: {},
              showAllFails: {}, showAllReview: false, buildingPdf: false, cancelAtMs: null, error: null, notFound: false, askText: {}, askBusy: {} };
   rerender();
   await refreshDetail(id, my);
@@ -274,6 +292,63 @@ function connect(id, my, attempt) {
       rerender();
     },
   });
+}
+
+// ---- viewing a batch (several runs, one per workbook, tracked and shown together) --------------------------------------
+// A batch is only a label (dev/plan/CONTRACT.md): each of its runs is tracked exactly as when it is viewed alone (its own
+// socket, its own ``runstate.js`` reducer); this only opens one such socket per run and keeps their states side by side.
+let batchSockets = [];
+let batchToken = 0;
+
+export function closeBatch() {
+  batchToken += 1;
+  for (const ws of batchSockets) { ws.onclose = null; try { ws.close(); } catch (e) { /* already closed */ } }
+  batchSockets = [];
+}
+
+function connectBatchEntry(entry, my) {
+  const fresh = newRun(entry.id);
+  const ws = openSocket(entry.id, {
+    onEvents: (events) => {
+      if (my !== batchToken) return;
+      applyAll(fresh, events);
+      entry.run = fresh;
+      if (events.some((e) => e.type === 'run_finished')) {
+        api(`/api/runs/${enc(entry.id)}`).then((d) => { if (my === batchToken) { entry.meta = d.meta; rerender(); } }).catch(() => {});
+      }
+      rerender();
+    },
+    onClose: () => { batchSockets = batchSockets.filter((s) => s !== ws); },
+  });
+  batchSockets.push(ws);
+}
+
+export async function openBatch(id) {
+  closeRun();
+  closeBatch();
+  const my = batchToken;
+  S.view = { kind: 'batch', id, loading: true, batch: null, entries: [], error: null, notFound: false, filter: null };
+  rerender();
+  let detail;
+  try { detail = await api(`/api/batches/${enc(id)}`); } catch (e) {
+    if (my !== batchToken) return;
+    Object.assign(S.view, { loading: false, error: e, notFound: e.status === 404 });
+    rerender();
+    return;
+  }
+  if (my !== batchToken) return;
+  const names = detail.workbooks;
+  const metas = await Promise.all(detail.runs.map((m) => api(`/api/runs/${enc(m.run_id)}`).then((d) => d.meta).catch(() => m)));
+  if (my !== batchToken) return;
+  const entries = detail.runs.map((m, i) => {
+    const meta = metas[i] || m;
+    const workbook = String(meta.workbook || '').split(/[\\/]/).pop();
+    return { id: m.run_id, workbook, color: wbColor(workbook, names), run: newRun(m.run_id), meta };
+  });
+  Object.assign(S.view, { batch: detail, entries, loading: false });
+  rerender();
+  for (const entry of entries) connectBatchEntry(entry, my);
+  loadRuns().then(rerender).catch(() => {});
 }
 
 async function rerunFailed() {
@@ -385,6 +460,23 @@ export const acts = {
   theme() { window.rrTheme.toggle(); rerender(); },
   'new-run'() { if (location.hash !== '#/' && location.hash !== '') location.hash = '#/'; else rerender(); },
   'open-run'(el) { location.hash = `#/run/${el.dataset.id}`; },
+  'open-batch'(el) { location.hash = `#/batch/${el.dataset.id}`; },
+  'add-to-batch'(el) { S.nr.joinBatch = { id: el.dataset.id }; location.hash = '#/'; },
+  'batch-filter'(el) {                                      // a workbook row in the live batch view: click again to clear
+    const v = S.view;
+    if (!v || v.kind !== 'batch') return;
+    const wb = el.dataset.wb || '';
+    v.filter = wb && v.filter !== wb ? wb : null;
+    rerender();
+  },
+  async 'cancel-batch'(el) {
+    const v = S.view;
+    if (!v || v.kind !== 'batch') return;
+    const ids = (v.entries || []).filter((e) => e.run.status === 'RUNNING').map((e) => e.id);
+    await Promise.all(ids.map((id) => api(`/api/runs/${enc(id)}/cancel`, { method: 'POST' }).catch((e) => toast(e.message, 5000))));
+    toast('Cancelling: running tests finish their current step.');
+    loadRuns().then(rerender);
+  },
   async 'refresh-runs'() { await loadRuns(); rerender(); toast('Runs refreshed', 1400); },
   'goto-preflight'() {
     S.scrollTo = 'preflight';
@@ -477,7 +569,13 @@ export const acts = {
     } catch (e) { toast(e.message, 6000); }
     rerender();
   },
-  'sel-tag'(el) { const n = el.dataset.wb; only(n, formTests(S, n).filter((t) => (t.tags || []).includes(el.dataset.tag)).map((t) => t.id)); },
+  'sel-tag'(el) {                                           // a tag chip in the merged Tests list: picks that tag's tests in every chosen workbook, not just one
+    const tag = el.dataset.tag;
+    for (const n of S.nr.books) only(n, formTests(S, n).filter((t) => (t.tags || []).includes(tag)).map((t) => t.id));
+  },
+  'toggle-fold'(el) { const b = S.nr.bk[el.dataset.wb]; if (b) { b.open = !(b.open !== false); rerender(); } },
+  'plan-view'(el) { S.nr.planView = el.dataset.val; rerender(); },
+  'leave-batch'() { S.nr.joinBatch = null; touched(); },
   set(el) {
     const f = S.nr;
     const { field: key, val } = el.dataset;
