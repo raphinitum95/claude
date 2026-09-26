@@ -415,7 +415,7 @@ def _last_results(runs_dir: Path | None, workbook_name: str) -> tuple[dict[tuple
     seen = 0
     for _, f in files:
         data = _read_results(f)
-        if not data or Path(str(data.get("workbook", ""))).name.lower() != workbook_name.lower():
+        if not data or re.split(r"[\\/]", str(data.get("workbook", "")))[-1].lower() != workbook_name.lower():   # runs copied from Windows keep C:\... paths
             continue
         seen += 1
         run_id, when = str(data.get("run_id", f.parent.name)), str(data.get("started_at", ""))
@@ -992,11 +992,6 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return text_of(value)
-
-
-def _camel(name: str) -> str:
-    head, *rest = name.split("_")
-    return head + "".join(p.title() for p in rest)
 
 
 # ---------------------------------------------------------------------------------------------

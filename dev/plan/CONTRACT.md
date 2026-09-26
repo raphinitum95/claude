@@ -31,9 +31,10 @@ Existing columns keep their legacy meaning. How the builder maps them is in 2.3 
 |---|---|---|
 | `TOKEN` (the whole cell equals a `Params` header, any case) | any column except the result columns | **Legacy, unchanged**: replaced by the test's Params value (`workbook/model.py`) |
 | `{TOKEN}` inside text | `Value`, `FindBy_Value`, `Expected_Value`, `Locator`, `Page`, `BACKUP_LOCATORS`, IF conditions | **New (P03)**: replaced inline. Lookup order: the test's Params row → the run's shared variable pool (values other tests set, Q21) → the environment table for the run's environment (1.4). Unknown = the step fails with "variable X has no value" (never types the token) |
-| `{SECRET:NAME}` | same | **New (P03)**: value from `secrets.env` key `RR_SECRET_<ENV>_<NAME>`, falling back to `RR_SECRET_<NAME>`. Never written to the workbook, events, logs, results or reports (masked `••••••`) |
+| `{SECRET:NAME}` | same | **New (P03)**: value from `secrets.env` key `RR_SECRET_<ENV>_<NAME>`, falling back to `RR_SECRET_<NAME>`, then the existing `RR_VAR_<NAME>`. Never written to the workbook, events, logs, results or reports (masked `••••••`) |
 | `{?NAME}` | anywhere | A template placeholder that was not mapped when the template was inserted (P11). Always a problem (`unmapped_template_variable`); the engine fails the step |
 
+In a `SENDKEYS`-type step's `Value`, `{TAB}`, `{ENTER}`, `{DOWN}`... (the key names of `engine/keys.py`) stay keys, never variables.
 Token names: `[A-Za-z_][A-Za-z0-9_]*`, compared case-insensitively. New variables the builder creates are UPPER_SNAKE (`FIRST_NAME`).
 `builder.TOKEN_RE`, `INLINE_RE`, `SECRET_RE`, `UNMAPPED_RE` are the regexes.
 
@@ -140,6 +141,7 @@ number within the test (section rows and empty rows are not steps). Rows are the
   dataRows: [ { row: 2, enabled: true, label: "NE · Basic" } ],   // Params rows (web) or data rows (api); label from Notes/Scenario/TC_Name
   buildingWith: 2 | null,        // first enabled data row: the default for "Building with" (Q24)
   blocks: [Block], steps: [Step],
+  sections: [ { row: 20, title: "Trip Details" } ],               // section rows (no Method, text in column A): not steps
   needs: ["POLICY_NO"], provides: ["QUOTE_ID"],                  // UPPER tokens (Q21), see 2.5
   calls: ["policySearch"],                                        // tests it CALL_TESTs
   columns: ["blnExecute", ...],                                   // row-1 headers as written, for the grid view

@@ -188,10 +188,10 @@ def test_the_last_run_marks_steps_and_a_locator_miss_is_a_passive_warning(tmp_pa
     path = small(tmp_path, lambda s: (s.add("Click", "Next", FindBy="xpath", FindBy_Value="//button[@id='next']"),
                                        s.add("Click", "Ok", FindBy="xpath", FindBy_Value="//button[@id='ok']")))
     runs = tmp_path / "runs"
-    for run_id, status in (("20260101-old", "PASSED"), ("20260102-new", "FAILED")):
+    for run_id, status in (("20260101-old", "PASSED"), ("20260102-new", "FAILED")):          # the newer run was copied from Windows
         (runs / run_id).mkdir(parents=True)
         (runs / run_id / "results.json").write_text(json.dumps({
-            "run_id": run_id, "workbook": str(path), "started_at": run_id, "tests": [{"id": "Buy", "sheet": "Buy", "status": status, "steps": [
+            "run_id": run_id, "workbook": ("C:\\QA\\workbooks\\" + path.name) if run_id.endswith("new") else str(path), "started_at": run_id, "tests": [{"id": "Buy", "sheet": "Buy", "status": status, "steps": [
                 {"row": 2, "status": status, "error": "" if status == "PASSED" else "Object was not found"},
                 {"row": 3, "status": "PASSED", "error": ""}]}]}))
         time.sleep(0.01)
