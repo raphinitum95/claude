@@ -35,6 +35,8 @@ Existing columns keep their legacy meaning. How the builder maps them is in 2.3 
 | `{?NAME}` | anywhere | A template placeholder that was not mapped when the template was inserted (P11). Always a problem (`unmapped_template_variable`); the engine fails the step |
 
 In a `SENDKEYS`-type step's `Value`, `{TAB}`, `{ENTER}`, `{DOWN}`... (the key names of `engine/keys.py`) stay keys, never variables.
+A key name with no value elsewhere is the one exception to "unknown = the step fails": it stays as written instead, so older sheets that used
+`{TAB}` outside a SendKeys step keep working.
 Token names: `[A-Za-z_][A-Za-z0-9_]*`, compared case-insensitively. New variables the builder creates are UPPER_SNAKE (`FIRST_NAME`).
 `builder.TOKEN_RE`, `INLINE_RE`, `SECRET_RE`, `UNMAPPED_RE` are the regexes.
 
@@ -54,6 +56,7 @@ as unknown (lint says so); the builder can already create it.
 | `ITERATION_START` | `Value` = Params sheet name (blank = the test's own) | Repeat the steps up to `ITERATION_END` once per enabled row of that sheet; inside, `{TOKEN}` reads that row | P03 |
 | `ITERATION_END` | none | End of the loop | P03 |
 | `CALL_TEST` | `Value` = test id (`Sheet` or `Sheet#n`) | Run that test to completion (own browser context; none for API), then continue. Its variables land in the shared pool. A failed called test fails this step | P03 |
+| `JSON_READ` | `Value` = the JSON (usually `{RESPONSE}`), `FindBy_Value` = the path (`policy.number`, `items[0].id`, `/` also works as a separator), `Output_Value` = where to save it, `Expected_Value` with Exact_Match/Contains = the check | Read one value out of a JSON text. A path that does not exist fails the step | P03 |
 | `ASSERT_PAGE` | `Value` = fingerprint name (1.4) | Page-arrival gate: URL part AND landmark must hold within the step timeout. **Failure is always a hard stop**, whatever `Ignore_not_existing_object` says | P07 |
 | `WAIT_UNTIL` | element; `Output_Property` = `SHOWN` / `GONE` / `TEXT`; `Expected_Value` for `TEXT` (Exact_Match/Contains as usual); `Timeout` = limit | Wait on evidence, never a fixed time | P07 |
 | `DISMISS_IF_SHOWN` | element = the close button | Click it if it shows within the timeout; **always logged** "appeared" / "did not appear"; never fails because it did not appear | P07 |
