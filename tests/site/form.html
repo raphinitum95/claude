@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>form</title>
+<style>.opt{display:block} #suggest{border:1px solid #ccc}</style></head>
+<body>
+<label><input type="radio" name="tripType" value="Comprehensive Coverage"> Comprehensive Coverage</label>
+<label><input type="radio" name="tripType" value="Rental Car Coverage"> Rental Car Coverage</label><br>
+<input id="cmp-Input" class="inputField" placeholder="Select a country or region" autocomplete="off">
+<div id="suggest"></div>
+<input name="tripDepartureDate" placeholder="dep"> <input name="tripReturnDate" placeholder="ret"><br>
+<div id="ages"><input name="insuredAge" placeholder="age"></div>
+<button type="button" id="add-container-button__1" onclick="addAge()">Add</button><br>
+<input name="display_tripCost"><br>
+<select name="aoad-options"><option>None</option><option>AOAD1</option><option>AOAD2</option><option>AOAD3 - $30,000</option></select><br>
+<label>agree <input type="checkbox" value="I agree"></label><br>
+<button type="SUBMIT" id="go" onclick="go()">Get Quote</button>
+<div id="result" style="display:none">
+  <span class="handlebar-recursive-replacement productName">Travel Med Go</span>
+  <span class="handlebar-recursive-replacement tripDepartureDate"></span>
+  <span class="handlebar-recursive-replacement totalBaseRate-2--,">$123.45</span>
+</div>
+<script>
+  const ctry = ['Singapore', 'Sweden', 'Switzerland'];
+  document.getElementById('cmp-Input').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    setTimeout(() => {                              // suggestions arrive late, like a real typeahead
+      document.getElementById('suggest').innerHTML = q
+        ? ctry.filter(c => c.toLowerCase().startsWith(q)).map(c => '<a href="#" class="opt">' + c + '</a>').join('') : '';
+    }, 250);
+  });
+  document.getElementById('suggest').addEventListener('click', e => {
+    if (e.target.tagName === 'A') { e.preventDefault(); document.getElementById('cmp-Input').value = e.target.textContent; e.target.parentNode.innerHTML = ''; }
+  });
+  function addAge() { const i = document.createElement('input'); i.name = 'insuredAge'; i.placeholder = 'age'; document.getElementById('ages').appendChild(i); }
+  function go() {
+    document.getElementById('result').style.display = 'block';
+    document.querySelector('.tripDepartureDate').textContent = document.querySelector('[name=tripDepartureDate]').value;
+    setTimeout(() => { document.querySelector('[class*=totalBaseRate]').textContent = '$150.00'; }, 300);   // late recalculation (inside the settle window)
+  }
+</script></body></html>

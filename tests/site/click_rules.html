@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>What a person can click</title>
+<style>
+  .cover { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(255,255,255,.01); z-index: 5 }
+</style></head>
+<body>
+<h1>Clicks</h1>
+<div id="log"></div>
+<button id="shown" onclick="log('shown')">Visible</button>
+<button id="covered" onclick="log('covered')">Covered by an overlay</button>
+<div class="cover"></div>
+<button id="gone" style="display: none" onclick="log('gone')">display:none</button>
+<button id="invisible" style="visibility: hidden" onclick="log('invisible')">visibility:hidden</button>
+<div style="display: none"><button id="nested" onclick="log('nested')">inside a hidden parent</button></div>
+<button id="zero" style="width: 0; height: 0; padding: 0; border: 0; overflow: hidden" onclick="log('zero')"></button>
+<button id="late" style="display: none" onclick="log('late')">Appears after a moment</button>
+<!-- a styled radio button: the native input is hidden, its label is what a person sees and clicks -->
+<input type="radio" id="r1" name="yn" value="Yes" style="position: absolute; opacity: 0; width: 0; height: 0" onclick="log('radio-yes')"><label for="r1" id="l1">Yes</label>
+<!-- ...and one whose label is hidden as well: nothing a person could click -->
+<input type="radio" id="r2" name="yn" value="No" style="display: none" onclick="log('radio-no')"><label for="r2" style="display: none">No</label>
+<script>
+  function log(what) { document.getElementById('log').textContent += what + ';'; }
+  setTimeout(function () { document.getElementById('late').style.display = ''; }, 700);
+</script>
+</body></html>

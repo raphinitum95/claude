@@ -1,0 +1,27 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Zip error cleared only by a click</title></head>
+<body>
+<div class="text cmp-form-text" id="box">
+  <input name="postalCode" id="zip" value="12345">
+  <div class="customErr" id="err">Please enter a ZIP code that matches the State you selected.</div>
+</div>
+<input name="phone" id="phone">
+<div id="picker" style="position:absolute;top:120px;left:20px;background:#eee">calendar</div>
+<button type="submit" id="go">Submit</button>
+<script>
+// Rule 1 (the site's text-validation.js): the ONLY thing that removes a text field's error is a click on that field.
+document.addEventListener('click', (e) => {
+  if (e.target.matches && e.target.matches('.text input')) { const err = e.target.closest('.cmp-form-text').querySelector('.customErr'); if (err) err.remove(); }
+});
+// The date picker (jQuery UI) closes on a mousedown outside it.
+document.addEventListener('mousedown', (e) => { if (!e.target.closest('#picker')) picker.remove(); });
+// Rule 2 (zip-code-validation.js): on blur, validate - unless an error is already showing, or the field is empty.
+window.validations = 0;
+zip.addEventListener('blur', () => {
+  if (box.querySelector('.customErr') || !zip.value.trim()) return;
+  window.validations++;
+  fetch('/bin/slow?ms=400').then(() => { if (zip.value !== '68102') { const d = document.createElement('div'); d.className = 'customErr'; d.textContent = 'invalid'; box.appendChild(d); } });
+});
+go.addEventListener('click', () => { if (!document.querySelector('.customErr')) window.submitted = true; });
+</script>
+</body></html>

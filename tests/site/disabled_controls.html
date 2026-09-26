@@ -1,0 +1,10 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Controls that only say aria-disabled</title></head>
+<body>
+<div aria-disabled="true"><label><input type="radio" id="r" name="t" value="Single Trip" onchange="document.getElementById('radio').textContent = 'radio checked'"> Single Trip</label></div>
+<button id="self" aria-disabled="true" onclick="document.getElementById('out').textContent = 'clicked'">Go</button>
+<a id="ctx" href="#" aria-disabled="true" oncontextmenu="document.getElementById('out').textContent = 'context menu'; return false">Right</a>
+<span id="radio">radio not checked</span> <span id="out">not clicked</span>
+</body>
+</html>

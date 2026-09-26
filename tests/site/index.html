@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Mock AEM home</title></head>
+<body>
+<div id="banner"><button id="onetrust-accept-btn-handler" onclick="document.getElementById('banner').remove()">Accept All Cookies</button></div>
+<h1 id="title">Mock quote page</h1>
+<span id="bypass">bypass:none</span>
+<p id="nb">Hello&nbsp;World </p>
+<span id="hidden-span" style="display:none">secret</span>
+<a id="open-win" href="/second.html" target="_blank">Open second window</a>
+<button id="arm" onclick="setTimeout(() => { document.getElementById('disabled-btn').disabled = false; }, 1000)">Arm</button>
+<button id="disabled-btn" disabled onclick="document.getElementById('dis-state').textContent='clicked'">Later</button>
+<span id="dis-state">idle</span>
+<iframe id="aemFormFrame" name="aemFormFrame" src="/form.html" width="900" height="600"></iframe>
+<iframe id="payframe" name="payframe" src="/pay.html" width="400" height="120"></iframe>
+<script>
+  console.error('deliberate console error');
+  setTimeout(() => { throw new Error('deliberate page error'); }, 50);
+  fetch('/api/slow').then(r => r.json()).then(() => { const b = document.createElement('div'); b.id = 'late-banner'; b.textContent = 'late consent'; document.body.append(b); });
+  fetch('/missing.json').catch(() => {});
+  fetch('/api/whoami').then(r => r.json()).then(j => {
+    document.getElementById('bypass').textContent = 'bypass:' + (j.bypass || 'none');
+  });
+</script>
+</body></html>

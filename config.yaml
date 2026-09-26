@@ -1,0 +1,125 @@
+# regrunner configuration. Secrets do NOT go here - use secrets.env (git-ignored) and ${ENV_VAR} references.
+
+runner:
+  workers: 3            # tests running at the same time (each in its own isolated browser context)
+  max_workers: 8        # hard ceiling (protects a personal machine)
+  low_priority: true    # lower OS priority of the runner and the browsers it starts
+  headless: true        # headless = never takes focus/keyboard/mouse from you
+  test_timeout_s: 1800
+  step_hard_cap_s: 180
+  stop_after_failed_steps: 5  # a test stops after this many steps in a row that could not find/use their element (0 = never); Wait/Switch/keys do not count
+  # Being polite to a site behind a WAF (HTTP 403 / 429 = "the WAF is blocking us", not "the app said no"). Defaults shown:
+  # stagger_s: 4              # workers start this far apart
+  # min_page_load_gap_s: 1    # at least this long between the start of two page loads, across all tests
+  # block_cooldown_s: 60      # after a block: no page loads for this long, and one worker fewer for the rest of the run
+  # block_retries: 2          # a blocked test is run again (after the cool-down) this many times
+
+browser:
+  viewport_width: 1920
+  viewport_height: 1080
+  locale: en-US
+  ignore_https_errors: false
+  # name: chrome        # the browser runs use unless the UI's Browser setting / --browser says otherwise:
+                        #   chrome | msedge (Edge) | safari (Playwright's WebKit: Safari's engine, not the Safari app) | chromium (the download; the default)
+                        # Left out (as now): the downloaded Chromium if there is one, else the Chrome / Edge installed here - so a computer that cannot
+                        # download Chromium needs no edit. Name a browser only to pin it; a named browser is never swapped for another.
+                        # Safari needs a one-off download:  .venv/bin/python -m playwright install webkit
+
+timeouts:
+  element_s: 10         # find + act on an element
+  optional_s: 3         # rows with Ignore_not_existing_object = Y
+  optional_repeat_s: 0.5
+  optional_mode: quiet  # optional element = absent once the page is quiet (no requests/DOM changes); 'full' always waits optional_s
+  navigation_s: 60
+  poll_ms: 100
+
+waits:
+  mode: smart           # smart: return as soon as the page is quiet | legacy: real sleeps | off
+  quiet_ms: 500
+  window_grace_s: 3
+
+output:
+  match_timeout_s: 8    # Output with Exact_Match retries this long for the expected text
+  stable_ms: 250        # capture-only Output waits for the text to stop changing
+  legacy_text: true     # Selenium-compatible text (hidden -> "", NBSP -> space, trimmed)
+
+screenshots:
+  mode: every_step      # every_step | on_failure | off
+  quality: 60
+
+failure_capture:        # what a failed step leaves behind so the run says why (a click that timed out, an element that was not there)
+  enabled: true         # the browser's full error, what covers the element, matches per frame, frame state -> results.json + report
+  dom_snapshot: true    # also save the page's / frame's HTML in tests/<test>/dom/ (first dom_max_per_test failures of a test)
+  dom_max_kb: 1024
+  dom_max_per_test: 3
+  full_page_screenshot: true   # a failed step also saves a screenshot of the WHOLE page (the normal one only shows the window)
+  full_page_max_per_test: 10
+
+selectors:
+  map: selectors.yaml   # generic locators that replace XPaths (see: regrunner selectors migrate)
+  legacy_fallback: true # keep the workbook's XPath as the last resort
+  harvest: false        # true = record stable locators from the live DOM while running
+
+# The captcha bypass cookie. Values come from secrets.env (RECAPTCHA_BYPASS_TOKEN_QA / _UAT / _PROD).
+captcha_bypass:
+  cookie_name: recaptchaBypassToken
+  values:
+    QA: ${RECAPTCHA_BYPASS_TOKEN_QA}
+    UAT: ${RECAPTCHA_BYPASS_TOKEN_UAT}
+    PROD: ${RECAPTCHA_BYPASS_TOKEN_PROD}
+  extra_domains: []     # add e.g. ".other-domain.net" if an iframe host is on a different registrable domain
+
+auth:
+  storage_state: .auth/state.json   # created by: regrunner auth login --url <UAT url>
+
+review:
+  ignore_url_patterns: []           # regexes for URLs to leave out of "things to review"
+  ignore_message_patterns: []
+  max_items_per_test: 500
+
+reports:
+  html: true
+  pdf: false
+  screenshots: all      # all | failures | none  (embedded in the self-contained report)
+
+# A second, shared copy of every finished run, for the team: report.html + summary.txt (pass/fail) in <dir>/<run id>/.
+# The run itself stays in runs/ and the UI keeps reading it there. Remove the leading "#"s to turn it on.
+# publish:
+#   dir: /Volumes/QA-Share/regression-runs        # Mac. Windows: '\\server\share\regression-runs' (single quotes). ${QA_SHARE} works too
+#   screenshots: failures                         # in the shared report: failures (only failed steps, small) | all (large) | none
+#   timeout_s: 60                                 # a slow or offline share can delay the end of a run by this long, never fail it
+
+# API tests (a sheet with a WEBSERVICE_URL column plus the InputOutput sheet). All optional.
+# api:
+#   timeout_s: 60
+#   templates_dir: ""            # request templates (JSON bodies) are read from the workbook's own XML_LOCATION (the L: drive) first; if the file is not
+#                                # there, from this folder, then from RR_API_TEMPLATES_DIR in secrets.env, then from beside the workbook
+#   ignore_https_errors: false   # default: follow browser.ignore_https_errors. Set true only if a re-signing proxy (Zscaler) breaks API calls
+#   proxy: ""                    # e.g. http://proxy.example:8080
+
+# ASK_USER steps (the run stops and asks a person): how long a question waits before its step fails.
+# ask:
+#   timeout_s: 300
+
+# A captcha challenge on the page needs a person. After every step the runner looks for one; the test stops there (nothing behind a captcha is a result).
+# When someone can answer (a run started from the web UI or a terminal) it is then run again in a visible browser window and carries on once the captcha is solved.
+# captcha:
+#   detect: true          # false = carry on behind a captcha like before
+#   solve: ask            # ask = open the window | fail = just end the test
+#   timeout_s: 300        # how long the window waits for it to be solved
+
+# Tests that run one after another (each waits for the one before it). The web UI's Run order card saves the same thing beside the workbook; `regrunner run --chain A,B,C` does it for one run.
+# chains:
+#   qantas-test.xlsx:                # the workbook's file name, or * for any
+#     - [Purchase#1, ViewPolicy#1, Cancellation#1]
+#     - [Purchase#2, ViewPolicy#2, Cancellation#2]
+
+behaviour:
+  unknown_action: warn  # warn = existence check like the legacy runner | fail
+  click_ignores_aria_disabled: true  # a link inside aria-disabled="true" is clicked like the legacy runner did (false = Playwright's wait-for-enabled)
+  dialogs: dismiss
+  retries: 0
+
+# The workbook has no tags; group tests here and run them with:  regrunner run wb.xlsx --tag smoke
+tags:
+  smoke: [CW]

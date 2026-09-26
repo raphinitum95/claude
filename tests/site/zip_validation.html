@@ -1,0 +1,17 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Zip validated on blur</title></head>
+<body>
+<input name="postalCode" id="zip" value="12345">
+<input name="next" id="next">
+<div class="customErr" id="err">Please enter a valid zip code</div>
+<button type="submit" id="go">Submit</button>
+<script>
+// Like the real form: leaving the zip field asks the server (~0.8 s here) and only then does the error go away.
+// Submit does nothing while the error is showing.
+const q = new URLSearchParams(location.search);
+if (q.get('background')) fetch(q.get('background'));      // a call that is already in flight (and stays that way) before anything is typed
+const target = q.get('url') || q.get('path') || ('/bin/slow?ms=' + (q.get('ms') || 800));
+zip.addEventListener('blur', () => { if (q.get('nocall')) return; fetch(target, q.get('url') ? {mode: 'no-cors'} : {}).then(() => { const e = document.getElementById('err'); if (e) e.remove(); }); });
+go.addEventListener('click', () => { if (!document.getElementById('err')) window.submitted = true; });
+</script>
+</body></html>

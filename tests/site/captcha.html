@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>My Policy</title></head>
+<body>
+<h1>My Policy</h1>
+<input id="policy" name="policy" type="text" aria-label="Policy number">
+<button id="login" type="button">Login</button>
+<div id="welcome" style="display: none">Welcome back</div>
+<!-- the reCAPTCHA badge is on screen all the time: it is not a captcha anybody has to solve -->
+<div style="position: fixed; bottom: 14px; right: 0; width: 256px; height: 60px"><iframe title="reCAPTCHA" src="/recaptcha/api2/anchor?ar=1" width="256" height="60" style="border: 0"></iframe></div>
+<!-- the challenge frame is always in the page and hidden until the captcha wants a person -->
+<div id="challenge" style="visibility: hidden; opacity: 0; position: absolute; left: 300px; top: -10000px">
+  <iframe title="recaptcha challenge expires in two minutes" src="/recaptcha/api2/bframe?hl=en" width="400" height="580" style="border: 0"></iframe>
+</div>
+<script>
+  // ?after=ms   the challenge pops up this long after Login (a spinner first, like the real site)
+  // ?person=ms  somebody solves it this long after it popped up
+  // ?bypass=1   the bypass cookie is honoured: no captcha at all
+  var q = new URLSearchParams(location.search), box = document.getElementById('challenge');
+  var HIDDEN = 'visibility: hidden; opacity: 0; position: absolute; left: 300px; top: -10000px';
+  function solved() { box.style.cssText = HIDDEN; document.getElementById('welcome').style.display = 'block'; }
+  window.addEventListener('message', function (e) { if (e.data === 'captcha-solved') solved(); });
+  document.getElementById('login').addEventListener('click', function () {
+    if (q.get('bypass') && document.cookie.indexOf('recaptchaBypassToken=') >= 0) { solved(); return; }
+    var later = Number(q.get('after') || 0);
+    var show = function () { box.style.cssText = 'visibility: visible; opacity: 1; position: absolute; left: 300px; top: 20px'; };
+    if (later) setTimeout(show, later); else show();
+    if (q.get('person')) setTimeout(solved, later + Number(q.get('person')));
+  });
+</script>
+</body></html>

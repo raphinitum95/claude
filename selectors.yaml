@@ -1,0 +1,374 @@
+# Generic locators that replace legacy XPaths at run time (workbooks are not modified).
+# key   = the legacy FindBy_Value (raw XPath) or 'kind:value' for other FindBy types
+# use   = generic locators tried first, in order; the legacy locator stays as a fallback
+# index = replaces the sheet's Index when the generic locator already isolates the element
+version: 1
+locators:
+  //a[@href='/add-ons']:
+    use:
+    - css=a[href="/add-ons"]
+    source: auto
+  //button[@class='cmp-accordion__button']:
+    use:
+    - css=button[class="cmp-accordion__button"]
+    source: auto
+  //button[@class='cmp-button']:
+    use:
+    - css=button[class="cmp-button"]
+    source: auto
+  //button[@id='RVD_addDates']:
+    use:
+    - css=button[id="RVD_addDates"]
+    source: auto
+  //button[@id='add-container-button__1']:
+    use:
+    - css=button[id="add-container-button__1"]
+    source: auto
+  //button[@id='my-trip-accordion-item-85f740dcaf-button']:
+    use:
+    - css=button[id="my-trip-accordion-item-85f740dcaf-button"]
+    source: auto
+  //button[@id='onetrust-accept-btn-handler']:
+    use:
+    - css=button[id="onetrust-accept-btn-handler"]
+    source: auto
+  //button[@name='selectPlan' and @value='805ZA-0224']:
+    use:
+    - css=button[name="selectPlan"][value="805ZA-0224"]
+    source: auto
+  //button[@name='selectPlan' and @value='913ZA-0824']:
+    use:
+    - css=button[name="selectPlan"][value="913ZA-0824"]
+    source: auto
+  //button[@name='selectPlan' and @value='914ZA-0824']:
+    use:
+    - css=button[name="selectPlan"][value="914ZA-0824"]
+    source: auto
+  //button[@name='selectPlan' and @value='MPDZ-0925']:
+    use:
+    - css=button[name="selectPlan"][value="MPDZ-0925"]
+    source: auto
+  //button[@name='selectPlan' and @value='MPEZ-0925']:
+    use:
+    - css=button[name="selectPlan"][value="MPEZ-0925"]
+    source: auto
+  //button[@name='selectPlan' and @value='MRCDZ-0925']:
+    use:
+    - css=button[name="selectPlan"][value="MRCDZ-0925"]
+    source: auto
+  //button[@name='selectPlan' and @value='MRZ-0925']:
+    use:
+    - css=button[name="selectPlan"][value="MRZ-0925"]
+    source: auto
+  //button[@name='selectPlan' and @value='TMGZ-1224']:
+    use:
+    - css=button[name="selectPlan"][value="TMGZ-1224"]
+    source: auto
+  //div[@class='cmp-text']//span[contains(@class,'dayPhone')]:
+    use:
+    - css=div[class="cmp-text"] span[class*="dayPhone"]
+    source: auto
+  //div[@class='cmp-text']//span[contains(@class,'destinationCountry_multi_display')]:
+    use:
+    - css=div[class="cmp-text"] span[class*="destinationCountry_multi_display"]
+    source: auto
+  //div[@class='cmp-text']//span[contains(@class,'multiTravellerLoop-replication-index-iteration_1_input_dateOfBirth')]:
+    use:
+    - css=div[class="cmp-text"] span[class*="multiTravellerLoop-replication-index-iteration_1_input_dateOfBirth"]
+    source: auto
+  //div[@class='cmp-text']//span[contains(@class,'purchaseResponse.policy.travelers.[0].firstName')]:
+    use:
+    - css=div[class="cmp-text"] span[class*="purchaseResponse.policy.travelers.[0].firstName"]
+    source: auto
+  //div[@class='cmp-text']//span[contains(@class,'purchaseResponse.policy.travelers.[0].lastName')]:
+    use:
+    - css=div[class="cmp-text"] span[class*="purchaseResponse.policy.travelers.[0].lastName"]
+    source: auto
+  //div[@class='cmp-title']/h1:
+    use:
+    - css=div[class="cmp-title"] > h1
+    source: auto
+  ? //div[@class='container responsivegrid aem-building-blocks_867326380_styles aem-shortcut_4250708500337852_styles aem-shortcut_569673399970485_styles']
+  : use:
+    - css=div[class="container responsivegrid aem-building-blocks_867326380_styles aem-shortcut_4250708500337852_styles aem-shortcut_569673399970485_styles"]
+    source: auto
+  //div[@class='customErr']:
+    use:
+    - css=div[class="customErr"]
+    source: auto
+  //div[@id="text-187fb15107"]/p:
+    use:
+    - css=div[id="text-187fb15107"] > p
+    source: auto
+  //div[@id="text-31db911350"]/p:
+    use:
+    - css=div[id="text-31db911350"] > p
+    source: auto
+  //div[@id="text-31db911350"]/p/b/span:
+    use:
+    - css=div[id="text-31db911350"] > p > b > span
+    source: auto
+  //div[@id="text-ccb4f311fb"]//p:
+    use:
+    - css=div[id="text-ccb4f311fb"] p
+    source: auto
+  //div[@id="title-22fb927d63"]/h1:
+    use:
+    - css=div[id="title-22fb927d63"] > h1
+    source: auto
+  //div[@id='container-5e82dea01f']:
+    use:
+    - css=div[id="container-5e82dea01f"]
+    source: auto
+  //div[@id='container-622eee321c']//span[contains(@class,'productName')]:
+    use:
+    - css=div[id="container-622eee321c"] span[class*="productName"]
+    source: auto
+  //div[@id='container-99b0cf2aba']:
+    use:
+    - css=div[id="container-99b0cf2aba"]
+    source: auto
+  //div[@id='text-81c394aa71']//a:
+    use:
+    - css=div[id="text-81c394aa71"] a
+    source: auto
+  //div[@id='text-9dc474a7f7']//p:
+    use:
+    - css=div[id="text-9dc474a7f7"] p
+    source: auto
+  //div[@id='text-ce281b73f4']//p:
+    use:
+    - css=div[id="text-ce281b73f4"] p
+    source: auto
+  //div[@id='text-d710cc164e']//p:
+    use:
+    - css=div[id="text-d710cc164e"] p
+    source: auto
+  //div[@id='text-f6ddfce567']//p:
+    use:
+    - css=div[id="text-f6ddfce567"] p
+    source: auto
+  //div[@id='text-fa9c057110']//span[contains(@class,'purchaseResponse.policy.travelers.[0].firstName')]:
+    use:
+    - css=div[id="text-fa9c057110"] span[class*="purchaseResponse.policy.travelers.[0].firstName"]
+    source: auto
+  //div[@id='text-fa9c057110']//span[contains(@class,'purchaseResponse.policy.travelers.[0].lastName')]:
+    use:
+    - css=div[id="text-fa9c057110"] span[class*="purchaseResponse.policy.travelers.[0].lastName"]
+    source: auto
+  //div[@id='title-66463e0db5']/h2/span:
+    use:
+    - css=div[id="title-66463e0db5"] > h2 > span
+    source: auto
+  //input[@id='cmp-Input' and @placeholder='Select a country or region']:
+    use:
+    - css=input[id="cmp-Input"][placeholder="Select a country or region"]
+    source: auto
+  //input[@id='cmp-Input' and @placeholder='Select your state']:
+    use:
+    - css=input[id="cmp-Input"][placeholder="Select your state"]
+    source: auto
+  //input[@name='ADVS_addOn' and @value='Yes']:
+    use:
+    - css=input[name="ADVS_addOn"][value="Yes"]
+    source: auto
+  //input[@name='AOAD_addOn' and @value='Yes']:
+    use:
+    - css=input[name="AOAD_addOn"][value="Yes"]
+    source: auto
+  //input[@name='BL_addOn' and @value='Yes']:
+    use:
+    - css=input[name="BL_addOn"][value="Yes"]
+    source: auto
+  //input[@name='MU_addOn' and @value='Yes']:
+    use:
+    - css=input[name="MU_addOn"][value="Yes"]
+    source: auto
+  //input[@name='PCU_addOn' and @value='Yes']:
+    use:
+    - css=input[name="PCU_addOn"][value="Yes"]
+    source: auto
+  //input[@name='RVD_addOn' and @value='No']:
+    use:
+    - css=input[name="RVD_addOn"][value="No"]
+    source: auto
+  //input[@name='RVD_addOn' and @value='Yes']:
+    use:
+    - css=input[name="RVD_addOn"][value="Yes"]
+    source: auto
+  //input[@name='SDU_addOn' and @value='Yes']:
+    use:
+    - css=input[name="SDU_addOn"][value="Yes"]
+    source: auto
+  //input[@name='address1']:
+    use:
+    - css=input[name="address1"]
+    source: auto
+  //input[@name='cardName']:
+    use:
+    - css=input[name="cardName"]
+    source: auto
+  //input[@name='city']:
+    use:
+    - css=input[name="city"]
+    source: auto
+  //input[@name='dateOfBirth']:
+    use:
+    - css=input[name="dateOfBirth"]
+    source: auto
+  //input[@name='dayPhone']:
+    use:
+    - css=input[name="dayPhone"]
+    source: auto
+  //input[@name='display_tripCost']:
+    use:
+    - css=input[name="display_tripCost"]
+    source: auto
+  //input[@name='dropoffDate']:
+    use:
+    - css=input[name="dropoffDate"]
+    source: auto
+  //input[@name='email']:
+    use:
+    - css=input[name="email"]
+    source: auto
+  //input[@name='firstName']:
+    use:
+    - css=input[name="firstName"]
+    source: auto
+  //input[@name='insuredAge']:
+    use:
+    - css=input[name="insuredAge"]
+    source: auto
+  //input[@name='invoiceNumber']:
+    use:
+    - css=input[name="invoiceNumber"]
+    source: auto
+  //input[@name='lastName']:
+    use:
+    - css=input[name="lastName"]
+    source: auto
+  //input[@name='ownerNumber']:
+    use:
+    - css=input[name="ownerNumber"]
+    source: auto
+  //input[@name='pickupDate']:
+    use:
+    - css=input[name="pickupDate"]
+    source: auto
+  //input[@name='postalCode']:
+    use:
+    - css=input[name="postalCode"]
+    source: auto
+  //input[@name='tripDepartureDate']:
+    use:
+    - css=input[name="tripDepartureDate"]
+    source: auto
+  //input[@name='tripDepositDate']:
+    use:
+    - css=input[name="tripDepositDate"]
+    source: auto
+  //input[@name='tripReturnDate']:
+    use:
+    - css=input[name="tripReturnDate"]
+    source: auto
+  //input[@name='tsep-cardNum']:
+    use:
+    - css=input[name="tsep-cardNum"]
+    source: auto
+  //input[@name='tsep-datepicker']:
+    use:
+    - css=input[name="tsep-datepicker"]
+    source: auto
+  //input[@value='I agree']:
+    use:
+    - css=input[value="I agree"]
+    source: auto
+  //option[@data-cmp-claimantid='3']:
+    use:
+    - css=option[data-cmp-claimantid="3"]
+    source: auto
+  //select[@name='aoad-options']:
+    use:
+    - css=select[name="aoad-options"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement destinationCountry_multi_display']:
+    use:
+    - css=span[class="handlebar-recursive-replacement destinationCountry_multi_display"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement insuredAge_display']:
+    use:
+    - css=span[class="handlebar-recursive-replacement insuredAge_display"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement productName']:
+    use:
+    - css=span[class="handlebar-recursive-replacement productName"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement purchaseResponse.policy.confirmationNumber']:
+    use:
+    - css=span[class="handlebar-recursive-replacement purchaseResponse.policy.confirmationNumber"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement selectedBaseRate-2--,']:
+    use:
+    - css=span[class="handlebar-recursive-replacement selectedBaseRate-2--,"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement totalBaseRate-2--,']:
+    use:
+    - css=span[class="handlebar-recursive-replacement totalBaseRate-2--,"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement totalTripCost-2--,']:
+    use:
+    - css=span[class="handlebar-recursive-replacement totalTripCost-2--,"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement tripDepartureDate']:
+    use:
+    - css=span[class="handlebar-recursive-replacement tripDepartureDate"]
+    source: auto
+  //span[@class='handlebar-recursive-replacement tripReturnDate']:
+    use:
+    - css=span[class="handlebar-recursive-replacement tripReturnDate"]
+    source: auto
+  //span[@selectedcountrycode='1404' and @aria-hidden='true']:
+    use:
+    - css=span[selectedcountrycode="1404"][aria-hidden="true"]
+    source: auto
+  //span[contains(@class,'dayPhone')]:
+    use:
+    - css=span[class*="dayPhone"]
+    source: auto
+  //span[contains(@class,'destinationCountry_multi_display')]:
+    use:
+    - css=span[class*="destinationCountry_multi_display"]
+    source: auto
+  //span[contains(@class,'handlebar-recursive-replacement productName')]:
+    use:
+    - css=span[class*="handlebar-recursive-replacement productName"]
+    source: auto
+  //span[contains(@class,'productName')]:
+    use:
+    - css=span[class*="productName"]
+    source: auto
+  //span[contains(@class,'purchaseResponse.policy.travelers.[0].firstName')]:
+    use:
+    - css=span[class*="purchaseResponse.policy.travelers.[0].firstName"]
+    source: auto
+  //span[contains(@class,'purchaseResponse.policy.travelers.[0].lastName')]:
+    use:
+    - css=span[class*="purchaseResponse.policy.travelers.[0].lastName"]
+    source: auto
+  //span[contains(@class,'selectedBaseRate-2')]:
+    use:
+    - css=span[class*="selectedBaseRate-2"]
+    source: auto
+  //span[contains(@class,'totalBaseRate-2')]:
+    use:
+    - css=span[class*="totalBaseRate-2"]
+    source: auto
+  //span[contains(@class,'tripDepartureDate')]:
+    use:
+    - css=span[class*="tripDepartureDate"]
+    source: auto
+  //span[contains(@class,'tripReturnDate')]:
+    use:
+    - css=span[class*="tripReturnDate"]
+    source: auto

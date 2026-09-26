@@ -1,0 +1,8 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Still starting up</title></head>
+<body><div id="app">starting</div>
+<script>
+// A form that keeps building itself for ~1.2 s after "load", like an AEM component hydrating.
+let n = 0;
+const t = setInterval(() => { const d = document.createElement('i'); d.textContent = ++n; app.appendChild(d); if (n >= 12) clearInterval(t); }, 100);
+</script></body></html>

@@ -1,0 +1,8 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Enter your code</title></head>
+<body>
+<h1>Google Authenticator</h1>
+<label for="code">Enter Code</label> <input id="code" name="code" type="text" autocomplete="off">
+<span id="echo"></span>
+<script>document.getElementById('code').addEventListener('input', function (e) { document.getElementById('echo').textContent = e.target.value; });</script>
+</body></html>

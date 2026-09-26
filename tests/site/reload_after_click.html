@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Cookie banner that reloads the page</title></head>
+<body>
+<div id="app"></div>
+<script>
+// First visit: a consent button that reloads the page 120 ms after it is clicked (like the real site's OneTrust banner).
+// After the reload: a form that renders for ~0.8 s and ignores clicks until it has hydrated at 0.9 s.
+if (sessionStorage.getItem('accepted')) {
+  app.innerHTML = '<label id="l"><input type="radio" name="t"> Comprehensive Coverage</label><div id="more"></div>';
+  let n = 0;
+  const t = setInterval(() => { more.appendChild(document.createElement('i')); if (++n >= 8) clearInterval(t); }, 100);
+  const swallow = (e) => e.preventDefault();
+  l.addEventListener('click', swallow);
+  setTimeout(() => l.removeEventListener('click', swallow), 900);
+} else {
+  app.innerHTML = '<button id="accept">Accept All Cookies</button>';
+  accept.addEventListener('click', () => { sessionStorage.setItem('accepted', '1'); setTimeout(() => location.reload(), 120); });
+}
+</script>
+</body></html>

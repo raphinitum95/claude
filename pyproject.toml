@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "regrunner"
+version = "0.1.0"
+description = "Playwright-based keyword-driven regression runner (Excel in, evidence out)"
+requires-python = ">=3.9"
+dependencies = [
+    "eval_type_backport>=0.2; python_version < '3.10'",     # lets pydantic read `str | None` annotations on Python 3.9
+    "playwright>=1.47",
+    "openpyxl>=3.1",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27"]
+
+[project.scripts]
+regrunner = "regrunner.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+regrunner = ["web/static/*", "web/static/js/*", "web/static/js/views/*", "reporting/*.css", "reporting/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["browser: needs a Playwright browser", "realworkbook: needs the real workbook in workbooks/"]

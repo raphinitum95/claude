@@ -1,0 +1,208 @@
+/* Design tokens and components: taken verbatim from the QA Regression UI design (Main board). */
+body { margin: 0 }
+
+[data-theme="dark"] {
+  --bg: #090C12; --rail: #0D1119; --surface: #121722; --surface2: #171E2C; --surface3: #1E2839;
+  --line: #212B3D; --line2: #2F3B54;
+  --tx: #E9EDF5; --tx2: #A6B0C5; --tx3: #8791A8;
+  --acc: #5CC8FF; --acc-tx: #06121C; --acc-soft: rgba(92, 200, 255, .12); --acc-line: rgba(92, 200, 255, .40);
+  --pass: #43D69B; --pass-soft: rgba(67, 214, 155, .12); --pass-line: rgba(67, 214, 155, .38);
+  --fail: #FF7062; --fail-soft: rgba(255, 112, 98, .13); --fail-line: rgba(255, 112, 98, .42);
+  --warn: #F4B84A; --warn-soft: rgba(244, 184, 74, .12); --warn-line: rgba(244, 184, 74, .40);
+  --pend: #5A6784; --pend-soft: rgba(90, 103, 132, .18);
+  --track: #1A2334; --tick: #27324A;
+  --shadow: 0 1px 0 rgba(255, 255, 255, .035) inset, 0 14px 34px rgba(0, 0, 0, .34);
+  --glow: 0 0 0 1px var(--acc-line), 0 0 44px rgba(92, 200, 255, .13);
+  --grid: rgba(150, 175, 220, .055);
+  --scrim: rgba(4, 6, 10, .72);
+}
+[data-theme="light"] {
+  --bg: #F2F0EA; --rail: #EAE7DF; --surface: #FFFFFF; --surface2: #F7F5F0; --surface3: #EDEAE1;
+  --line: #E0DCD1; --line2: #C9C4B6;
+  --tx: #161A23; --tx2: #4B5468; --tx3: #646D80;
+  --acc: #0A6FB0; --acc-tx: #FFFFFF; --acc-soft: rgba(10, 111, 176, .09); --acc-line: rgba(10, 111, 176, .38);
+  --pass: #11704F; --pass-soft: rgba(17, 112, 79, .10); --pass-line: rgba(17, 112, 79, .36);
+  --fail: #BE3427; --fail-soft: rgba(190, 52, 39, .09); --fail-line: rgba(190, 52, 39, .38);
+  --warn: #8C5A00; --warn-soft: rgba(140, 90, 0, .10); --warn-line: rgba(140, 90, 0, .38);
+  --pend: #8A93A6; --pend-soft: rgba(138, 147, 166, .16);
+  --track: #E4E0D5; --tick: #D6D1C4;
+  --shadow: 0 1px 2px rgba(40, 36, 20, .06), 0 10px 26px rgba(40, 36, 20, .07);
+  --glow: 0 0 0 1px var(--acc-line), 0 10px 34px rgba(10, 111, 176, .12);
+  --grid: rgba(60, 50, 20, .06);
+  --scrim: rgba(20, 18, 10, .5);
+}
+.rr {
+  --f-display: 'Bricolage Grotesque', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --f-body: 'Instrument Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  position: relative; font-family: var(--f-body); font-size: 14px; line-height: 1.45;
+  color: var(--tx); background: var(--bg); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+.rr *, .rr *::before, .rr *::after { box-sizing: border-box }
+:where(.rr) :is(h1, h2, h3, p, ul) { margin: 0; padding: 0 }
+:where(.rr) ul { list-style: none }
+:where(.rr) button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit }
+:where(.rr) input { font: inherit; color: inherit }
+:where(.rr) a { color: var(--acc); text-decoration: none }
+.rr :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 6px }
+
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums }
+.disp { font-family: var(--f-display); letter-spacing: -.02em }
+.eyebrow { font-family: var(--f-mono); font-size: 11px; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; color: var(--acc) }
+.lbl { font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--tx3) }
+.flag { font: 500 11px var(--f-mono); color: var(--tx3) }
+.lnk { color: var(--acc); font-weight: 600; font-size: 13px }
+.lnk:hover { text-decoration: underline }
+.ttl { font-family: var(--f-display); font-weight: 650; font-size: 19px; letter-spacing: -.01em; line-height: 1.2 }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow) }
+.step-n { flex: none; width: 26px; height: 26px; border-radius: 8px; background: var(--acc-soft); color: var(--acc); border: 1px solid var(--acc-line); display: grid; place-items: center; font: 600 12px var(--f-mono) }
+.gridbg { position: absolute; left: 0; right: 0; top: 0; height: 440px; pointer-events: none; background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 44px 44px; -webkit-mask-image: linear-gradient(#000, transparent); mask-image: linear-gradient(#000, transparent) }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line2); background: var(--surface2); color: var(--tx2); font-size: 12px; white-space: nowrap }
+.chip.mono { font-size: 11.5px }
+.chip-warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-soft) }
+.chip-acc { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft) }
+.tag { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 6px; font: 500 11px var(--f-mono); color: var(--tx2); border: 1px solid var(--line2); background: var(--surface2); white-space: nowrap }
+.tag-acc { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft) }
+.tag-warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-soft) }
+.tag-fail { color: var(--fail); border-color: var(--fail-line); background: var(--fail-soft) }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; border: 1px solid transparent }
+.p-run { color: var(--acc); background: var(--acc-soft); border-color: var(--acc-line) }
+.p-pass { color: var(--pass); background: var(--pass-soft); border-color: var(--pass-line) }
+.p-fail { color: var(--fail); background: var(--fail-soft); border-color: var(--fail-line) }
+.p-warn { color: var(--warn); background: var(--warn-soft); border-color: var(--warn-line) }
+.p-pend { color: var(--tx2); background: var(--pend-soft); border-color: var(--line2) }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none }
+.pulse { animation: rrpulse 1.7s ease-out infinite }
+@keyframes rrpulse {
+  0% { box-shadow: 0 0 0 0 currentColor }
+  70% { box-shadow: 0 0 0 7px transparent }
+  100% { box-shadow: 0 0 0 0 transparent }
+}
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none } }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line2); background: var(--surface2); color: var(--tx); font-weight: 600; font-size: 13.5px; white-space: nowrap; transition: background .15s, border-color .15s }
+.btn:hover { background: var(--surface3); border-color: var(--tx3) }
+.btn-pri { background: var(--acc); border-color: var(--acc); color: var(--acc-tx) }
+.btn-pri:hover { background: var(--acc); border-color: var(--acc); filter: brightness(1.08) }
+.btn-dng { color: var(--fail); border-color: var(--fail-line); background: var(--fail-soft) }
+.btn-dng:hover { background: var(--fail-soft); border-color: var(--fail) }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--tx2) }
+.btn-sm { height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 8px }
+.btn-lg { height: 54px; font-size: 16px; border-radius: 13px; width: 100%; font-family: var(--f-display); letter-spacing: -.005em }
+.btn:disabled { opacity: .45; cursor: not-allowed }
+
+.seg { display: flex; padding: 3px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); gap: 2px }
+.seg button { flex: 1; height: 34px; border-radius: 9px; text-align: center; font-weight: 600; font-size: 12.5px; color: var(--tx2); white-space: nowrap }
+.seg button:hover { color: var(--tx) }
+.seg button:disabled { color: var(--tx3); cursor: not-allowed; text-decoration: line-through; text-decoration-color: var(--line2) }
+.seg button:disabled:hover { color: var(--tx3) }
+.seg button.on { background: var(--surface3); color: var(--tx); box-shadow: 0 0 0 1px var(--line2) }
+.seg button.on.prod { background: var(--fail-soft); color: var(--fail); box-shadow: 0 0 0 1px var(--fail-line) }
+.seg button.on.qa { background: var(--warn-soft); color: var(--warn); box-shadow: 0 0 0 1px var(--warn-line) }
+.seg button.on.uat { background: var(--acc-soft); color: var(--acc); box-shadow: 0 0 0 1px var(--acc-line) }
+
+.sw { appearance: none; -webkit-appearance: none; flex: none; width: 40px; height: 23px; border-radius: 999px; background: var(--line2); position: relative; cursor: pointer; margin: 0; transition: background .18s }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; border-radius: 50%; background: var(--tx); transition: transform .18s }
+.sw:checked { background: var(--acc) }
+.sw:checked::after { transform: translateX(17px); background: var(--acc-tx) }
+.cb { appearance: none; -webkit-appearance: none; flex: none; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--line2); background: var(--bg); position: relative; cursor: pointer; margin: 0 }
+.cb:checked { background: var(--acc); border-color: var(--acc) }
+.cb:checked::after { content: ""; position: absolute; left: 5.5px; top: 1.5px; width: 5px; height: 10px; border: solid var(--acc-tx); border-width: 0 2px 2px 0; transform: rotate(45deg) }
+.stp { width: 40px; height: 40px; display: grid; place-items: center; color: var(--tx2) }
+.stp:hover { background: var(--surface3); color: var(--tx) }
+.fld { height: 42px; width: 100%; border-radius: 10px; border: 1px solid var(--line2); background: var(--bg); padding: 0 12px; font: 500 14px var(--f-mono); color: var(--tx) }
+.fld::placeholder { color: var(--tx3) }
+
+.ticks { height: 8px; border-radius: 2px; -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 4px); mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 4px) }
+.ticks.tall { height: 14px }
+.bar { height: 6px; border-radius: 99px; background: var(--track); overflow: hidden }
+.bar > div { height: 100%; border-radius: 99px; background: var(--acc) }
+.ring { border-radius: 50%; -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 17px), #000 calc(100% - 16px)); mask: radial-gradient(farthest-side, transparent calc(100% - 17px), #000 calc(100% - 16px)) }
+.code { font-family: var(--f-mono); font-size: 12.5px; line-height: 1.75; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; color: var(--tx2); word-break: break-word }
+.hr { height: 1px; background: var(--line); border: 0; margin: 0 }
+.kv { display: grid; grid-template-columns: 112px 1fr; gap: 9px 14px; font-size: 13px }
+.kv > span:nth-child(odd) { color: var(--tx3) }
+
+.bn { display: flex; gap: 11px; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--line2); background: var(--surface2); font-size: 12.5px; line-height: 1.5; color: var(--tx) }
+.bn-warn { background: var(--warn-soft); border-color: var(--warn-line) }
+.bn-fail { background: var(--fail-soft); border-color: var(--fail-line) }
+.bn-acc { background: var(--acc-soft); border-color: var(--acc-line) }
+.bn b { font-weight: 650 }
+
+
+/* ------------------------------------------------------------------------------------------------
+   App layout (the design's boards are fixed 1440px artboards; this makes them a responsive page)
+   ------------------------------------------------------------------------------------------------ */
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--tx); color-scheme: dark }
+[data-theme="light"] { color-scheme: light }
+#app.rr { min-height: 100vh; width: 100%; display: flex; flex-direction: column }
+.app-header { height: 60px; flex: none; display: flex; align-items: center; gap: 22px; padding: 0 24px; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 20 }
+.app-body { flex: 1; display: flex; min-height: 0; align-items: stretch }
+.side { width: 264px; flex: none; border-right: 1px solid var(--line); background: var(--rail); padding: 20px 16px; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto }
+.main { flex: 1; min-width: 0; position: relative; overflow: hidden }
+.page { position: relative; padding: 40px 44px 64px; display: flex; flex-direction: column; gap: 28px; max-width: 1400px }
+.split { --side-w: 388px; display: grid; grid-template-columns: minmax(0, 1fr) var(--side-w); gap: 28px; align-items: start }
+.col { display: flex; flex-direction: column; gap: 24px; min-width: 0 }
+.hdr-chips { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap }
+.icon-btn { width: 34px; height: 34px; border-radius: 10px; display: inline-grid; place-items: center; color: var(--tx2); border: 1px solid var(--line2); background: var(--surface2) }
+.icon-btn:hover { color: var(--tx); background: var(--surface3) }
+@media (max-width: 1240px) { .split, .split.narrow, .stats3 { grid-template-columns: minmax(0, 1fr) !important } .hdr-chips .chip.opt { display: none } }
+@media (max-width: 980px) {
+  .app-body { flex-direction: column }
+  .side { position: static; width: auto; height: auto; border-right: 0; border-bottom: 1px solid var(--line) }
+  .page { padding: 28px 20px 48px }
+  .app-header { padding: 0 16px } .hdr-chips .chip { display: none } .hdr-chips .icon-btn, .hdr-chips .chip-warn { display: inline-flex }
+}
+
+/* --- interaction states on the design's components --------------------------------------------- */
+.card.hover:hover { border-color: var(--line2) }
+.drop { transition: border-color .15s, background .15s }
+.drop:hover, .drop.over { border-color: var(--acc); background: var(--acc-soft) }
+.trow { transition: background .12s } .trow:hover { background: var(--surface2) }
+.side-run { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border-radius: 12px; border: 1px solid transparent; width: 100%; text-align: left }
+.side-run:hover { background: var(--surface2) }
+.side-run.on { background: var(--surface); border-color: var(--line2); box-shadow: var(--shadow) }
+.btn.busy { opacity: .7; pointer-events: none }
+.spin { animation: rrspin .9s linear infinite } @keyframes rrspin { to { transform: rotate(360deg) } }
+.skel { background: linear-gradient(90deg, var(--surface2), var(--surface3), var(--surface2)); background-size: 200% 100%; animation: rrskel 1.4s ease-in-out infinite; border-radius: 8px }
+@keyframes rrskel { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+@media (prefers-reduced-motion: reduce) { .spin, .skel { animation: none } }
+
+/* --- screenshots -------------------------------------------------------------------------------- */
+.shot { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--bg); border: 1px solid var(--line2) }
+.shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block }
+.shot .hl { position: absolute; border: 2px solid var(--acc); border-radius: 5px; box-shadow: 0 0 0 3px var(--acc-soft); pointer-events: none }
+.shot .hl.bad { border-color: var(--fail); box-shadow: 0 0 0 3px var(--fail-soft) }
+.shot .cap { position: absolute; left: 8px; bottom: 7px; font: 500 10px var(--f-mono); padding: 2px 7px; border-radius: 5px; background: var(--scrim); color: #fff }
+.shot .wait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--tx3); font-size: 12px }
+.shot.zoom { cursor: zoom-in }
+
+/* --- modals, toasts ------------------------------------------------------------------------------- */
+.modal-back { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: start center; z-index: 60; padding: 6vh 24px 24px; overflow: auto }
+.modal { width: min(560px, 100%); padding: 24px; box-shadow: 0 24px 60px rgba(0, 0, 0, .4) }
+.modal.wide { width: min(1000px, 100%) }
+.modal.danger { border-color: var(--fail-line) }
+.wb-del { flex: none; display: inline-flex; padding: 7px; border-radius: 9px; color: var(--tx3); opacity: .55 } .trow:hover .wb-del, .wb-del:focus-visible { opacity: 1 } .wb-del:hover { background: var(--fail-soft); color: var(--fail); opacity: 1 }
+.modal-x { margin-left: auto; color: var(--tx2); display: inline-flex; padding: 4px; border-radius: 8px } .modal-x:hover { background: var(--surface3); color: var(--tx) }
+.modal-x:disabled { opacity: .35; cursor: not-allowed } .modal-x:disabled:hover { background: none; color: var(--tx2) }
+.lightbox { position: fixed; inset: 0; background: rgba(0, 0, 0, .88); z-index: 80; display: grid; place-items: center; cursor: zoom-out; padding: 24px }
+.lightbox img { max-width: 96vw; max-height: 92vh; border-radius: 8px }
+.toast-root { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 90; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none }
+.toast { pointer-events: auto; background: var(--surface3); border: 1px solid var(--line2); color: var(--tx); border-radius: 12px; padding: 10px 16px; font-size: 13px; box-shadow: var(--shadow) }
+
+/* --- tables in dialogs -------------------------------------------------------------------------------- */
+.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px }
+.tbl th { text-align: left; font: 600 11px var(--f-body); letter-spacing: .09em; text-transform: uppercase; color: var(--tx3); padding: 8px 10px; position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--line) }
+.tbl td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top }
+.tbl td.mono, .tbl .mono { font-size: 11.5px }
+.scroll-y { max-height: 56vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface) }
+.tab-row { display: flex; gap: 6px; flex-wrap: wrap }
+.field { display: block } .fld:focus { border-color: var(--acc); outline: none }
+details.more > summary { cursor: pointer; list-style: none; color: var(--acc); font-weight: 600; font-size: 13px; display: inline-flex; gap: 6px; align-items: center }
+details.more > summary::-webkit-details-marker { display: none }
+.kbd { font: 500 11px var(--f-mono); border: 1px solid var(--line2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--surface2) }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
+.rr mark.hl { background: var(--acc-soft); color: var(--acc); border-radius: 3px; padding: 0 1px }

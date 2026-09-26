@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>pay</title></head>
+<body>
+<input name="tsep-datepicker" id="m" placeholder="MM"> <input name="year" id="y" placeholder="YYYY">
+<span id="dp-value">|</span>
+<script>
+  const up = () => { document.getElementById('dp-value').textContent = m.value + '|' + y.value; };
+  m.addEventListener('input', up); y.addEventListener('input', up);
+</script></body></html>
