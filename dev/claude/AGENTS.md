@@ -85,6 +85,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Workbook reading, token substitution, blnExecute, write-back, Params rows | `workbook/model.py`, `workbook/sheet.py` | `test_model.py` (fast), `test_blank_params.py`, `test_variables_set.py`, `test_real_workbook.py` (fast, skips without the file) |
 | Writing workbooks (edit cells/rows/columns, hidden `_rr_*` sheets, save + backup, drafts, lock/external-change checks) | `workbook/writer.py` (`WorkbookEditor`) | `test_workbook_roundtrip.py` (`-k "not real"` = 2 s; the real-workbook cases take ~2.5 min) |
 | Workbook Builder model (tests/blocks/steps/variables JSON, ops, undo/draft/save/history/diff), builder problems, `/api/build/*` | `workbook/builder.py`, `lint.py` (`builder_problems`), `web/build_api.py`; the shapes are fixed in `dev/plan/CONTRACT.md` | `test_builder_model.py` (~10 s, real workbooks included), `test_build_api.py` (2 s). **Restart UI** for build_api changes |
+| Build tab UI (Run · Build · Results tabs, workbook map, variable map, test editor: block map/cards/inspector/grid/drawer/problems/add-step menu, new-workbook/environments/fingerprint/history/file-changed dialogs) | `web/static/js/views/build/*.js` (state in `state.js`'s `freshBuild`/`freshEditor`), `views/shell.js` (`tabs`, `headerShell`), `views/modals.js` (routes `build-*` modal kinds to `build/dialogs.js`), `main.js` (`#/build...` routes, merges `build/actions.js` into the action tables), `icons.js`, `app.css` ("Build tab" section) | `test_web_build.py`, `test_web_ui.py -k theme`. JS only: reload the page, no UI restart |
 | API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates | `workbook/api.py`, `workbook/api_template.py`, `engine/api_runner.py` | `test_api_tests.py`, `test_api_purchase_flavour.py` |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
 | Workers, several workbooks at once, joining a run, progress, shutdown/cancel | `engine/runner.py`, `engine/pool.py`, `engine/inbox.py`, `engine/diagnostics.py` | `test_multi_run.py`, `test_progress_and_parked_worker.py`, `test_shutdown.py`, `test_py39_compat.py` |
@@ -182,6 +183,7 @@ src/regrunner/
                   last-run-per-test durations for the Run plan's Timeline view. A batch is only a label - it never changes how a run executes.
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
+    static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher)}.js
 
 tests/
   conftest.py          `site` (session mock server URL), `make_cfg(**{"section.key": v})` (fast timeouts), resets totp state
@@ -191,7 +193,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            57 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            66 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -268,6 +270,12 @@ customXml, dynamic-array metadata and cached values). Untested here: opening an 
 P02 (model, contract, problems, `/api/build/*`) done: `dev/plan/CONTRACT.md` is the interface every later phase builds on. The builder reads cells
 as written (never evaluates formulas); blocks come from section rows (text in column A, no Method: the real workbooks' page headings) until a
 block op writes the `BLOCK` column; a formula in blnExecute makes a step a locked legacy card; new keywords exist in the model only (engine: P03/P07).
+P04 (Build tab UI) done: Run · Build · Results tabs in the header; the Build tab (workbook map, variable map, test editor with block strip/cards/
+Excel grid/inspector/data drawer/problems panel/add-step menu, and the new-workbook/environments/fingerprint/history/file-changed dialogs) is plain
+JS views over the P02 model/ops with no browser session yet (add-step menu's "Record"/"Pick an element" are disabled, wired for P08). "Building with"
+(which data row the inspector previews) is client-only until a build session exists to replay against. Simplified vs. the design canvas: tests render
+as a responsive card grid rather than a hand-positioned graph with bezier "calls"/"needs" lines; block-to-block drag/reorder is not built (bulk "Move
+to block" and "Rename block" use a plain prompt()).
 P03 (engine I) done: the run-wide variable pool (`RunCtx.pool`; every name a step saves, any test, read as `{NAME}`), Needs/Provides ordering,
 SET_VARIABLE / JSON_READ / IF / loops / CALL_TEST (a called test's steps are reported as the caller's steps after the CALL_TEST step, via
 `_CallBus`), `_rr_environments` (required vars refuse the run: `EnvironmentMissing` + `env_missing` event, and HTTP 422 `env_missing` from
@@ -306,6 +314,10 @@ Gotchas:
 - Runs that share a pool (a batch, or one that joined) share one worker numbering (`engine/pool.py`: one process, one set of workers), so a
   `test_started` event's `worker` is already unique across every run of the batch - no renumbering needed to lay out the live batch view's
   worker cards.
+- `tests/test_web_workbook_search.py::test_enter_picks_the_best_match...` can flake under load: Playwright's `.uncheck(force=True)` races a
+  checkbox whose row is removed (filtered out) the instant it unchecks. Confirmed pre-existing (identical on the pre-P04 tree); a solo re-run passes.
+- `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
+  narrow window clips it instead of pushing the header wider than the viewport (see the `Run` tab's version tag vs. the `Build` tab's breadcrumb).
 
 ---
 

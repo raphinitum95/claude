@@ -8,15 +8,29 @@ const LOGO = raw(`<svg width="30" height="30" viewBox="0 0 32 32" fill="none" ar
 
 const WAITS = { smart: 'Smart waits', legacy: 'Legacy waits', off: 'Waits off' };
 
+/** The three top-level sections. Run and Results navigate with a plain hash; Build remembers the last workbook. */
+export function tabs(active) {
+  const tab = (name, act) => html`<button class="${cx('tab-btn', active === name && 'on')}" data-act="${act}" aria-current="${active === name ? 'page' : 'false'}">${name}</button>`;
+  return html`<nav class="tabnav" aria-label="Sections">${tab('Run', 'run-tab')}${tab('Build', 'build-tab')}${tab('Results', 'results-tab')}</nav>`;
+}
+
+/** The shared 60px chrome (logo + section tabs), with room for a screen-specific middle and right side.
+ *  `middle` sits in a shrinkable flex-1 slot: keep it empty or short, since its content does not wrap. */
+export function headerShell(active, middle = '', right = '') {
+  return html`<header class="app-header">
+<div style="display: flex; align-items: center; gap: 11px; flex: none">${LOGO}
+<div class="disp" style="font-size: 19px; font-weight: 700; letter-spacing: -.015em">QA Regression</div></div>
+${tabs(active)}
+<div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; overflow: hidden">${middle}</div>
+<div class="hdr-chips">${right}</div>
+</header>`;
+}
+
 export function header(S) {
   const c = S.cfg || {};
   const warns = preflightItems(S).filter((i) => i.kind === 'warn').length;
   const dark = document.documentElement.getAttribute('data-theme') !== 'light';
-  return html`<header class="app-header">
-<div style="display: flex; align-items: center; gap: 11px">${LOGO}
-<div class="disp" style="font-size: 19px; font-weight: 700; letter-spacing: -.015em">QA Regression</div>
-<span class="tag" style="margin-left: 4px">regrunner ${c.version || ''}</span></div>
-<div class="hdr-chips">
+  const right = html`
 <span class="chip opt">${icon('cpu', 14)} ${c.workers || '–'} workers</span>
 <span class="chip opt">${icon(c.headless === false ? 'eye' : 'eyeoff', 14)} ${c.headless === false ? 'Headed' : 'Headless'}</span>
 <span class="chip opt">${icon('zap', 14)} ${WAITS[c.waits] || 'Smart waits'}</span>
@@ -24,9 +38,8 @@ export function header(S) {
 ${warns
     ? html`<button class="chip chip-warn" style="cursor: pointer" data-act="goto-preflight">${icon('warn', 14)} ${warns} preflight warning${warns === 1 ? '' : 's'}</button>`
     : html`<span class="chip">${icon('check', 14)} Ready</span>`}
-<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>
-</div>
-</header>`;
+<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`;
+  return headerShell('Run', html`<span class="tag" style="flex: none">regrunner ${c.version || ''}</span>`, right);
 }
 
 function runIcon(r) {

@@ -9,8 +9,14 @@ import { newRunView } from './views/newrun.js';
 import { liveView, batchView } from './views/live.js';
 import { resultsView } from './views/results.js';
 import { modalView } from './views/modals.js';
+import { buildHeader, buildView } from './views/build/index.js';
 import * as A from './actions.js';
+import * as AB from './views/build/actions.js';
 import { startPresence } from './presence.js';
+
+const acts = { ...A.acts, ...AB.acts };
+const changes = { ...A.changes, ...AB.changes };
+const inputs = { ...A.inputs, ...AB.inputs };
 
 const baseTitle = document.title;
 const appEl = () => document.getElementById('app');
@@ -47,8 +53,12 @@ ${S.online ? html`<div class="skel" style="height: 30px; width: 260px; margin-to
   if (S.view && S.view.kind === 'batch') for (const e of S.view.entries || []) syncProgress(e.id, e.run);
   else if (S.view && S.view.run) syncProgress(S.view.id, S.view.run);
   if (S.route.name === 'new') A.ensureOrder();                                              // the run order follows what is selected, whatever changed it
-  const content = S.route.name === 'new' ? newRunView(S) : runScreen();
-  morph(appEl(), html`${header(S)}<div class="app-body">${sidebar(S)}<main class="main"><div class="gridbg"></div>${content}</main></div>`);
+  if (S.route.name === 'build') {
+    morph(appEl(), html`${buildHeader(S)}${buildView(S)}`);
+  } else {
+    const content = S.route.name === 'new' ? newRunView(S) : runScreen();
+    morph(appEl(), html`${header(S)}<div class="app-body">${sidebar(S)}<main class="main"><div class="gridbg"></div>${content}</main></div>`);
+  }
   const run = S.view && S.view.run;
   const waiting = S.route.name === 'run' && run && run.status === 'RUNNING' ? Object.keys(run.asks || {}).length : 0;
   document.title = waiting ? '● Input needed · ' + baseTitle : baseTitle;                  // a run waiting for a person is visible from another tab
@@ -77,12 +87,22 @@ function focusModal() {
 function route() {
   const mRun = location.hash.match(/^#\/run\/([A-Za-z0-9._-]+)/);
   const mBatch = location.hash.match(/^#\/batch\/([A-Za-z0-9._-]+)/);
+  const buildTest = location.hash.match(/^#\/build\/([^/]+)\/test\/([^/]+)$/);
+  const buildVars = location.hash.match(/^#\/build\/([^/]+)\/variables$/);
+  const buildWb = location.hash.match(/^#\/build\/([^/]+)$/);
   if (mRun) {
     S.route = { name: 'run', id: mRun[1] };
     A.openRun(mRun[1]);
   } else if (mBatch) {
     S.route = { name: 'batch', id: mBatch[1] };
     A.openBatch(mBatch[1]);
+  } else if (buildTest || buildVars || buildWb || location.hash === '#/build') {
+    S.route = { name: 'build', id: null };
+    A.closeRun();
+    if (buildTest) AB.openBuild(decodeURIComponent(buildTest[1]), 'test', decodeURIComponent(buildTest[2]));
+    else if (buildVars) AB.openBuild(decodeURIComponent(buildVars[1]), 'variables');
+    else if (buildWb) AB.openBuild(decodeURIComponent(buildWb[1]), 'map');
+    else { const name = AB.defaultBuildName(); if (name) AB.openBuild(name, 'map'); }
   } else {
     S.route = { name: 'new', id: null };
     A.closeRun();
@@ -104,9 +124,9 @@ function on(type, attr, table, pre) {
     if (out && typeof out.catch === 'function') out.catch((e) => console.error(e));
   });
 }
-on('click', 'data-act', A.acts);
-on('change', 'data-change', A.changes);
-on('input', 'data-input', A.inputs);
+on('click', 'data-act', acts);
+on('change', 'data-change', changes);
+on('input', 'data-input', inputs);
 
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && S.modal) { ev.preventDefault(); A.closeModal(); return; }
