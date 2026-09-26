@@ -63,7 +63,7 @@ Paths are under `src/regrunner/` unless they start with `dev/` or `tests/`.
 
 | Phase | State | PR | Notes |
 |---|---|---|---|
-| P01 | not started | | |
+| P01 | merged 2026-09-26 | raphinitum95/claude#2 | Not yet checked: opening an edited file in real Excel (no Excel in the cloud) |
 | P02 | not started | | |
 | P03 | not started | | |
 | P04 | not started | | |
