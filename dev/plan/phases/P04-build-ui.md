@@ -28,3 +28,9 @@ The Build tab screens against the P02 API: everything except recording and API/X
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+- 2026-09-26 · Built the whole Build tab against the P02 API: Run·Build·Results header tabs, workbook map, variable map, test editor (block strip,
+  cards, Excel grid, inspector, data drawer, problems panel, add-step menu with recording items disabled), and the new-workbook/environments/
+  fingerprint/history/file-changed dialogs. New `web/static/js/views/build/*.js`, a "Build tab" section in `app.css`, new icons, `tests/test_web_build.py`.
+  `test_web_build.py` and `test_web_ui.py -k theme` pass; full `-m "not browser"` (434) and the touched browser suites (test_web_ui.py,
+  test_web_multi_ui.py, test_web_run_order.py, test_web_delete_workbook.py, test_web_browser_choice.py, test_web_workbook_search.py) all green.
+  Simplifications from the design canvas are noted in AGENTS.md section 9. Next: nothing outstanding for this phase; ready for review.

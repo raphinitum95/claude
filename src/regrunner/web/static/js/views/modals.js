@@ -4,6 +4,10 @@ import { icon } from '../icons.js';
 import { num, plural } from '../fmt.js';
 import { banner, btn } from './shell.js';
 import { allChosen, envList, shortName } from './newrun.js';
+import {
+  newWorkbookDialog, newTestDialog, environmentsDialog, fingerprintsListDialog, fingerprintDialog,
+  fileChangedDialog, historyDialog, gridDialog, lockedDialog,
+} from './build/dialogs.js';
 
 /** ``locked``: something is in flight that closing the dialog would not stop, so it cannot be closed until it answers (the X is greyed out, the backdrop does nothing). */
 function frame(title, body, { wide, danger, locked, id = 'dlg-title' } = {}) {
@@ -176,6 +180,15 @@ export function modalView(S) {
     case 'log': return log(S, m);
     case 'doctor': return doctor(S, m);
     case 'lightbox': return html`<div class="lightbox" data-act="close-modal" role="dialog" aria-modal="true" aria-label="Screenshot"><img src="${m.src}" alt="Screenshot, enlarged"></div>`;
+    case 'build-new-workbook': return newWorkbookDialog(m);
+    case 'build-new-test': return newTestDialog(m);
+    case 'build-environments': return environmentsDialog(m);
+    case 'build-fingerprints': return fingerprintsListDialog();
+    case 'build-fingerprint': return fingerprintDialog(m);
+    case 'build-file-changed': return fileChangedDialog(m);
+    case 'build-history': return historyDialog(m);
+    case 'build-grid': return gridDialog(m);
+    case 'build-locked': return lockedDialog(m);
     default: return '';
   }
 }

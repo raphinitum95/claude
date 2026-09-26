@@ -16,6 +16,10 @@ body { margin: 0 }
   --glow: 0 0 0 1px var(--acc-line), 0 0 44px rgba(92, 200, 255, .13);
   --grid: rgba(150, 175, 220, .055);
   --scrim: rgba(4, 6, 10, .72);
+  --pop: 0 24px 60px rgba(0, 0, 0, .5);
+  --sel-bg: #13202E;
+  --k-nav: #5CC8FF; --k-act: #DCE3F0; --k-input: #C3A6FF; --k-check: #43D69B; --k-save: #7FD8E6;
+  --k-wait: #8791A8; --k-api: #F4B84A; --k-xml: #FF8FC7; --k-flow: #FFB38A; --k-legacy: #A6B0C5;
 }
 [data-theme="light"] {
   --bg: #F2F0EA; --rail: #EAE7DF; --surface: #FFFFFF; --surface2: #F7F5F0; --surface3: #EDEAE1;
@@ -32,6 +36,10 @@ body { margin: 0 }
   --glow: 0 0 0 1px var(--acc-line), 0 10px 34px rgba(10, 111, 176, .12);
   --grid: rgba(60, 50, 20, .06);
   --scrim: rgba(20, 18, 10, .5);
+  --pop: 0 24px 60px rgba(40, 36, 20, .22);
+  --sel-bg: #E8F1F8;
+  --k-nav: #0A6FB0; --k-act: #3B4458; --k-input: #6B45C9; --k-check: #11704F; --k-save: #0F6E7E;
+  --k-wait: #646D80; --k-api: #8C5A00; --k-xml: #B0337A; --k-flow: #A6461B; --k-legacy: #4B5468;
 }
 .rr {
   --f-display: 'Bricolage Grotesque', 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -210,3 +218,28 @@ details.more > summary::-webkit-details-marker { display: none }
 .kbd { font: 500 11px var(--f-mono); border: 1px solid var(--line2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--surface2) }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
 .rr mark.hl { background: var(--acc-soft); color: var(--acc); border-radius: 3px; padding: 0 1px }
+
+/* ------------------------------------------------------------------------------------------------
+   Build tab (Workbook Builder): tabs, rail, step badges, variable pills, grid, menus
+   ------------------------------------------------------------------------------------------------ */
+.tabnav { display: flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--surface); border: 1px solid var(--line); flex: none }
+.tab-btn { height: 30px; display: flex; align-items: center; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--tx2) }
+.tab-btn.on { background: var(--surface3); color: var(--tx); box-shadow: 0 0 0 1px var(--line2) }
+.b-rail { width: 236px; flex: none; border-right: 1px solid var(--line); background: var(--rail); padding: 14px 10px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto }
+.rail-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 5px 8px; border-radius: 7px; font-size: 13px; color: var(--tx2); text-align: left; text-decoration: none }
+.rail-item:hover { background: var(--surface); color: var(--tx) }
+.rail-item.on { background: var(--surface2); color: var(--tx); box-shadow: inset 0 0 0 1px var(--line2) }
+.badge { display: inline-flex; align-items: center; justify-content: center; height: 20px; padding: 0 7px; border-radius: 5px; font: 600 10.5px var(--f-mono); letter-spacing: .02em; white-space: nowrap; color: var(--k, var(--tx2)); background: color-mix(in srgb, var(--k, var(--tx3)) 14%, transparent) }
+.k-nav { --k: var(--k-nav) } .k-act { --k: var(--k-act) } .k-input { --k: var(--k-input) } .k-check { --k: var(--k-check) }
+.k-save { --k: var(--k-save) } .k-wait { --k: var(--k-wait) } .k-api { --k: var(--k-api) } .k-xml { --k: var(--k-xml) }
+.k-flow { --k: var(--k-flow) } .k-legacy { --k: var(--k-legacy) } .k-other, .k-empty { --k: var(--tx3) }
+.var { display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; border-radius: 5px; font: 600 12px var(--f-body); color: var(--k-input); background: color-mix(in srgb, var(--k-input) 13%, transparent); white-space: nowrap }
+.var.secret { color: var(--tx2); background: var(--surface3) }
+.var.env { color: var(--k-nav); background: color-mix(in srgb, var(--k-nav) 13%, transparent) }
+.scard { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 40px; padding: 5px 10px 5px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface) }
+.scard:hover { border-color: var(--line2) }
+.gcell { padding: 0 9px; height: 28px; display: flex; align-items: center; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: nowrap }
+.pdot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block }
+.menu { background: var(--surface); border: 1px solid var(--line2); border-radius: 12px; box-shadow: var(--pop) }
+.mitem { display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 13px; color: var(--tx) }
+.mitem:hover { background: var(--surface2) }
