@@ -58,15 +58,42 @@ async def aria_disabled(res) -> dict[str, Any] | None:
         return None
 
 
+async def actionable(ctx, res, do: str = "click", **kwargs: Any) -> int:
+    """Wait - patiently, and without clicking anything - until Playwright's own checks for ``do`` pass (``trial=True``: attached, visible, still,
+    enabled, not covered by something else).  A page still loading keeps a spinner over the button or the button disabled for as long as it
+    takes; that is waited for (``engine/patience.py``), a button that stays unusable on a finished page is not.  Returns the time limit (ms) for
+    the real action: the normal one, or a short one when the element never became usable (the action then only states Playwright's reason)."""
+    ms = int(ctx.act_timeout_s * 1000)
+    from playwright.async_api import TimeoutError as PlaywrightTimeout
+    from .patience import Patience
+    cfg = getattr(ctx, "cfg", None)
+    with Patience(ctx.session, ctx.act_timeout_s, what="the element to be usable", cfg=cfg.patience if cfg is not None else None,
+                  missing="the element did not become usable (shown, still, enabled, not covered)") as pat:
+        if pat.plain:
+            return ms
+        while True:
+            try:
+                await getattr(res.locator, do)(trial=True, timeout=1500, **kwargs)
+                return ms
+            except PlaywrightTimeout:
+                pass
+            except Exception:
+                return ms                                # not a matter of waiting (the element went away...): the action itself says what
+            if await pat.give_up():
+                ctx.out.notes.append(f"not usable: {pat.explain()}")
+                return 2000
+
+
 async def pointer(ctx, res, do: str = "click", **kwargs: Any) -> None:
     """``res.locator.<do>(...)`` (click, dblclick, ...) - going past ``aria-disabled`` like the legacy runner when ``behaviour.click_ignores_aria_disabled`` is on."""
-    method, ms = getattr(res.locator, do), int(ctx.act_timeout_s * 1000)
+    method = getattr(res.locator, do)
     blocked = await aria_disabled(res) if ctx.cfg.behaviour.click_ignores_aria_disabled else None
     if blocked is None:
-        await method(timeout=ms, **kwargs)
+        await method(timeout=await actionable(ctx, res, do, **kwargs), **kwargs)
         return
     who = "the element" if blocked["self"] else f"<{blocked['desc']}>, which contains the element,"
     ctx.out.notes.append(f"{who} has {ARIA}: Playwright would wait for it to become enabled, the legacy runner did not look at it. Clicked anyway after checking "
                          "the element is visible, still and not covered (behaviour.click_ignores_aria_disabled).")
+    ms = await actionable(ctx, res, "hover")
     await res.locator.hover(timeout=ms)                  # visible, stable, receives events: what a click checks, minus "enabled"
     await method(timeout=ms, force=True, **kwargs)

@@ -11,6 +11,7 @@ export function newRun(id) {
     id, status: 'RUNNING', workbook: '', environment: '', workers: 1, headless: true, browser: null, seed: null, params: null,
     warnings: [], startedMs: null, lastMs: null, endedMs: null, duration: null, shares: [],
     tests: {}, order: [], log: [], summary: null, artifacts: null, error: '', exitCode: null, started: false, asks: {}, askFocus: null,
+    waits: {},                                               // workers waiting on purpose right now (a login code, a slow page, a re-run after a crash)
   };
 }
 
@@ -21,6 +22,8 @@ function newTest(id, o = {}) {
     shot: null, box: null, shotStep: 0, fails: [], review: [], attempt: 1, error: '', vars: [], waitsFor: o.waits_for || [],
   };
 }
+
+function dropWaits(run, test) { for (const [k, w] of Object.entries(run.waits)) if (w.test === test) delete run.waits[k]; }
 
 function pushLog(run, iso, k, c, m) {
   run.log.push({ t: iso, k, c, m });
@@ -53,6 +56,7 @@ export function apply(run, e) {
     }
     case 'test_started':
       if (!t) break;
+      dropWaits(run, t.id);
       t.status = 'RUNNING'; t.worker = e.worker ?? null; t.startedMs = at; t.total = e.total_steps || t.total;
       t.attempt = e.attempt || 1;
       if (t.attempt > 1) { t.done = 0; t.failed = 0; t.fails = []; t.review = []; t.shot = null; t.box = null; t.vars = []; }
@@ -70,7 +74,9 @@ export function apply(run, e) {
       for (const w of e.sets || []) t.vars.push({ ...w, seq: e.step, row: e.row, step: e.name || '', by_hand: false });      // a step filled in a parameter
       t.done = Math.max(t.done, e.step);
       t.total = Math.max(t.total, t.done);
-      if (e.type === 'step_failed') {
+      if (e.type === 'step_failed' && e.status === 'NOT_RUN') {       // the browser went away during this step: no verdict (the test is run again)
+        pushLog(run, e.ts, 'CRASH', 'var(--warn)', `${t.id} #${e.step} · ${first(e.error)}`);
+      } else if (e.type === 'step_failed') {
         t.failed += 1;
         t.fails.push({
           seq: e.step, row: e.row, name: e.name || '', action: e.action || '', error: e.error || '', expected: e.expected || '',
@@ -95,11 +101,12 @@ export function apply(run, e) {
       break;
     case 'test_finished':
       if (!t) break;
+      dropWaits(run, t.id);
       t.status = e.status || 'PASSED'; t.endedMs = at; t.duration = e.duration_s ?? null; t.error = e.error || '';
       t.done = t.total = Math.max(t.done, t.total);
       (e.review_counts || []).forEach((c, i) => { if (t.review[i]) t.review[i].count = c; });
       pushLog(run, e.ts, t.status === 'PASSED' ? 'PASS' : t.status === 'FAILED' ? 'FAIL' : 'END',
-        t.status === 'PASSED' ? 'var(--pass)' : 'var(--fail)', `${t.id} · ${t.done}/${t.total} · ${fmtSecs(t.duration)}`);
+        t.status === 'PASSED' ? 'var(--pass)' : t.status === 'NOT_RUN' ? 'var(--warn)' : 'var(--fail)', `${t.id} · ${t.status === 'NOT_RUN' ? 'not run · ' : ''}${t.done}/${t.total} · ${fmtSecs(t.duration)}`);
       break;
     case 'user_input_needed':                              // an ASK_USER step: the run waits for a person (the answer never travels in an event)
       run.asks[e.ask] = { id: e.ask, test: e.test || '', step: e.step || 0, question: e.question || '', secret: !!e.secret, mode: e.mode || 'ui', kind: e.kind || 'text',
@@ -125,11 +132,22 @@ export function apply(run, e) {
       pushLog(run, e.ts, 'WAIT', 'var(--warn)', `${e.test || 'run'} blocked by the site · pausing ${e.seconds || 0} s · retry ${e.attempt || 1} of ${e.of || 1}`);
       if (t) { t.status = 'QUEUED'; t.done = 0; t.failed = 0; t.fails = []; t.step = null; }      // the attempt that just ended is run again: it is not finished, and not at 100%
       break;
+    case 'worker_waiting':                                 // a worker waits on purpose: the screen says who, why, and for how long (never a secret)
+      run.waits[e.wait] = { id: e.wait, test: e.test || '', worker: e.worker ?? null, step: e.step || 0, code: e.code || '', message: e.message || '',
+        seconds: e.seconds ?? null, startMs: at, untilMs: e.seconds != null ? at + e.seconds * 1000 : null };
+      pushLog(run, e.ts, 'WAIT', 'var(--warn)', `${e.test || 'run'}${e.worker != null ? ' on W' + e.worker : ''}: ${e.message || ''}`);
+      if (t && e.code === 'infra_rerun') { t.status = 'QUEUED'; t.done = 0; t.failed = 0; t.fails = []; t.step = null; }     // it starts over: not finished
+      break;
+    case 'worker_resumed':
+      delete run.waits[e.wait];
+      pushLog(run, e.ts, 'GO', 'var(--tx3)', `${e.test || 'run'} carries on${e.waited_s != null ? ` after ${fmtSecs(e.waited_s)}` : ''}`);
+      break;
     case 'log':
       pushLog(run, e.ts, 'LOG', e.level === 'error' ? 'var(--fail)' : e.level === 'info' ? 'var(--tx3)' : 'var(--warn)', e.message || '');
       break;
     case 'run_finished':
       run.asks = {};
+      run.waits = {};
       run.status = e.status || 'PASSED'; run.endedMs = at; run.summary = e.summary || null; run.artifacts = e.artifacts || null;
       run.error = e.error || ''; run.exitCode = e.exit_code ?? null; run.duration = e.duration_s ?? null;
       pushLog(run, e.ts, 'DONE', run.status === 'PASSED' ? 'var(--pass)' : 'var(--warn)', `run ${run.status.toLowerCase()}`);
@@ -151,7 +169,7 @@ export function isDone(run) { return run.status !== 'RUNNING'; }
 
 export function counts(run) {
   const c = { done: 0, total: 0, failedSteps: 0, inFlight: 0, queuedSteps: 0, running: 0, pending: 0, finished: 0,
-              passedTests: 0, failedTests: 0, otherTests: 0 };
+              passedTests: 0, failedTests: 0, otherTests: 0, notRunTests: 0 };
   for (const id of run.order) {
     const t = run.tests[id];
     c.done += t.done; c.total += Math.max(t.total, t.done); c.failedSteps += t.failed;
@@ -159,7 +177,7 @@ export function counts(run) {
     else if (t.status === 'QUEUED') { c.pending++; c.queuedSteps += t.total; }
     else {
       c.finished++;
-      if (t.status === 'PASSED') c.passedTests++; else if (t.status === 'FAILED') c.failedTests++; else c.otherTests++;
+      if (t.status === 'PASSED') c.passedTests++; else if (t.status === 'FAILED') c.failedTests++; else if (t.status === 'NOT_RUN') c.notRunTests++; else c.otherTests++;
     }
   }
   c.passedSteps = c.done - c.failedSteps;
@@ -174,6 +192,23 @@ export function timing(run, nowMs, live) {
   const speed = elapsed > 1 && c.done > 0 ? c.done / elapsed : 0;
   const remaining = speed > 0 ? Math.max(0, (c.total - c.done) / speed) : null;
   return { elapsed, speed, remaining };
+}
+
+/** The workers that are waiting on purpose right now, oldest wait first. */
+export const waitsOf = (run) => Object.values(run.waits || {}).sort((a, b) => (a.startMs || 0) - (b.startMs || 0));
+
+/** What every worker is doing, in one line: "2 running steps · 1 waiting for a login code". */
+export function workerSummary(run) {
+  const waits = waitsOf(run);
+  const waitingTests = new Set(waits.map((w) => w.test));
+  const running = lanes(run).filter((t) => !waitingTests.has(t.id)).length;
+  const kinds = { login_code: 'for a login code', slow_page: 'for a slow page', infra_rerun: 'to re-run a test after a browser crash' };
+  const byKind = {};
+  for (const w of waits) byKind[w.code] = (byKind[w.code] || 0) + 1;
+  const parts = [];
+  if (running) parts.push(`${running} running steps`);
+  for (const [code, n] of Object.entries(byKind)) parts.push(`${n} waiting ${kinds[code] || 'on purpose'}`);
+  return parts.join(' · ');
 }
 
 export const lanes = (run) => run.order.map((id) => run.tests[id]).filter((t) => t.status === 'RUNNING')

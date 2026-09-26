@@ -15,11 +15,13 @@ from tests.test_page_ready import opened
 pytestmark = pytest.mark.browser
 
 
-async def zip_steps(site: str, query: str = "", *, click_submit: bool = True, **waits):
+async def zip_steps(site: str, query: str = "", *, click_submit: bool = True, patience: dict | None = None, **waits):
     """Set the zip, press Tab, (click Submit) - back to back, like the runner does.
     Returns (submitted, error still showing, seconds the Tab step took, review flags)."""
     async with async_playwright() as pw:
         browser, session, flags = await opened(pw, site, "zip_validation.html" + query, **waits)
+        for key, value in (patience or {}).items():
+            setattr(session.cfg.patience, key, value)
         try:
             base = dict(act_timeout_s=6.0, cfg=session.cfg, out=SimpleNamespace(notes=[]), session=session, review=session.review)
             await session.ensure_ready()
@@ -46,9 +48,17 @@ async def test_submit_after_tab_waits_for_the_zip_check_to_answer(site):
 
 
 async def test_without_waiting_the_same_steps_lose_the_race(site):
-    """The old behaviour, for the record: Submit is clicked while the check is still in flight, so nothing is submitted."""
-    submitted, error_showing, _, _ = await zip_steps(site, input_settle_max_s=0)
+    """The old behaviour, for the record: Submit is clicked while the check is still in flight, so nothing is submitted.  (With patience on, the
+    next step's page-ready check sees the site's own call still going and waits for it too: see the test below.)"""
+    submitted, error_showing, _, _ = await zip_steps(site, input_settle_max_s=0, patience={"enabled": False})
     assert (submitted, error_showing) == (False, True)
+
+
+async def test_even_without_the_input_wait_the_next_step_waits_for_the_sites_own_call(site):
+    """Patience: before the Submit click the page counts as still working while the zip check is in flight, so the click does not land on a form
+    that is about to change."""
+    _, error_showing, _, _ = await zip_steps(site, input_settle_max_s=0)
+    assert error_showing is False
 
 
 async def test_a_servlet_call_that_takes_longer_than_8_seconds_is_still_waited_for(site):
@@ -74,10 +84,18 @@ async def test_no_call_means_no_waiting_beyond_the_short_grace(site):
     assert seconds < 0.8                                                             # 0.3 s to see whether a call starts
 
 
-async def test_a_servlet_call_that_never_returns_is_waited_for_up_to_the_cap_only(site):
-    _, _, seconds, flags = await zip_steps(site, "?path=/bin/hang", click_submit=False, input_settle_max_s=1.5)
-    assert 1.3 < seconds < 3.0
+async def test_a_servlet_call_that_never_returns_is_waited_for_until_nothing_moves_for_the_stall_time(site):
+    """Patience: a call that is still going is waited for past input_settle_max_s (a slow site is not a failure) - until nothing has moved for
+    patience.stall_s: then the step carries on and says so."""
+    _, _, seconds, flags = await zip_steps(site, "?path=/bin/hang", click_submit=False, input_settle_max_s=0.5, patience={"stall_s": 2.0, "tell_after_s": 1})
+    assert 1.8 < seconds < 4.0
     assert any("page_busy" in str(call) for call in flags)                          # and it is said under Things to review
+
+
+async def test_without_patience_a_servlet_call_that_never_returns_is_waited_for_up_to_the_cap_only(site):
+    _, _, seconds, flags = await zip_steps(site, "?path=/bin/hang", click_submit=False, input_settle_max_s=1.5, patience={"enabled": False})
+    assert 1.3 < seconds < 3.0
+    assert any("page_busy" in str(call) for call in flags)
 
 
 async def test_the_servlet_pattern_is_configurable(site):

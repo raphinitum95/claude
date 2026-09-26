@@ -5,9 +5,11 @@ runner:
   max_workers: 8        # hard ceiling (protects a personal machine)
   low_priority: true    # lower OS priority of the runner and the browsers it starts
   headless: true        # headless = never takes focus/keyboard/mouse from you
-  test_timeout_s: 1800
-  step_hard_cap_s: 180
-  stop_after_failed_steps: 5  # a test stops after this many steps in a row that could not find/use their element (0 = never); Wait/Switch/keys do not count
+  test_timeout_s: 43200       # last-resort backstops only (12 h / 2 h): waits end on evidence (see patience below), not on these
+  step_hard_cap_s: 7200
+  stop_after_failed_steps: 5  # a test stops after this many steps in a row that could not find/use their element on a finished page (0 = never); Wait/Switch/keys do not count
+  infra_retries: 2            # a test whose browser crashed / ran out of memory / disconnected is "not run" (never pass or fail) and is run again this many times
+  infra_pause_s: 10           # ...after this pause
   # Being polite to a site behind a WAF (HTTP 403 / 429 = "the WAF is blocking us", not "the app said no"). Defaults shown:
   # stagger_s: 4              # workers start this far apart
   # min_page_load_gap_s: 1    # at least this long between the start of two page loads, across all tests
@@ -32,6 +34,14 @@ timeouts:
   optional_mode: quiet  # optional element = absent once the page is quiet (no requests/DOM changes); 'full' always waits optional_s
   navigation_s: 60
   poll_ms: 100
+
+# A slow computer or a slow site never fails a test: while the page is visibly still working (loading, waiting for its own server, the computer too busy
+# to answer) a wait goes on; an element missing from a finished page still fails after timeouts.element_s. Waits past tell_after_s are shown on the run screen.
+patience:
+  enabled: true         # false = the fixed limits below are hard limits again (the old behaviour)
+  stall_s: 600          # give up when nothing on the page has moved for this long (a request that never answers)
+  max_wait_s: 1800      # ...and in any case after this long, however busy the page keeps itself
+  tell_after_s: 10      # show a wait on the run screen once it goes past this
 
 waits:
   mode: smart           # smart: return as soon as the page is quiet | legacy: real sleeps | off

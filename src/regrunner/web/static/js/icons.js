@@ -61,6 +61,8 @@ export const STATUS = {
   SKIPPED: { label: 'Skipped', icon: 'stopc', cls: 'p-pend', color: 'var(--tx2)' },
   CANCELLED: { label: 'Cancelled', icon: 'stopc', cls: 'p-warn', color: 'var(--warn)' },
   INTERRUPTED: { label: 'Interrupted', icon: 'warn', cls: 'p-warn', color: 'var(--warn)' },
+  NOT_RUN: { label: 'Not run', icon: 'warn', cls: 'p-warn', color: 'var(--warn)' },          // the machine could not run it (a crash): neither passed nor failed
+  INCOMPLETE: { label: 'Incomplete', icon: 'warn', cls: 'p-warn', color: 'var(--warn)' },    // a run where nothing failed but some tests could not be run
 };
 
 export function pill(status, text) {

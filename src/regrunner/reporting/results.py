@@ -51,7 +51,7 @@ class TestResult:
     sheet: str = ""
     scenario: str = ""
     description: str = ""
-    status: str = "QUEUED"               # PASSED | FAILED | ERROR | CANCELLED
+    status: str = "QUEUED"               # PASSED | FAILED | ERROR | CANCELLED | NOT_RUN (the machine could not run it: never a pass or a fail)
     started_at: str = ""
     ended_at: str = ""
     duration_s: float = 0.0
@@ -66,6 +66,7 @@ class TestResult:
     attempts: list[dict[str, Any]] = field(default_factory=list)   # earlier attempts (retries)
     blocked: str = ""                    # set when the site's WAF blocked this attempt (HTTP 403 / 429): why
     captcha: str = ""                    # set when a captcha challenge stopped this attempt: what it was and why nobody could get past it
+    infra: str = ""                      # set when the machine, not the site, ended this attempt (the browser crashed / ran out of memory / disconnected, the driver died)
     variables: list[dict[str, Any]] = field(default_factory=list)   # every parameter this test set: [{name, value, stored, cell, seq, row, step, by_hand}]
 
 
@@ -95,6 +96,7 @@ class RunResult:
             "passed": sum(t.status == "PASSED" for t in self.tests),
             "failed": sum(t.status == "FAILED" for t in self.tests),
             "errored": sum(t.status in ("ERROR", "CANCELLED") for t in self.tests),
+            "not_run": sum(t.status == "NOT_RUN" for t in self.tests),
             "steps": steps,
             "steps_failed": sum(t.failed for t in self.tests),
             "review_items": sum(len(t.review) for t in self.tests),

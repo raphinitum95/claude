@@ -25,8 +25,8 @@ class RunnerCfg:
     allow_prod: bool = False         # PROD runs place real transactions: refused unless this (or --allow-prod) is set
     low_priority: bool = True        # lower OS scheduling priority of the runner and its browsers
     headless: bool = True            # headless never takes focus or keyboard from the user
-    test_timeout_s: int = 1800       # safety net for one whole test
-    step_hard_cap_s: int = 180       # safety net for one step
+    test_timeout_s: int = 43200      # last-resort safety net for one whole test (12 h): waits end on evidence (see PatienceCfg), not on this
+    step_hard_cap_s: int = 7200      # last-resort safety net for one step (2 h); must stay above patience.max_wait_s
     stagger_s: float = 4.0           # workers start this far apart (worker 2 after 4 s, worker 3 after 8 s...): no synchronised burst of page loads
     min_page_load_gap_s: float = 1.0  # at least this long between the start of two page loads, across all tests (0 = off)
     block_statuses: list[int] = field(default_factory=lambda: [403, 429])   # answers that mean "the WAF is blocking us", not "the app said no"
@@ -36,7 +36,11 @@ class RunnerCfg:
     report_timeout_s: float = 300    # building the report may take this long, then the run finishes without it
     stop_after_failed_steps: int = 5  # a test stops after this many steps in a row that act on an element and could not find or use it (0 = never): the page is
                                       # not where the test expects, and every further step only waits out its timeout.  A step that works, or reads an element and
-                                      # only differs from what was expected, starts the count again; Wait / Switch / key presses do not count either way
+                                      # only differs from what was expected, starts the count again; Wait / Switch / key presses do not count either way.  Only
+                                      # failures on a page that had settled count: a step that failed while the page was still loading says nothing about where it is
+    infra_retries: int = 2           # a test the machine could not run (the browser crashed / ran out of memory / disconnected, the browser driver died) is
+                                     # "not run", never passed or failed, and is run again from the start this many times
+    infra_pause_s: float = 10        # ...after this long (lets the machine recover)
 
 
 @dataclass
@@ -111,6 +115,19 @@ class TimeoutCfg:
 
 
 @dataclass
+class PatienceCfg:
+    """Waits end on evidence, not on a clock: while the page is visibly still working (a page load, requests going out or coming back, frames
+    loading, the machine too busy to answer) a wait goes on; an element that is missing from a page that has finished (quiet) still fails
+    after the step's normal time (timeouts.element_s).  A slow machine or a slow site therefore never turns into a failure."""
+    enabled: bool = True             # false = the fixed limits of timeouts / waits are hard limits again (the old behaviour)
+    stall_s: float = 600             # a wait gives up when NOTHING on the page has moved for this long (a request that never answers, a frozen page)
+    max_wait_s: float = 1800         # ...and in any case after this long, however busy the page keeps itself (a page that never stops polling)
+    lag_ms: int = 400                # the page taking longer than this to answer a question = the computer is overloaded: counts as "still working"
+    repeat_after: int = 3            # the Nth request to the same address on one page is polling (a heartbeat, a chat widget), not loading: ignored
+    tell_after_s: float = 10         # a wait that goes past this long (the old fixed limit) is shown on the run screen with the reason
+
+
+@dataclass
 class WaitCfg:
     mode: str = "smart"              # smart | legacy | off  (how `Wait` rows behave)
     quiet_ms: int = 400              # smart: DOM + network must be quiet this long
@@ -123,6 +140,9 @@ class WaitCfg:
     input_call_grace_ms: int = 300   # ...and how long to watch for such a call to start after a key press (a check may be debounced)
     call_url_patterns: list[str] = field(default_factory=lambda: ["/bin/"])   # regexes: a first-party XHR/fetch whose URL matches one is a servlet call (AEM: /bin/...); empty = every first-party call
     call_ignore_patterns: list[str] = field(default_factory=list)  # regexes: first-party URLs never waited for (analytics pings, polling...)
+    auth_url_patterns: list[str] = field(default_factory=lambda: [r"okta", r"/oauth2/", r"/idp/", r"/api/v1/authn", r"/sso/", r"login\."])
+                                     # regexes: sign-in services (Okta...) whose 4xx answers are kept in network.jsonl with their body (secrets masked),
+                                     # so a refused login ("Each code can only be used once") is explainable from the run folder
     nav_grace_ms: int = 400          # after a click that may navigate: how long to watch for a page load to *start* (a JS click returns before it does)
 
 
@@ -243,6 +263,7 @@ class Config:
     browser: BrowserCfg = field(default_factory=BrowserCfg)
     timeouts: TimeoutCfg = field(default_factory=TimeoutCfg)
     waits: WaitCfg = field(default_factory=WaitCfg)
+    patience: PatienceCfg = field(default_factory=PatienceCfg)
     output: OutputCfg = field(default_factory=OutputCfg)
     screenshots: ScreenshotCfg = field(default_factory=ScreenshotCfg)
     selectors: SelectorCfg = field(default_factory=SelectorCfg)

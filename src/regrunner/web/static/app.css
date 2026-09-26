@@ -9,6 +9,7 @@ body { margin: 0 }
   --pass: #43D69B; --pass-soft: rgba(67, 214, 155, .12); --pass-line: rgba(67, 214, 155, .38);
   --fail: #FF7062; --fail-soft: rgba(255, 112, 98, .13); --fail-line: rgba(255, 112, 98, .42);
   --warn: #F4B84A; --warn-soft: rgba(244, 184, 74, .12); --warn-line: rgba(244, 184, 74, .40);
+  --wait: #F7C45C; --wait-soft: rgba(244, 184, 74, .17); --wait-line: rgba(244, 184, 74, .62);
   --pend: #5A6784; --pend-soft: rgba(90, 103, 132, .18);
   --track: #1A2334; --tick: #27324A;
   --shadow: 0 1px 0 rgba(255, 255, 255, .035) inset, 0 14px 34px rgba(0, 0, 0, .34);
@@ -24,6 +25,7 @@ body { margin: 0 }
   --pass: #11704F; --pass-soft: rgba(17, 112, 79, .10); --pass-line: rgba(17, 112, 79, .36);
   --fail: #BE3427; --fail-soft: rgba(190, 52, 39, .09); --fail-line: rgba(190, 52, 39, .38);
   --warn: #8C5A00; --warn-soft: rgba(140, 90, 0, .10); --warn-line: rgba(140, 90, 0, .38);
+  --wait: #7A4E00; --wait-soft: #FFF0B8; --wait-line: #D9A520;
   --pend: #8A93A6; --pend-soft: rgba(138, 147, 166, .16);
   --track: #E4E0D5; --tick: #D6D1C4;
   --shadow: 0 1px 2px rgba(40, 36, 20, .06), 0 10px 26px rgba(40, 36, 20, .07);
@@ -130,6 +132,8 @@ body { margin: 0 }
 .bn-warn { background: var(--warn-soft); border-color: var(--warn-line) }
 .bn-fail { background: var(--fail-soft); border-color: var(--fail-line) }
 .bn-acc { background: var(--acc-soft); border-color: var(--acc-line) }
+.bn-wait { background: var(--wait-soft); border-color: var(--wait-line) }
+.waitline { display: flex; gap: 9px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--wait-soft); border: 1px solid var(--wait-line); font-size: 12.5px; color: var(--tx) }
 .bn b { font-weight: 650 }
 
 

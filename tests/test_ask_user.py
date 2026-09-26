@@ -142,7 +142,8 @@ def test_the_google_token_step_asks_for_the_code_when_it_has_no_usable_key_and_s
     ctx = step_ctx(tmp_path, {"METHOD": "GET_GOOGLE_TOKEN", "VALUE": "DT_Key"}, fake)          # the token was never replaced by a real key
     asyncio.run(run_action(ctx))
     assert ctx.out.error == "" and ctx.out.output == "123456" and ctx.out.secret and "asked for the code instead" in " ".join(ctx.out.notes)
-    assert fake.asked[0][2] == "Enter the 6-digit code from Google Authenticator" and fake.asked[0][3] is True
+    assert fake.asked[0][2].startswith("Enter the 6-digit code from Google Authenticator.") and fake.asked[0][3] is True
+    assert "Each code works once" in fake.asked[0][2]                     # a person reading it off the phone cannot be coordinated: told instead
     ctx = step_ctx(tmp_path, {"METHOD": "GET_GOOGLE_TOKEN", "VALUE": "DT_Key"}, None)            # nobody to ask: the old, clear error
     asyncio.run(run_action(ctx))
     assert "base32" in ctx.out.error and "ASK_USER" in ctx.out.error

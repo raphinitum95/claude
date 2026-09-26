@@ -19,7 +19,9 @@ Event types (all carry ``type``, ``ts`` and ``run_id``):
     console_error  test, step, kind, message, url          (kind: console|pageerror)
     network_error  test, step, kind, url, status, method, message   (kind: requestfailed|http_error)
     review_item    test, step, category, severity, message           (selector fallback, ignored error ...)
-    test_finished  test, status, passed, failed, skipped, duration_s, error
+    test_finished  test, status, passed, failed, skipped, duration_s, error      (status NOT_RUN: the machine could not run it; run again)
+    worker_waiting   test, worker, step, wait, code, message, [seconds]   a worker waits on purpose (code: login_code | slow_page | infra_rerun)
+    worker_resumed   test, worker, step, wait, code, waited_s             ...and that wait is over
     run_progress   done, total, percent, tests:{id:{done,total,percent,status}}
     run_finished   status, summary, artifacts
     log            level, message
@@ -113,7 +115,7 @@ class ProgressTracker:
             if event.get("attempt", 1) > 1:
                 t["done"] = 0                                     # a test that starts over (retry) counts from its first step again
             self._emit()
-        elif kind == "run_paused":                                # the attempt that just ended is about to be run again: not finished
+        elif kind == "run_paused" or (kind == "worker_waiting" and event.get("code") == "infra_rerun"):   # the attempt that just ended is run again: not finished
             t = self.tests.get(event.get("test", ""))
             if t is not None:
                 t.update(done=0, status="queued")

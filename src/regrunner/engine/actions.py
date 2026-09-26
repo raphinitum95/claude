@@ -29,6 +29,7 @@ from ..workbook.sheet import ErrorText, cell_text
 from .enabled import pointer
 from .keys import parse_sendkeys
 from .outcome import StepOut, compare_ok
+from .patience import NO_NOTICE, Patience, plain_seconds
 from .session import ActionError, BrowserSession, FrameStep
 from .settle import idle_ms, settle
 
@@ -91,6 +92,9 @@ class StepContext:
     seq: int = 0
     asker: Any = None                                # engine.ask.Asker of the run (None in unit tests)
     secret_values: set = field(default_factory=set)  # what people typed in as secrets in this test: masked in everything that is stored
+    notice: Any = None                               # engine.patience.WaitNotice of the test: tells the run screen when this step waits on purpose
+    last_wait: Any = None                            # the Patience of the element search that came back empty (why it gave up)
+
 
     # -- timeouts ----------------------------------------------------------------------------------
     @property
@@ -123,15 +127,21 @@ class StepContext:
         if step.ignore_missing and missed and not step.timeout:
             timeout = min(timeout, self.cfg.timeouts.optional_repeat_s)   # already known-absent: quick re-check
         scope = await self.session.scope()
-        give_up = None
-        if step.ignore_missing and not step.timeout and self.cfg.timeouts.optional_mode == "quiet" and self.session.is_open:
-            page, quiet = self.session.page, self.cfg.waits.quiet_ms
+        quiet_mode = step.ignore_missing and not step.timeout and self.cfg.timeouts.optional_mode == "quiet" and self.session.is_open
+        page, quiet = (self.session.page, self.cfg.waits.quiet_ms) if self.session.is_open else (None, 0)
+        # ``timeout`` is how long the element is looked for once the page has *finished*; while the page is still loading the search goes on
+        # (engine/patience.py), so a slow computer or site never makes an element "not found".
+        pat = _patient(self, timeout, "the element")
 
-            async def give_up(elapsed: float) -> bool:
-                """Optional and still absent after the page went quiet (no requests, no DOM changes)."""
-                return elapsed >= 0.2 and await idle_ms(page) >= quiet
+        async def give_up(elapsed: float) -> bool:
+            if await pat.give_up():
+                return True
+            # Optional and still absent once the page has gone quiet (no requests, no DOM changes) - but never while it is still loading.
+            return quiet_mode and elapsed >= 0.2 and not pat.activity.working and await idle_ms(page) >= quiet
+        limit = self.cfg.patience.max_wait_s + 60 if self.cfg.patience.enabled else timeout
         try:
-            res = await resolve(scope, chain, step.index, timeout, self.cfg.timeouts.poll_ms / 1000, give_up)
+            with pat:
+                res = await resolve(scope, chain, step.index, limit, self.cfg.timeouts.poll_ms / 1000, give_up)
         except SelectorSyntaxError as err:
             self.out.obj_exists = False
             raise ActionError(f"Invalid selector - {err}") from err
@@ -139,6 +149,9 @@ class StepContext:
             self.out.obj_exists = False
             if step.ignore_missing:
                 self.session.missed_optional.add(key)
+            elif pat.reason:
+                self.out.notes.append(f"not found: {pat.explain()}")
+            self.last_wait = pat
             return None
         self.session.missed_optional.discard(key)
         self.out.obj_exists = True
@@ -181,6 +194,12 @@ class StepContext:
 
 def act_ms(ctx: StepContext) -> int:
     return int(ctx.act_timeout_s * 1000)
+
+
+def _patient(ctx, quiet_s: float, what: str, missing: str = "") -> Patience:
+    """A wait that goes on while the page is still working and ends once it has been finished for ``quiet_s`` (engine/patience.py)."""
+    cfg = getattr(ctx, "cfg", None)
+    return Patience(ctx.session, quiet_s, what=what, cfg=cfg.patience if cfg is not None else None, missing=missing)
 
 
 def _first_line(err: BaseException) -> str:
@@ -238,8 +257,11 @@ async def navigate(ctx: StepContext) -> None:
     if not url:
         raise ActionError("Navigate: no URL")
     await ctx.session.pace()
+    page = ctx.session.page
     try:
-        await ctx.session.page.goto(url, wait_until="load", timeout=ctx.session.nav_timeout_s * 1000)
+        await ctx.session.load(page, lambda **kw: page.goto(url, **kw))
+    except ActionError as err:
+        raise ActionError(f"Navigation failed: {err}") from err
     except Exception as err:
         ctx.out.detail = whole_error(err)
         raise ActionError(f"Navigation failed: {_first_line(err)}") from err
@@ -247,13 +269,15 @@ async def navigate(ctx: StepContext) -> None:
 
 @action("BACK")
 async def back(ctx: StepContext) -> None:
-    await ctx.session.page.go_back(wait_until="load", timeout=ctx.session.nav_timeout_s * 1000)
+    page = ctx.session.page
+    await ctx.session.load(page, lambda **kw: page.go_back(**kw))
     ctx.session.switch_to_default()
 
 
 @action("REFRESH")
 async def refresh(ctx: StepContext) -> None:
-    await ctx.session.page.reload(wait_until="load", timeout=ctx.session.nav_timeout_s * 1000)
+    page = ctx.session.page
+    await ctx.session.load(page, lambda **kw: page.reload(**kw))
     ctx.session.switch_to_default()
 
 
@@ -290,17 +314,21 @@ async def switch_to_frame(ctx: StepContext) -> None:
     lenient = ctx.cfg.behaviour.missing_frame == "continue"
     key = f"frame:{step.by}:{step.value}"
     timeout = ctx.act_timeout_s
-    give_up = None
+    quiet_mode = False
     if lenient and not ctx.step.timeout:
         if key in ctx.session.missed_optional:
             timeout = min(timeout, ctx.cfg.timeouts.optional_repeat_s)
-        if ctx.cfg.timeouts.optional_mode == "quiet" and ctx.session.is_open:
-            page, quiet = ctx.session.page, ctx.cfg.waits.quiet_ms
+        quiet_mode = ctx.cfg.timeouts.optional_mode == "quiet" and ctx.session.is_open
+    page, quiet = (ctx.session.page, ctx.cfg.waits.quiet_ms) if ctx.session.is_open else (None, 0)
+    pat = _patient(ctx, timeout, f"the frame {step.value!r}")
 
-            async def give_up(elapsed: float) -> bool:
-                return elapsed >= 0.2 and await idle_ms(page) >= quiet
+    async def give_up(elapsed: float) -> bool:
+        if await pat.give_up():
+            return True
+        return quiet_mode and elapsed >= 0.2 and not pat.activity.working and await idle_ms(page) >= quiet     # (never while it is still loading)
     try:
-        await ctx.session.switch_to_frame(step, timeout, give_up)
+        with pat:
+            await ctx.session.switch_to_frame(step, ctx.cfg.patience.max_wait_s + 60 if ctx.cfg.patience.enabled else timeout, give_up)
         ctx.session.missed_optional.discard(key)
     except ActionError as err:
         if not lenient or "No such frame" not in str(err):
@@ -332,9 +360,9 @@ async def switch_to_window(ctx: StepContext) -> None:
         # A popup triggered by the previous step is registered asynchronously; legacy runs hid this
         # race behind fixed waits.  Give it a moment to appear instead of "switching" to the old window.
         known = len(session.pages)
-        grace = time.monotonic() + ctx.cfg.waits.window_grace_s
-        while time.monotonic() < grace and len(session.pages) <= known and not session.window_recently_opened:
-            await asyncio.sleep(0.05)
+        with _patient(ctx, ctx.cfg.waits.window_grace_s, "the new window to open") as pat:       # a busy page may take longer to open it
+            while len(session.pages) <= known and not session.window_recently_opened and not await pat.give_up():
+                await asyncio.sleep(0.05)
     if wants_latest:
         open_windows = [p for p in session.pages if not p.is_closed()]
         if len(open_windows) == 1:
@@ -343,15 +371,15 @@ async def switch_to_window(ctx: StepContext) -> None:
             raise ActionError(f"No new window opened: this step switches to the window the step before it opens, but after waiting "
                               f"{ctx.cfg.waits.window_grace_s:g} s only {len(open_windows)} window is open")
     # A window index may refer to a window that is not registered yet; wait for it.
-    deadline = time.monotonic() + ctx.act_timeout_s
-    while True:
-        try:
-            ctx.session.switch_to_window(ctx.value_text)
-            return
-        except ActionError:
-            if time.monotonic() >= deadline:
-                raise
-            await asyncio.sleep(0.1)
+    with _patient(ctx, ctx.act_timeout_s, "the window") as pat:
+        while True:
+            try:
+                ctx.session.switch_to_window(ctx.value_text)
+                return
+            except ActionError:
+                if await pat.give_up():
+                    raise
+                await asyncio.sleep(0.1)
 
 
 @action("SWITCHTOMAINWINDOW")
@@ -416,36 +444,92 @@ async def ask_user(ctx: StepContext) -> None:
 async def get_google_token(ctx: StepContext) -> None:
     """Value = the authenticator secret; the current 6-digit code becomes the step's Output_Value (a later Set reads it).
     With no usable secret and a person to ask, it asks for the code instead."""
-    from ..totp import STEP_S, BadSecret, code_at, reserve_window
+    from ..totp import STEP_S, BadSecret, code_at, fingerprint, reserve_window
     try:
         code_at(ctx.value_text)
     except BadSecret as err:
         if ctx.asker is not None and ctx.asker.available:
             ctx.out.notes.append(f"no usable key ({err}): asked for the code instead")
-            ctx.out.output = (await ask_person(ctx, "Enter the 6-digit code from Google Authenticator", secret=True)).strip()
+            # Nobody here knows the key, so nothing can stop two tests being given the same code: say so to the person who reads it off the phone.
+            ctx.out.output = (await ask_person(ctx, "Enter the 6-digit code from Google Authenticator. Each code works once: if another test has just "
+                                                    "used the code on screen, wait for the next one.", secret=True)).strip()
             return
         raise ActionError(f"GET_GOOGLE_TOKEN: {err} (the Value cell is the secret key). Fill it in, or use an ASK_USER step to be asked for the "
                           "code.") from None
     # One code, one login: a code is accepted once, so a second test logging in with the same secret (at the same moment, or a run started a few seconds after
-    # another) is given the next window's code instead of the one that was just used.
-    booked = reserve_window(ctx.value_text, store=ctx.cfg.base_dir / ".auth" / "totp_last.json")
+    # another) is given the next window's code instead of the one that was just used.  A code is also only handed out with enough of its 30 s left to
+    # reach the Verify click (measured on this computer: code_submitted).
+    store = ctx.cfg.base_dir / ".auth" / "totp_last.json"
+    booked = reserve_window(ctx.value_text, store=store)
     if booked.wait_s > 0:
-        await asyncio.sleep(booked.wait_s)
         why = ("the code for this one was already used by another login with the same authenticator secret, and Okta accepts a code once"
-               if booked.reason == "used" else "the current code was about to expire")
+               if booked.reason == "used" else "the current code would expire before the login is submitted")
+        plain = ("another test has just used this account's current code, and the site accepts each code once" if booked.reason == "used"
+                 else "the current code would expire before this test gets to submit it")
+        notice = ctx.notice or NO_NOTICE
+        wait_id = notice.begin("login_code", f"Waiting {booked.wait_s:.0f} s for the next login code: {plain}.", seconds=booked.wait_s)
+        try:
+            await asyncio.sleep(booked.wait_s)
+        finally:
+            notice.end(wait_id)
         ctx.out.notes.append(f"waited {booked.wait_s:.1f}s for the next {STEP_S} s code window ({why})")
-    ctx.out.output = code_at(ctx.value_text, booked.window * STEP_S)
+    code = code_at(ctx.value_text, booked.window * STEP_S)
+    ctx.out.output = code
+    ctx.out.secret = True                                   # a login code is never shown in a report or an event, here or where a later step types it
+    ctx.secret_values.add(code)
+    try:
+        ctx.session.totp = {"code": code, "key": fingerprint(ctx.value_text), "store": store, "issued": time.time(),
+                            "expires": (booked.window + 1) * STEP_S, "step": ctx.seq, "typed": False, "submitted": False}
+    except AttributeError:
+        pass
+
+
+def code_typed(ctx, text: str) -> None:
+    """The one-time code handed out by GET_GOOGLE_TOKEN is being typed into the page (never shown: only that it happened)."""
+    booked = getattr(ctx.session, "totp", None)
+    if booked and not booked["submitted"] and booked["code"] in str(text):
+        booked["typed"] = True
+
+
+def code_submitted(ctx) -> None:
+    """The first click / Enter after the code was typed is what sends it to the site: measure how long after it was handed out, and how much of
+    its 30 s was left.  Remembered per secret (``totp.record_gap``) so the next code is handed out with enough time left; a code that had already
+    expired is flagged on the step (the site may then refuse the login)."""
+    from ..totp import record_gap
+    booked = getattr(ctx.session, "totp", None)
+    if not booked or not booked["typed"] or booked["submitted"]:
+        return
+    booked["submitted"] = True
+    now = time.time()
+    gap, left = now - booked["issued"], booked["expires"] - now
+    record_gap(booked["key"], gap, booked["store"])
+    if left >= 0:
+        ctx.out.notes.append(f"the login code from step {booked['step']} was submitted {gap:.1f} s after it was generated, {left:.1f} s before it expired")
+    else:
+        ctx.out.notes.append(f"the login code from step {booked['step']} was submitted {gap:.1f} s after it was generated, {-left:.1f} s AFTER it "
+                             "expired: the site may refuse it. The next code is handed out with more time left.")
+        review = getattr(ctx, "review", None)
+        if review is not None:
+            review.flag("login_code", f"A login code was submitted {-left:.1f} s after it expired (step {ctx.seq}); the site may have refused it", "warning")
 
 
 @action("ALERT_OK", "ALERT_CANCEL", "ALERT_TEXT_OUT")
 async def alert(ctx: StepContext) -> None:
+    method = ctx.step.method
+    answered, ctx.session.answered_dialog = getattr(ctx.session, "answered_dialog", None), None
+    if answered is not None and ctx.session.pending_dialog is None:
+        # The dialog opened during the step before this one and was answered right then, the way this step says (see BrowserSession._on_dialog).
+        if method == "ALERT_TEXT_OUT":
+            ctx.out.output = answered["message"]
+        ctx.out.notes.append(f"the dialog was answered with {'OK' if answered['how'] == 'accept' else 'Cancel'} as it opened (a page can do nothing "
+                             "while a dialog is open), as this step says")
+        return
     deadline = time.monotonic() + ctx.act_timeout_s
     while ctx.session.pending_dialog is None:
         if time.monotonic() >= deadline:
             raise ActionError("Alert button not found (no dialog is open)")
         await asyncio.sleep(0.05)
     dialog, ctx.session.pending_dialog = ctx.session.pending_dialog, None
-    method = ctx.step.method
     if method == "ALERT_TEXT_OUT":
         ctx.out.output = dialog.message
         await dialog.dismiss()
@@ -484,7 +568,7 @@ async def wait(ctx: StepContext) -> None:
     mode = ctx.cfg.waits.mode
     if mode == "off" or seconds <= 0:
         return
-    if mode == "legacy":
+    if mode == "legacy" or getattr(ctx.session, "pending_dialog", None) is not None:      # (an open dialog blocks the page: nothing to watch)
         await asyncio.sleep(seconds)
         return
     if not ctx.session.is_open:
@@ -510,13 +594,17 @@ async def send_keys(ctx: StepContext) -> None:
             typed.append(op.key)
             continue
         if typed:
+            code_typed(ctx, "".join(typed))
             await kb.type("".join(typed))
             typed = []
         await kb.press(op.combo)
+        if op.combo.split("+")[-1] in ("Enter", "NumpadEnter"):
+            code_submitted(ctx)
         if op.combo.split("+")[-1] in ("Enter", "NumpadEnter") and await ctx.session.watch_for_navigation():
             await ctx.session.ensure_ready()              # Enter submitted a form / followed a link: end the step on the new page
             ctx.out.notes.append("the key press loaded a page; waited for it")
     if typed:
+        code_typed(ctx, "".join(typed))
         await kb.type("".join(typed))
     if skipped_zoom:
         ctx.out.notes.append(f"{skipped_zoom} browser-zoom shortcut(s) ignored (headless)")
@@ -587,19 +675,19 @@ async def not_exist(ctx: StepContext) -> None:
     chain = build_chain(step.findby, step.findby_value, step.locator_column, ctx.selector_map,
                         legacy_fallback=ctx.cfg.selectors.legacy_fallback)
     scope = await ctx.session.scope()
-    deadline = time.monotonic() + ctx.act_timeout_s
-    while True:
-        counts = []
-        for s in chain:
-            try:
-                counts.append(await scope.locator(s.selector).count())
-            except Exception:
-                counts.append(0)
-        if not any(c > step.index for c in counts):
-            return
-        if time.monotonic() >= deadline:
-            raise ActionError("Object existed")
-        await asyncio.sleep(0.1)
+    with _patient(ctx, ctx.act_timeout_s, "the element to go away", "the element was still there") as pat:       # a page still loading may remove it late
+        while True:
+            counts = []
+            for s in chain:
+                try:
+                    counts.append(await scope.locator(s.selector).count())
+                except Exception:
+                    counts.append(0)
+            if not any(c > step.index for c in counts):
+                return
+            if await pat.give_up():
+                raise ActionError("Object existed")
+            await asyncio.sleep(0.1)
 
 
 @action("HIGHLIGHT", element=True)
@@ -647,6 +735,7 @@ async def click_and_verify(ctx: StepContext, res: Resolved, do_click: Callable[[
         await ctx.session.pace()                          # a click that may load a page waits its turn (run-wide throttle / cool-down)
     mark = ctx.session.calls_snapshot()
     await do_click()
+    code_submitted(ctx)
     if navigates:
         started_navigation = await ctx.session.watch_for_navigation()
         await ctx.session.await_call_results(mark, 3.0)   # what the click asked of the server: did it answer, and was it refused?
@@ -662,16 +751,16 @@ async def click_and_verify(ctx: StepContext, res: Resolved, do_click: Callable[[
     radio = before["type"] == "radio"
     want = True if radio else not before["checked"]
     what = "selected" if radio else "toggled"
-    deadline = time.monotonic() + 1.0
-    while True:                                       # phase 1: the new state has to appear
-        now = await _checkable_state(res)
-        if now is None:
-            return                                    # the page replaced the element: nothing left to verify
-        if now["checked"] == want:
-            break
-        if time.monotonic() >= deadline:
-            raise ActionError(f"Clicked the {before['type']} but it did not become {what} (the page ignored or undid the click)")
-        await asyncio.sleep(0.1)
+    with _patient(ctx, 1.0, f"the {before['type']} to show the click") as pat:      # (a busy page takes longer to show it)
+        while True:                                   # phase 1: the new state has to appear
+            now = await _checkable_state(res)
+            if now is None:
+                return                                # the page replaced the element: nothing left to verify
+            if now["checked"] == want:
+                break
+            if await pat.give_up():
+                raise ActionError(f"Clicked the {before['type']} but it did not become {what} (the page ignored or undid the click)")
+            await asyncio.sleep(0.1)
     for _ in range(2):                                # phase 2: ...and stay
         await asyncio.sleep(0.2)
         now = await _checkable_state(res)
@@ -731,16 +820,16 @@ async def js_click(ctx: StepContext) -> None:
     res = await ctx.element()
     if res is None:
         return
-    deadline = time.monotonic() + (ctx.find_timeout_s if ctx.step.ignore_missing else ctx.act_timeout_s)      # an optional element is not waited for long
-    while True:
-        state = await res.locator.evaluate(CLICKABLE_JS, timeout=act_ms(ctx))
-        if state["visible"] and not state["disabled"]:
-            break
-        if time.monotonic() >= deadline:
-            if not state["visible"]:
-                raise ActionError("Element is not visible, so a person could not click it (hidden or has no size)")
-            raise ActionError("Element is disabled; a DOM click would do nothing")
-        await asyncio.sleep(0.1)
+    with _patient(ctx, ctx.find_timeout_s if ctx.step.ignore_missing else ctx.act_timeout_s, "the element to be shown and enabled") as pat:
+        while True:                                  # (an optional element is not waited for long once the page has finished)
+            state = await res.locator.evaluate(CLICKABLE_JS, timeout=act_ms(ctx))
+            if state["visible"] and not state["disabled"]:
+                break
+            if await pat.give_up():
+                if not state["visible"]:
+                    raise ActionError("Element is not visible, so a person could not click it (hidden or has no size)")
+                raise ActionError("Element is disabled; a DOM click would do nothing")
+            await asyncio.sleep(0.1)
     await click_and_verify(ctx, res, lambda: res.locator.evaluate("e => e.click()", timeout=act_ms(ctx)))
 
 
@@ -773,6 +862,8 @@ async def special_key(ctx: StepContext) -> None:
     await res.locator.focus(timeout=act_ms(ctx))
     for op in parse_sendkeys(ctx.value_text or "{ENTER}"):
         await ctx.session.page.keyboard.press(op.combo)
+        if op.combo.split("+")[-1] in ("Enter", "NumpadEnter"):
+            code_submitted(ctx)
 
 
 _CARET_TO_END_JS = """e => { try { if (typeof e.value === 'string' && e.setSelectionRange) {
@@ -804,8 +895,28 @@ _CLICK_EVENTS_JS = """e => { for (const type of ['mousedown', 'mouseup', 'click'
   e.dispatchEvent(new MouseEvent(type, {bubbles: true, cancelable: true, composed: true, view: window, button: 0})); } }"""
 
 
+async def _editable(ctx: StepContext, locator) -> int:
+    """Before typing: wait - patiently - until the field is shown and editable (a form still loading shows it disabled / hides it).  Returns the
+    time limit for the typing itself (short when the field never became usable on a finished page)."""
+    ms = act_ms(ctx)
+    with _patient(ctx, ctx.act_timeout_s, "the field to be usable", "the field did not become editable") as pat:
+        if pat.plain:
+            return ms
+        while True:
+            try:
+                if await locator.is_visible() and await locator.is_editable(timeout=1500):
+                    return ms
+            except Exception as err:
+                if "Timeout" not in str(err):
+                    return ms                                    # not a text field (a contenteditable...): the typing itself says what is wrong
+            if await pat.give_up():
+                ctx.out.notes.append(f"not usable: {pat.explain()}")
+                return 2000
+            await asyncio.sleep(0.1)
+
+
 async def _enter(ctx: StepContext, locator, text: str, clear_first: bool) -> None:
-    timeout = act_ms(ctx)
+    timeout = await _editable(ctx, locator)
     if ctx.cfg.behaviour.click_before_typing and text:
         # A person clicks into a field before typing, and sites rely on it: this one (Owner_CRVD) removes a field's error message
         # in a click handler and skips validating a field that still shows one, and its date picker closes on a mousedown outside
@@ -822,6 +933,7 @@ async def _enter(ctx: StepContext, locator, text: str, clear_first: bool) -> Non
     await locator.focus(timeout=timeout)
     await locator.evaluate(_CARET_TO_END_JS, timeout=timeout)
     if text:
+        code_typed(ctx, text)
         await ctx.session.page.keyboard.type(text)
 
 
@@ -868,7 +980,8 @@ async def _typed_fields_hold(ctx: StepContext, current_key: str) -> None:
 _TYPING_RUN_KEEPS = {"SET", "WRITE", "WAIT", "OUTPUT", "EXIST", "SCREENSHOT", "SWITCHTOFRAME", "SWITCHTODEFAULT"}
 
 
-_NO_PAGE_GATE = {"OPEN", "QUIT", "WAIT", "BREAK", "STOP"}          # these do not depend on the current document
+_NO_PAGE_GATE = {"OPEN", "QUIT", "WAIT", "BREAK", "STOP",          # these do not depend on the current document
+                 "ALERT_OK", "ALERT_CANCEL", "ALERT_TEXT_OUT"}      # (and while a dialog is open the page cannot answer: it waits for the dialog)
 
 
 def ends_typing_run(action_name: str) -> bool:
@@ -1015,8 +1128,9 @@ async def _read_output(ctx: StepContext, res: Resolved) -> Callable[[], Awaitabl
 
 
 async def _poll(read: Callable[[], Awaitable[str | None]], accept: Callable[[str], bool] | None,
-                timeout_s: float, poll_s: float, stable_ms: int, stable_max_ms: int) -> str:
-    """Read until ``accept`` (if any) is satisfied; otherwise until the value stops changing."""
+                timeout_s: float, poll_s: float, stable_ms: int, stable_max_ms: int, give_up=None) -> str:
+    """Read until ``accept`` (if any) is satisfied; otherwise until the value stops changing.  ``give_up`` (async, optional) replaces the
+    ``timeout_s`` clock: a patient wait (engine/patience.py) that goes on while the page is still loading."""
     last, started = "", time.monotonic()
     stable_since = started
     first = True
@@ -1031,7 +1145,7 @@ async def _poll(read: Callable[[], Awaitable[str | None]], accept: Callable[[str
             if accept(value):
                 return value
             last = value
-            if time.monotonic() - started >= timeout_s:
+            if (await give_up()) if give_up is not None else time.monotonic() - started >= timeout_s:
                 return value
             await asyncio.sleep(poll_s)
             continue
@@ -1058,9 +1172,10 @@ async def output(ctx: StepContext) -> None:
                              "Output_Property = value on the <select>")
     accept = None
     if step.exact_match or step.contains:
-        accept = lambda actual: compare_ok(step, actual)[0]        # retry until the expected text appears
-    text = await _poll(read, accept, ctx.cfg.output.match_timeout_s, ctx.cfg.timeouts.poll_ms / 1000,
-                       ctx.cfg.output.stable_ms, ctx.cfg.output.stable_max_ms)
+        accept = lambda actual: compare_ok(step, actual)[0]        # read again until the expected text appears (the page may still be filling it in)
+    with _patient(ctx, ctx.cfg.output.match_timeout_s, "the expected text", "the expected text did not appear") as pat:
+        text = await _poll(read, accept, ctx.cfg.output.match_timeout_s, ctx.cfg.timeouts.poll_ms / 1000,
+                           ctx.cfg.output.stable_ms, ctx.cfg.output.stable_max_ms, give_up=pat.give_up if accept is not None else None)
     ctx.out.output = text
 
 

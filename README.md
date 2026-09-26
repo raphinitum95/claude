@@ -1,3 +1,5 @@
+> **AI agents: start with [AGENTS.md](AGENTS.md)** (project map, where to change what, which tests to run). This README is the user manual.
+
 # regrunner
 
 A Playwright-based runner for the existing keyword-driven Excel regression workbooks (the ones the old
@@ -146,10 +148,21 @@ All 23 actions in your workbook are implemented (55 names/aliases: `Open Quit Wa
 Exist Output Select Tick MoveToElement Mouse_Scroll SwitchToFrame/Default/Window/MainWindow Back Screenshot
 Get_Current_URL …`), plus the rest of the legacy web vocabulary (`Refresh Navigate Alert_* ExecuteScript Clear DoubleClick …`).
 `GET_GOOGLE_TOKEN` (Okta / Google Authenticator code): *Value* is the base32 secret, the six-digit code becomes the step's *Output_Value*
-(a later `Set` with `=S<row>` types it). A code with under four seconds left waits for the next one, so it cannot expire before the site checks it.
+(a later `Set` with `=S<row>` types it; the code is masked in reports and events, like a password).
 **A code is handed out once per secret and 30 s window**: Okta accepts a code once, so when two tests log in with the same authenticator secret (or a run is started a
 few seconds after another) the second one waits for the next window (up to ~30 s each) instead of being refused with "Each code can only be used once". A different
-account never waits. What was handed out is remembered in `.auth/totp_last.json` as a hash of the key (never the key itself).
+account never waits. What was handed out is remembered in `.auth/totp_last.json` as a hash of the key (never the key itself). The wait is shown on the run screen
+**before** it starts (yellow *waiting* banner with a countdown) and noted on the step.
+**A code is only handed out with enough time left to reach the Verify click.** Okta checks the code when a *later* step clicks Verify, and on a busy computer the
+steps in between take longer. So the runner measures, for every login, how long it took from handing the code out to the click / Enter that submitted it (noted on that
+step: *"submitted 3.2 s after it was generated, 18.1 s before it expired"*; one that arrived too late is flagged under *Things to review*). The next code is handed
+out only if more than the slowest recent gap + 3 s of its 30 s is left (at least 4 s, at most 25 s; 10 s until this computer has measured anything), else the
+runner waits for the next window. The measurements are kept (per secret, as a hash) in `.auth/totp_last.json`.
+**Two computers using the same secret at the same time are not coordinated**: the record is a file on each computer, so a run on your work computer and one here can
+still be handed the same code. Run logins for one account from one computer at a time. (A code a *person* types in - `ASK_USER`, or `GET_GOOGLE_TOKEN` with no key -
+cannot be coordinated either: the question tells them to wait for the next code if another test just used the one on screen.)
+Sign-in services' refusals are kept for the record: a 4xx answer from an Okta / OAuth / SSO address (`waits.auth_url_patterns`) is written to the test's
+`network.jsonl` with its body (codes and secret-looking values masked), so the next *"Each code can only be used once"* is explainable from the run folder.
 Keep the secret out of the workbook if you like: leave the Params cell blank and set `RR_VAR_DT_KEY=…` in `secrets.env`. With **no usable key** (empty cell, or
 the `DT_Key` token still unreplaced) and a person to ask, the step **asks for the code** instead of failing (see `ASK_USER` below).
 
@@ -265,6 +278,38 @@ Behaviour worth knowing:
 * `getAttribute("value")` (8 rows in `Owner_RVD`) was never implemented in the old runner: it only checked that the
   element exists. It is ported as-is and flagged by `regrunner lint` so you can decide whether to make it a real check.
 
+### Slow is not wrong: waits end on evidence, not on a clock
+
+A fixed time limit turns "slow" into "failed": ten browsers on a busy laptop load pages slower than any limit sized for a quiet one, so the same test
+passed alone and failed with five workers. Every wait of a step (the page finishing its load, an element appearing, a button becoming usable, a spinner
+going away, the expected text, a window or frame, the answer to what was typed) now works like this (`patience:` in `config.yaml`):
+
+* **While the page is visibly still working, the wait goes on.** Working = a page load in flight, the document not complete, the site's *own* requests
+  (same site as the frame that makes them) still going, or the computer so busy the page answers late (`patience.lag_ms`). Advertising / analytics
+  requests do not count, nor does an address the page keeps asking for again and again (`repeat_after`: polling, a chat widget), nor a page that only
+  animates.
+* **An element missing from a finished page still fails in the step's normal time** (`timeouts.element_s`, 10 s, or the row's *Timeout*): slow is not the
+  same as wrong. The step's notes say which: *"the page had finished loading and the element did not appear within 10 s"*.
+* **A page that is stuck fails too**: nothing moved at all (no request started or answered, no page load) for `patience.stall_s` (**10 minutes**), e.g. a
+  request the server never answers; or it kept itself busy for `patience.max_wait_s` (30 minutes). The note names what it was waiting for.
+* **Nothing is ever repeated**: no retry, no re-typing, no second click - waiting longer is allowed, repeating an action would hide real site bugs.
+* A wait that goes on past `patience.tell_after_s` (10 s, the old fixed limit) is shown on the run screen (yellow banner: which test and worker, why, how
+  long so far) and noted on the step (*"waited 42 s for the element: the page was slow (the site has not answered yet (GET /bin/quote ...))"*).
+* `runner.stop_after_failed_steps` only counts steps that failed on a page that had finished loading (a failure on a page still loading says nothing about
+  where it is). `runner.step_hard_cap_s` (2 h) and `runner.test_timeout_s` (12 h) are last-resort backstops only.
+* A dialog (alert / confirm) that the next step (`ALERT_OK` / `ALERT_CANCEL` / `ALERT_TEXT_OUT`, looking past `Wait` rows) is there to answer is answered as it
+  opens, the way that step says, and the step reads its text: before, a slow computer reached the step after the 1.5 s auto-dismiss and failed "no dialog".
+* `patience.enabled: false` brings back the fixed limits exactly as they were.
+
+### Not run: the machine, not the site
+
+When the **browser tab crashes** (the computer ran out of memory), **the browser closes or disconnects** under a test, or **the browser driver dies**, the attempt
+proves nothing about the application. Such a test is **`NOT_RUN`** - never passed, never failed - and is **run again from the start** after
+`runner.infra_pause_s` (10 s) up to `runner.infra_retries` (2) times; every attempt is kept (`attempts[]`, shown in the report). Only provable causes count (a crash
+event, a browser that is no longer connected, a dead driver); an element that is not where the test expects is a real failure. A test that still could not be run
+ends `NOT_RUN`, and a run where nothing failed but something was not run ends **`INCOMPLETE`** (not `PASSED`). The run screen, the report, `summary.txt` and the
+terminal show "not run" separately from failures. Usual cure: fewer `--workers` on that computer.
+
 ### Captchas (a challenge that needs a person)
 
 After **every step** the runner looks for a captcha *challenge* on screen (reCAPTCHA / hCaptcha asking to pick pictures; the small v3 badge and the hidden copy
@@ -290,7 +335,7 @@ A step that failed only because the captcha was covering its element is done onc
 | Optional elements | Rows with `Ignore_not_existing_object=Y` (the cookie banner, ~190 rows) count as absent once the page has gone quiet instead of waiting out a timeout. Set `timeouts.optional_mode: full` for a fixed wait. |
 | Screenshots | JPEG after every step (~20 ms each) in `runs/<id>/tests/<test>/screenshots/`; `screenshots.mode: on_failure|off` to reduce. |
 | Why a step failed | A failed step keeps **the browser's whole error** (`detail`; Playwright's call log says why a click could not happen, e.g. `<div> intercepts pointer events`) and a **`diagnosis`** read from the page at that moment, without touching it: is the element visible / enabled / standing still, **what is on top of it at the click point** (in its frame *and* on the page around the frame), how many elements the locator matches **in every frame** (an element in a frame the step did not switch to), the frames' state, and the page's and frame's HTML (scripts removed) in `runs/<id>/tests/<test>/dom/`. It is shown as *Why it failed* in the report and the results screen, and lives in `results.json` / `events.jsonl`, so a run copied from another computer explains itself. Comparison failures and steps that passed carry none. Tune it with `failure_capture:` in `config.yaml` (`enabled`, `dom_snapshot`, `dom_max_kb`, `dom_max_per_test`); gathering is capped at `budget_s` (8 s) and never fails a step. |
-| A lost page stops the test | After `runner.stop_after_failed_steps` (default 5) steps **in a row** that act on an element and could not find or use it, the test stops and says so (*"Stopped after 5 steps in a row could not find or use their element…"*) instead of waiting out every remaining step's timeout - a refused login or a form that never opened used to cost minutes of failed steps. A step that works, or reads its element and only differs from the expected text, starts the count again; `Wait`, `Switch…`, key presses and optional (`Ignore_not_existing_object`) elements neither count nor reset it. `0` = never stop. |
+| A lost page stops the test | After `runner.stop_after_failed_steps` (default 5) steps **in a row** that act on an element and could not find or use it *on a page that had finished loading*, the test stops and says so (*"Stopped after 5 steps in a row could not find or use their element…"*) instead of waiting out every remaining step's timeout - a refused login or a form that never opened used to cost minutes of failed steps. A step that works, or reads its element and only differs from the expected text, starts the count again; `Wait`, `Switch…`, key presses and optional (`Ignore_not_existing_object`) elements neither count nor reset it. `0` = never stop. |
 | Reliability | Popup windows and re-created iframes are re-resolved; `behaviour.retries` can re-run a failed test (all attempts are recorded). |
 
 ## Selectors: replacing XPath without touching the workbook
@@ -499,7 +544,9 @@ step's screenshot and is about as large as the whole screenshots folder (a full 
 
 `run_started` (with the run's `params`) `test_started` (with its `worker`) `step_started step_passed step_failed step_skipped`
 (with `locator_origin`) `screenshot_saved` (with the element's `box`, % of the viewport) `console_error network_error review_item`
-`pool_changed` (another run joined the workers this run is on; `run_started` carries `shares`) `test_finished` (with final `review_counts`; `step_passed` / `step_failed` carry `sets`) `variable_set` `captcha_detected` (`waiting`: true when a person is being waited for) `run_progress run_paused user_input_needed` (`kind`: `text` or `captcha`) `user_input_waiting user_input_received user_input_closed run_finished log` – see `src/regrunner/events.py` for fields. Add your own listener:
+`pool_changed` (another run joined the workers this run is on; `run_started` carries `shares`) `test_finished` (with final `review_counts`; `step_passed` / `step_failed` carry `sets`) `variable_set` `captcha_detected` (`waiting`: true when a person is being waited for) `run_progress run_paused user_input_needed` (`kind`: `text` or `captcha`) `user_input_waiting user_input_received user_input_closed`
+`worker_waiting` (a worker waits on purpose: `test worker step wait code message [seconds]`, `code` = `login_code` / `slow_page` / `infra_rerun`; never a secret or
+a code in `message`) `worker_resumed` (`wait`, `waited_s`) `run_finished log` – see `src/regrunner/events.py` for fields. Add your own listener:
 
 ```python
 bus = EventBus(); bus.subscribe(lambda e: print(e["type"]))
@@ -530,6 +577,10 @@ Things you are most likely to change: `publish.dir` (shared copy of each run for
 * *Safari* is Playwright's WebKit build (Safari's engine), not the Safari application, which Playwright cannot drive. Only Chromium-based browsers and WebKit are supported (no Firefox).
 * Timer-only banners (no request, no DOM change before they appear) can be missed by `optional_mode: quiet`;
   use `full` if a consent banner behaves that way.
+* Patient waiting, the not-run outcome and the login-code margin are verified on the mock site only (a server answering after 25 s, a tab kept busy for 15 s,
+  a renderer crash, a killed browser, five logins sharing one secret against a once-only code check). Not verified: whether the real sites wait the same way
+  (their polling and third-party traffic), whether Okta has other per-account limits (one session per user, login rate limits) - nothing here assumes one -
+  and how long real logins take from code to Verify (the first real runs will measure it: see the step notes).
 * Not supported: DB/API/Word/PDF/Outlook steps, BrowserStack, iteration rows (`ITERATION_START`, `GO_TO_ROW`).
 
 ## Tests

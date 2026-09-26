@@ -33,6 +33,7 @@ from .api_runner import ApiTestRunner
 from .ask import Asker
 from .inbox import Inbox
 from .order import Flow, Order, load_chains, plan_order
+from .patience import WaitNotice, plain_seconds
 from .pool import Pool
 from .schedule import Schedule
 from .test_runner import TestRunner
@@ -321,6 +322,8 @@ class Engine:
         self.lifecycles: list[asyncio.Task] = []
         self.last_activity = time.monotonic()
         self._winding: asyncio.Future | None = None
+        self._driver_lock: asyncio.Lock | None = None
+        self.driver_generation = 0                                    # how many times the browser driver was started again after it died
 
     # -- shared notes ------------------------------------------------------------------------------------
     def note(self, message: str, level: str = "warning") -> None:
@@ -386,18 +389,37 @@ class Engine:
 
     @contextlib.asynccontextmanager
     async def playwright_session(self):
-        """``async_playwright()`` whose shutdown cannot hang the run: the driver gets ``close_timeout_s`` to stop."""
-        pw = await async_playwright().start()
+        """``async_playwright()`` whose shutdown cannot hang the run: the driver gets ``close_timeout_s`` to stop.  (The driver running at the end
+        is stopped: it may be a new one, started after the first died - ``restart_driver``.)"""
+        self.pw = await async_playwright().start()
         try:
-            yield pw
+            yield self.pw
         finally:
             self.note("Stopping the browser driver", "info")
             try:
-                await asyncio.wait_for(pw.stop(), self.cfg.runner.close_timeout_s)
+                await asyncio.wait_for(self.pw.stop(), self.cfg.runner.close_timeout_s)
             except asyncio.TimeoutError:
                 self.note(f"The browser driver did not stop within {self.cfg.runner.close_timeout_s:g}s; continuing without it")
             except Exception:
                 pass
+
+    async def restart_driver(self, generation: int) -> None:
+        """The browser driver (Playwright's own process) died: start a new one, once, however many tests noticed.  Every worker's browser then
+        relaunches on it (``get_browser`` sees a disconnected browser)."""
+        if self._driver_lock is None:
+            self._driver_lock = asyncio.Lock()
+        async with self._driver_lock:
+            if generation != self.driver_generation:
+                return                                                # another test already did it
+            old = self.pw
+            try:
+                await asyncio.wait_for(old.stop(), self.cfg.runner.close_timeout_s)
+            except Exception:
+                pass
+            self.pw = await async_playwright().start()
+            self.devices = dict(self.pw.devices)
+            self.driver_generation += 1
+            self.note("The browser driver had stopped working and was started again.", "warning")
 
     async def get_window(self):
         """The visible browser a captcha is solved in (opened when first needed, closed after each test that used it)."""
@@ -474,9 +496,11 @@ class Engine:
         block_tries = 0
         at_window = False                                       # the test is being run in the visible window because a captcha needs a person
         captcha_tries = 0
+        infra_tries = 0
         throttle = self.throttle_for(ctx)
         while True:
             attempt += 1
+            generation = self.driver_generation
             async with contextlib.AsyncExitStack() as stack:
                 if at_window:
                     await stack.enter_async_context(self.window_lock)
@@ -520,6 +544,32 @@ class Engine:
                                  "duration_s": res.duration_s, "captcha": True})
                 ctx.note(f"{case.id}: a captcha stopped this attempt. Opening a browser window: solve the captcha there and the test carries on by itself.")
                 continue
+            if res.infra and not ctx.cancel.is_set():
+                # The machine, not the site: the browser crashed / ran out of memory / was disconnected, or the driver died.  No verdict: the test is run
+                # again from the start (every attempt stays in attempts[]), after a pause that lets the computer recover.
+                attempts.append({"attempt": attempt, "status": res.status, "failed": res.failed, "error": res.error,
+                                 "duration_s": res.duration_s, "infra": res.infra})
+                if infra_tries < cfg.runner.infra_retries:
+                    infra_tries += 1
+                    pause = max(0.0, float(cfg.runner.infra_pause_s))
+                    ctx.note(f"{case.id}: {res.infra}. Not a test result: running it again from the start in {pause:g}s ({infra_tries}/{cfg.runner.infra_retries}).")
+                    notice = WaitNotice(bus, case.id, n)
+                    wait_id = notice.begin("infra_rerun", f"The browser stopped working ({res.infra[:160]}). This is not a test result: the test "
+                                                          f"starts again from the beginning (try {infra_tries} of {cfg.runner.infra_retries}).", seconds=pause)
+                    try:
+                        if "driver" in res.error.lower() or "driver" in res.infra.lower():
+                            await self.restart_driver(generation)
+                        try:
+                            await asyncio.wait_for(ctx.cancel.wait(), timeout=pause)
+                        except asyncio.TimeoutError:
+                            pass
+                    finally:
+                        notice.end(wait_id)
+                    continue
+                res.error = (f"Not run: {res.infra}. It happened on {infra_tries + 1} attempt(s) in a row, so the test could not be run on this "
+                             "computer now (too little memory? too many workers?). This says nothing about the application.")
+                res.attempts = attempts[:-1]
+                return res
             budget = throttle.retry_budget(cfg.runner.block_retries)
             if res.blocked and block_tries < budget and not ctx.cancel.is_set():
                 # The WAF refused us (HTTP 403 / 429).  Not a verdict on the application: pause every page load, take a worker out of
@@ -537,7 +587,7 @@ class Engine:
             if res.blocked and not throttle.loaded_ok and block_tries and not ctx.cancel.is_set():
                 res.error = (f"{res.error} Blocked again after waiting, and nothing has loaded from this machine in this run: this looks like a "
                              "standing access rule (allow-list, VPN, country), not rate limiting, so retrying will not help until it changes.")
-            if res.status in ("PASSED", "CANCELLED") or (attempt - block_tries - captcha_tries) > cfg.behaviour.retries or ctx.cancel.is_set():
+            if res.status in ("PASSED", "CANCELLED", "NOT_RUN") or (attempt - block_tries - captcha_tries - infra_tries) > cfg.behaviour.retries or ctx.cancel.is_set():
                 res.attempts = attempts
                 return res
             attempts.append({"attempt": attempt, "status": res.status, "failed": res.failed,
@@ -656,6 +706,8 @@ class Engine:
             result.status = "CANCELLED"
         elif any(t.status in ("FAILED", "ERROR") for t in result.tests):
             result.status = "FAILED"
+        elif any(t.status == "NOT_RUN" for t in result.tests):
+            result.status = "INCOMPLETE"                              # nothing failed, but not everything could be run: not a pass either
         else:
             result.status = "PASSED"
         if ctx.harvest is not None:

@@ -126,8 +126,8 @@ export function resultsView(S) {
   const tests = r.tests;
   const n = tests.length;
   const by = (s) => tests.filter((t) => t.status === s).length;
-  const passedT = by('PASSED'), failedT = by('FAILED'), errT = by('ERROR');
-  const otherT = n - passedT - failedT - errT;
+  const passedT = by('PASSED'), failedT = by('FAILED'), errT = by('ERROR'), notRunT = by('NOT_RUN');
+  const otherT = n - passedT - failedT - errT - notRunT;
   const steps = tests.reduce((a, t) => a + (t.steps || []).length, 0);
   const failedSteps = tests.reduce((a, t) => a + (t.failed || 0), 0);
   const skipped = tests.reduce((a, t) => a + (t.skipped || 0), 0);
@@ -137,10 +137,11 @@ export function resultsView(S) {
   const finishedT = tests.filter((t) => ['PASSED', 'FAILED', 'ERROR'].includes(t.status)).length;
   const headline = { PASSED: n === 1 ? 'The test passed' : `All ${n} tests passed`, FAILED: `${failedT + errT} of ${n} test${n === 1 ? '' : 's'} failed`,
                      CANCELLED: `Run cancelled · ${finishedT} of ${n} tests finished`, INTERRUPTED: `Run interrupted · ${finishedT} of ${n} tests finished`,
-                     ERROR: 'The runner stopped before finishing' }[r.status] || `Run ${String(r.status).toLowerCase()}`;
+                     ERROR: 'The runner stopped before finishing',
+                     INCOMPLETE: `${notRunT} of ${n} test${n === 1 ? '' : 's'} could not be run` }[r.status] || `Run ${String(r.status).toLowerCase()}`;
   const groups = groupReview(tests.flatMap((t) => t.review || []));
   const shownGroups = v.showAllReview ? groups : groups.slice(0, 5);
-  const failedIds = tests.filter((t) => BAD.has(t.status) || t.failed).map((t) => t.id);
+  const failedIds = tests.filter((t) => BAD.has(t.status) || t.status === 'NOT_RUN' || t.failed).map((t) => t.id);
   const pctA = n ? (100 * passedT) / n : 0, pctB = n ? (100 * (passedT + failedT + errT)) / n : 0;
   const shots = files.screenshots || 0;
   const pseudo = { id, status: r.status === 'ERROR' ? 'ERROR' : 'DONE', error: meta.error || '', exitCode: meta.exit_code ?? null };
@@ -167,7 +168,7 @@ ${r.partial ? banner('warn', 'warn', html`<b>Rebuilt from the event log.</b> Thi
 <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center"><div class="disp" style="font-size: 34px; font-weight: 700; line-height: 1">${passedT}/${n}</div>
 <div class="mono" style="font-size: 9.5px; letter-spacing: .14em; color: var(--tx3); text-transform: uppercase; margin-top: 5px">tests</div></div></div>
 <div style="display: flex; flex-direction: column; gap: 9px; flex: 1; font-size: 13px">
-${[['Passed', passedT, 'var(--pass)'], ['Failed', failedT, 'var(--fail)'], ['Error', errT, 'var(--fail)'], ['Cancelled', otherT, 'var(--warn)']].map(([l, c, col]) => html`<div style="display: flex; align-items: center; gap: 9px"><span class="dot" style="color: ${c ? col : 'var(--tx3)'}"></span><span style="flex: 1; color: ${c ? 'var(--tx2)' : 'var(--tx3)'}">${l}</span><b class="mono" style="color: ${c ? 'var(--tx)' : 'var(--tx3)'}">${c}</b></div>`)}</div></section>
+${[['Passed', passedT, 'var(--pass)'], ['Failed', failedT, 'var(--fail)'], ['Error', errT, 'var(--fail)'], ...(notRunT ? [['Not run (browser crashed)', notRunT, 'var(--warn)']] : []), ['Cancelled', otherT, 'var(--warn)']].map(([l, c, col]) => html`<div style="display: flex; align-items: center; gap: 9px"><span class="dot" style="color: ${c ? col : 'var(--tx3)'}"></span><span style="flex: 1; color: ${c ? 'var(--tx2)' : 'var(--tx3)'}">${l}</span><b class="mono" style="color: ${c ? 'var(--tx)' : 'var(--tx3)'}">${c}</b></div>`)}</div></section>
 <section class="card" style="padding: 22px; display: flex; flex-direction: column; gap: 14px; justify-content: center"><div class="lbl">Steps</div>
 <div class="disp" style="font-size: 40px; font-weight: 650; line-height: 1">${num(steps - failedSteps)} <span style="font-size: 18px; color: var(--tx3); font-weight: 500">of ${num(steps)} passed</span></div>
 <div style="display: flex; gap: 3px; height: 12px; border-radius: 5px; overflow: hidden"><div style="flex: ${Math.max(steps - failedSteps, 0)} 1 0; background: var(--pass)"></div>${failedSteps ? html`<div style="flex: 0 0 5px; background: var(--fail)"></div>` : ''}</div>

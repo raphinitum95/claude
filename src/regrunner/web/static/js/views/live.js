@@ -3,7 +3,7 @@ import { html, raw, cx } from '../util.js';
 import { icon, pill, STATUS } from '../icons.js';
 import { num, pct, dur, clock, timeOf, plural } from '../fmt.js';
 import { runFileUrl } from '../api.js';
-import { counts, timing, lanes as laneList, pending as pendingList, finished as finishedList, strip, groupReview, reviewOfRun, reviewTotal, varsOfRun } from '../runstate.js';
+import { counts, timing, lanes as laneList, pending as pendingList, finished as finishedList, strip, groupReview, reviewOfRun, reviewTotal, varsOfRun, waitsOf, workerSummary } from '../runstate.js';
 import { banner, btn } from './shell.js';
 import { browserOf, browserChip } from '../browsers.js';
 
@@ -71,6 +71,14 @@ placeholder="${ask.secret ? 'Type it here (hidden)' : 'Type your answer'}" aria-
 <span class="mono" style="font-size: 11.5px; color: var(--tx2)">${left} s left · other tests keep running</span></div>`
         : html`<div class="mono" style="font-size: 11.5px; color: var(--tx2)">This run was started from a terminal: answer there. ${left} s left.</div>`));
   }
+  const alive = run.status === 'RUNNING' && !(meta && meta.active === false);
+  const waits = alive ? waitsOf(run) : [];
+  if (waits.length) {                                            // workers waiting on purpose: who, why in plain words, and for how long
+    out.push(banner('wait', 'clock', html`<b>${waits.length === 1 ? 'A worker is waiting on purpose.' : `${waits.length} workers are waiting on purpose.`}</b> Nothing is stuck: each one carries on by itself when its wait is over.`, '',
+      html`<div id="waits" style="display: flex; flex-direction: column; gap: 8px">${waits.map((w) => html`<div data-key="wait-${w.id}" class="wait-row" style="display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap">
+<b class="mono" style="font-size: 12px">${w.worker != null ? `W${w.worker} · ` : ''}${w.test}</b><span style="flex: 1; min-width: 220px">${w.message}</span>
+<span class="mono wait-clock" style="font-size: 12px; color: var(--tx2)">${waitClock(S, w)}</span></div>`)}</div>`));
+  }
   const pause = run.paused;
   if (pause && run.status === 'RUNNING' && S.now < pause.until) {
     const left = Math.max(0, Math.ceil((pause.until - S.now) / 1000));
@@ -88,6 +96,15 @@ placeholder="${ask.secret ? 'Type it here (hidden)' : 'Type your answer'}" aria-
       html`${S.view.mode === 'live' ? '' : btn('Replay events', 'replay-events', { id: run.id })}${btn('Build report from what ran', 'build-report', { id: run.id })}`));
   }
   return out;
+}
+
+/** "21 s left" when the wait's length is known (a countdown), else how long it has been going. */
+function waitClock(S, w) {
+  if (w.untilMs != null) {
+    const left = Math.ceil((w.untilMs - S.now) / 1000);
+    return left > 0 ? `${left} s left` : 'carrying on now';
+  }
+  return `waiting ${dur(Math.max(0, Math.round((S.now - w.startMs) / 1000)))}`;
 }
 
 export function runHeaderActions(S, run, meta, active) {
@@ -109,12 +126,15 @@ ${b ? html`<div class="hl ${bad ? 'bad' : ''}" style="left: ${b.x}%; top: ${b.y}
 function laneCard(S, run, t) {
   const c = t.fails.length;
   const last = c ? t.fails[c - 1] : null;
+  const wait = waitsOf(run).find((w) => w.test === t.id);
   const elapsed = t.startedMs ? (S.now - t.startedMs) / 1000 : 0;
   return html`<article class="card" data-key="${t.id}" style="padding: 16px; display: flex; flex-direction: column; gap: 14px; border-color: ${c ? 'var(--fail-line)' : 'var(--line)'}">
 <div style="display: flex; align-items: center; gap: 10px">
 <span class="mono" style="height: 24px; padding: 0 8px; border-radius: 7px; background: var(--acc-soft); color: var(--acc); border: 1px solid var(--acc-line); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center">W${t.worker ?? '?'}</span>
 <div style="min-width: 0; flex: 1"><div style="font-weight: 650; font-size: 15.5px">${t.id}</div>
-<div class="mono" style="font-size: 11px; color: var(--tx3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.scenario} · ${t.description}</div></div>${pill('RUNNING')}</div>
+<div class="mono" style="font-size: 11px; color: var(--tx3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.scenario} · ${t.description}</div></div>${wait ? html`<span class="pill p-warn">${icon('clock', 12)}Waiting</span>` : pill('RUNNING')}</div>
+${wait ? html`<div class="waitline" data-key="lane-wait-${wait.id}"><span style="color: var(--wait); display: inline-flex; margin-top: 1px">${icon('clock', 16)}</span>
+<span style="overflow-wrap: anywhere">${wait.message} <b class="mono" style="white-space: nowrap">${waitClock(S, wait)}</b></span></div>` : ''}
 ${shotBox(run, t)}
 <div style="display: flex; align-items: baseline; gap: 9px; min-width: 0">
 <span class="mono" style="font-size: 11px; color: var(--acc); font-weight: 600; letter-spacing: .06em">${t.step ? t.step.action : ''}</span>
@@ -210,6 +230,7 @@ ${runBanners(S, run, meta)}
 <div style="display: flex; flex-direction: column; gap: 18px; min-width: 0">
 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">${stateLabel}
 <span style="color: var(--tx2); font-size: 13.5px">${c.failedSteps ? `${plural(c.failedSteps, 'step')} ${c.failedSteps === 1 ? 'has' : 'have'} failed. The test carries on; only Global!QuitBreakOnFailure=Y would stop it.` : active ? 'Tests run in parallel across workers.' : 'The run is no longer active.'}</span></div>
+${active && workerSummary(run) ? html`<div id="workers-now" class="mono" style="font-size: 12.5px; color: var(--tx2)">Workers now: <b style="color: var(--tx)">${workerSummary(run)}</b>${lanes.length < run.workers && !queue.length ? ` · ${run.workers - lanes.length} idle (nothing left to start)` : ''}</div>` : ''}
 <div class="disp" style="font-size: 38px; font-weight: 650; line-height: 1.05">${num(c.done)} <span style="color: var(--tx3); font-weight: 500">of ${num(c.total)} steps</span></div>
 <div><div style="display: flex; gap: 3px; height: 14px; border-radius: 5px; overflow: hidden">
 ${seg(c.passedSteps, 'background: var(--pass)')}${c.failedSteps ? html`<div style="flex: 0 0 5px; background: var(--fail)"></div>` : ''}${seg(c.inFlight, 'background: var(--acc); opacity: .55')}${seg(c.queuedSteps, 'background: var(--tick)')}</div>
@@ -227,7 +248,7 @@ ${seg(c.passedSteps, 'background: var(--pass)')}${c.failedSteps ? html`<div styl
 ${statCard(html`<span class="dot ${active ? 'pulse' : ''}" style="width: 12px; height: 12px"></span>`, ['var(--acc-soft)', 'var(--acc)'], 'Running', c.running, lanes.length ? 'on ' + lanes.map((t) => 'W' + t.worker).join(', ') : 'nothing running', '', true)}
 ${statCard(icon('dashed', 24), ['var(--pend-soft)', 'var(--tx2)'], 'Pending', c.pending, `${num(c.queuedSteps)} steps waiting`)}
 ${statCard(icon('passc', 24), ['var(--pass-soft)', 'var(--pass)'], 'Passed', c.passedTests, passedTests.length ? `${num(passedTests.reduce((a, t) => a + t.total, 0))} steps · ${dur(passedTests.reduce((a, t) => a + (t.duration || 0), 0))}` : 'no test finished yet')}
-${statCard(icon('failc', 24), ['var(--fail-soft)', 'var(--fail)'], 'Failed', c.failedTests + c.otherTests, c.failedSteps ? `${plural(c.failedSteps, 'failing step')} in ${failedIds.join(', ')}` : 'no failing steps', c.failedSteps ? 'var(--fail)' : '')}</div>
+${statCard(icon('failc', 24), ['var(--fail-soft)', 'var(--fail)'], 'Failed', c.failedTests + c.otherTests, `${c.failedSteps ? `${plural(c.failedSteps, 'failing step')} in ${failedIds.join(', ')}` : 'no failing steps'}${c.notRunTests ? ` · ${c.notRunTests} not run (browser crashed)` : ''}`, c.failedSteps ? 'var(--fail)' : '')}</div>
 ${lanes.length ? html`<div><div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px"><h2 class="ttl">Now running</h2>
 <span class="chip mono">${lanes.length} of ${run.workers} workers</span><span style="font-size: 12.5px; color: var(--tx3); margin-left: auto">Screenshots update after every step</span></div>
 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 20px">${lanes.map((t) => laneCard(S, run, t))}</div></div>` : ''}
@@ -242,7 +263,7 @@ ${queue.map((q, i) => html`<div data-key="${q.id}" style="display: flex; align-i
 ${(q.waitsFor || []).some((d) => !run.tests[d] || ['QUEUED', 'RUNNING'].includes(run.tests[d].status)) ? html`<div class="mono" style="font-size: 11px; color: var(--warn)">waits for ${q.waitsFor.filter((d) => !run.tests[d] || ['QUEUED', 'RUNNING'].includes(run.tests[d].status)).join(', ')}</div>` : ''}</div>
 <div class="mono" style="font-size: 12.5px; color: var(--tx2)">${q.total} steps</div>${pill('QUEUED')}</div>`)}</section>` : ''}
 ${done.length ? html`<section class="card" style="padding: 20px 0 4px"><div style="display: flex; align-items: center; gap: 12px; padding: 0 22px 14px"><h2 class="ttl">Finished</h2>
-${c.passedTests ? html`<span class="pill p-pass">${c.passedTests} passed</span>` : ''}${c.failedTests + c.otherTests ? html`<span class="pill p-fail">${c.failedTests + c.otherTests} failed</span>` : ''}</div>
+${c.passedTests ? html`<span class="pill p-pass">${c.passedTests} passed</span>` : ''}${c.failedTests + c.otherTests ? html`<span class="pill p-fail">${c.failedTests + c.otherTests} failed</span>` : ''}${c.notRunTests ? html`<span class="pill p-warn">${c.notRunTests} not run</span>` : ''}</div>
 ${done.map((f) => html`<div data-key="${f.id}" style="display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-top: 1px solid var(--line)">
 <span style="color: ${STATUS[f.status] ? STATUS[f.status].color : 'var(--tx2)'}; display: inline-flex">${icon(f.status === 'PASSED' ? 'passc' : f.status === 'FAILED' ? 'failc' : 'warn', 22)}</span>
 <div style="width: 210px; min-width: 0"><div style="display: flex; gap: 9px; align-items: baseline"><b class="mono" style="font-size: 13.5px">${f.id}</b><span class="mono" style="font-size: 11px; color: var(--tx3)">${f.scenario}</span></div>

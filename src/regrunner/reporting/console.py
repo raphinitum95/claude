@@ -100,6 +100,8 @@ class PlainConsole:
                     + (f' ({e["error"]})' if e.get("error") else ""))
         elif kind == "log":
             self._p(f'[{e["level"]}] {e["message"]}')
+        elif kind == "worker_waiting":
+            self._p(f'[waiting] {e.get("test", "")} (worker {e.get("worker", "?")}): {e.get("message", "")}')
 
     def finish(self, result, run_dir) -> None:
         summary_lines(result, run_dir, self._p)
@@ -110,6 +112,8 @@ def summary_lines(result, run_dir, emit) -> None:
     emit("")
     emit(f'{result.status}: {s["passed"]}/{s["tests"]} tests passed, {s["steps_failed"]} failed step(s), '
          f'{s["steps"]} steps in {result.duration_s}s')
+    if s.get("not_run"):
+        emit(f'  {s["not_run"]} test(s) NOT RUN: the browser crashed / ran out of memory / disconnected on every attempt. Neither passed nor failed.')
     for t in result.tests:
         emit(f'  {t.status:9} {t.title:24} {t.passed} passed / {t.failed} failed / {len(t.review)} to review  ({t.duration_s}s)')
     failures = [(t, st) for t in result.tests for st in t.steps if st.status == "FAILED"]
@@ -159,7 +163,7 @@ class RichConsole:
         table.add_column("%", justify="right", no_wrap=True)
         table.add_column("Status", no_wrap=True)
         colors = {"passed": "green", "failed": "red", "running": "cyan", "queued": "grey50", "error": "red",
-                  "cancelled": "yellow"}
+                  "cancelled": "yellow", "not_run": "yellow"}
         for tid in s.order:
             t = s.tests[tid]
             color = "red" if t["failed"] else colors.get(t["status"], "white")
@@ -184,6 +188,9 @@ class RichConsole:
             self._started = True
         if e["type"] == "log":
             self.console.print(f'[dim][{e["level"]}] {e["message"]}[/dim]')
+        if e["type"] == "worker_waiting":
+            from rich.markup import escape
+            self.console.print(f'[yellow]waiting · {escape(str(e.get("test", "")))} (worker {e.get("worker", "?")}): {escape(str(e.get("message", "")))}[/yellow]')
         now = time.monotonic()
         if self._started and (now - self._last > 0.1 or e["type"] in ("test_finished", "run_finished")):
             self.live.update(self._render())

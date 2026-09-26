@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 STEP_S = 30
-EXPIRY_MARGIN_S = 4          # a code with less than this left would be stale before Okta sees it
+EXPIRY_MARGIN_S = 4          # a code with less than this left would be stale before Okta sees it (the least margin ever used)
+UNMEASURED_MARGIN_S = 10     # ...until this computer has measured how long its logins take from the code to the Verify click (record_gap)
 
 
 class BadSecret(ValueError):
@@ -51,6 +52,8 @@ def seconds_left(at: float | None = None) -> float:
 # Okta (like every TOTP check) accepts a code once.  Tests that log in with the same authenticator secret at the same time - or a run started
 # seconds after another one - would otherwise be handed the same code and the second login would be refused ("Each code can only be used once").
 _taken: dict[str, int] = {}          # secret fingerprint -> the last 30 s window a code was handed out for (this process)
+_gaps: dict[str, list[float]] = {}   # secret fingerprint -> seconds from handing a code out to the click that submitted it (the latest few)
+GAPS_KEPT = 10
 
 
 @dataclass
@@ -83,8 +86,11 @@ def _write_store(store: Path | None, key: str, window: int) -> None:
         except (OSError, ValueError):
             data = {}
         cutoff = window - 4                                        # windows older than two minutes are of no use: keep the file tiny
+        gaps = data.get("gaps") if isinstance(data.get("gaps"), dict) else {}
         data = {k: v for k, v in data.items() if isinstance(v, int) and v >= cutoff}
         data[key] = window
+        if gaps:
+            data["gaps"] = gaps
         store.parent.mkdir(parents=True, exist_ok=True)
         tmp = store.with_name(store.name + ".tmp")
         tmp.write_text(json.dumps(data), encoding="utf-8")
@@ -93,7 +99,48 @@ def _write_store(store: Path | None, key: str, window: int) -> None:
         pass                                                       # best effort: the in-process record still protects this run
 
 
-def reserve_window(secret: str, *, store: Path | None = None, now: float | None = None) -> Reservation:
+def _stored_gaps(store: Path | None, key: str) -> list[float]:
+    try:
+        gaps = json.loads(store.read_text(encoding="utf-8")).get("gaps", {}).get(key, []) if store is not None else []
+        return [float(g) for g in gaps if isinstance(g, (int, float))]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def safe_margin(secret: str, store: Path | None = None) -> float:
+    """How much of a code's 30 s must be left when it is handed out: longer than the slowest recent trip from the code to the Verify click on this
+    computer (measured, :func:`record_gap`), plus 3 s.  Until anything is measured: ``UNMEASURED_MARGIN_S``.  Never more than 25 s of a code's 30."""
+    key = fingerprint(secret)
+    gaps = _gaps.get(key) or _stored_gaps(store, key)
+    margin = max(EXPIRY_MARGIN_S, max(gaps) + 3.0) if gaps else UNMEASURED_MARGIN_S
+    return min(margin, STEP_S * 5 / 6)
+
+
+def record_gap(secret_key: str, gap_s: float, store: Path | None = None) -> None:
+    """A login submitted its code ``gap_s`` after the code was handed out (``secret_key`` = :func:`fingerprint`): remembered (in this process and in
+    ``store``) so the next code is handed out with enough time left."""
+    gaps = (_gaps.get(secret_key) or _stored_gaps(store, secret_key)) + [round(float(gap_s), 1)]
+    _gaps[secret_key] = gaps[-GAPS_KEPT:]
+    if store is None:
+        return
+    try:
+        try:
+            data = json.loads(store.read_text(encoding="utf-8"))
+            data = data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            data = {}
+        all_gaps = data.get("gaps") if isinstance(data.get("gaps"), dict) else {}
+        all_gaps[secret_key] = _gaps[secret_key]
+        data["gaps"] = all_gaps
+        store.parent.mkdir(parents=True, exist_ok=True)
+        tmp = store.with_name(store.name + ".tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(tmp, store)
+    except OSError:
+        pass
+
+
+def reserve_window(secret: str, *, store: Path | None = None, now: float | None = None, margin: float | None = None) -> Reservation:
     """Take the next code window nobody has used for ``secret``: the current one, unless it is about to expire or a code for it was already handed out
     (by another test of this run, or - through ``store`` - by a run that started a moment ago), then the one after.  Synchronous on purpose: two tests
     asking in the same instant cannot both get the same window.  A different secret (another account) never waits for this one."""
@@ -103,7 +150,7 @@ def reserve_window(secret: str, *, store: Path | None = None, now: float | None 
     last = max(_taken.get(key, -1), _read_store(store, key))
     left = seconds_left(now)
     window, reason = current, ""
-    if left < EXPIRY_MARGIN_S:
+    if left < (safe_margin(secret, store) if margin is None else margin):
         window, reason = current + 1, "expiring"
     if window <= last:
         window, reason = last + 1, "used"

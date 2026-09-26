@@ -24,7 +24,10 @@ from .actions import ASK_METHODS, StepContext, run_action
 from .ask import AskCancelled, AskTimeout, AskUnavailable
 from .failure_capture import capture_failure
 from .outcome import FAILED, PASSED, Verdict, evaluate
+from .patience import WaitNotice
 from .session import BrowserSession
+
+NOT_RUN = "NOT_RUN"
 
 UNSUPPORTED_PAGES = {"PDF", "SERVICE", "WORD", "OUTLOOK", "APPLICATION"}
 MASK = "••••••"
@@ -70,6 +73,8 @@ class TestRunner:
         self._captcha_stop = ""                                   # why a captcha ended this test ("" while none has)
         self._no_window = False                                   # a step found no open browser window: nothing after it can run
         self._browser_getter = browser_getter
+        self._settled = True                                      # the last failed step failed on a page that had finished (not one still loading)
+        self.notice = WaitNotice(bus, case.id, worker)            # when this test waits on purpose, the run screen says why
 
     # -- helpers ------------------------------------------------------------------------------------
     def _emit(self, type_: str, **fields):
@@ -78,7 +83,7 @@ class TestRunner:
     async def _element_box(self, ctx: StepContext) -> dict[str, float] | None:
         """Where the element this step acted on sits in the screenshot, as % of the viewport (or None)."""
         handle, session = ctx.out.handle, self.session
-        if handle is None or session is None or not session.is_open:
+        if handle is None or session is None or not session.is_open or session.pending_dialog is not None:
             return None
         try:
             box = await asyncio.wait_for(handle.bounding_box(), timeout=0.5)
@@ -101,7 +106,7 @@ class TestRunner:
         if mode == "off" or (mode == "on_failure" and not failed):
             return None
         session = self.session
-        if session is None or not session.is_open:
+        if session is None or not session.is_open or session.pending_dialog is not None:     # an open dialog blocks the page (it is answered 1.5 s after it opened)
             return None
         try:
             data = await session.page.screenshot(
@@ -146,6 +151,20 @@ class TestRunner:
         self.written = runtime.written
         self.session = BrowserSession(self._browser_getter, self.cfg, self.review, case.id, runtime.environment,
                                       devices=self._devices, throttle=self._throttle, cancel=self.cancel)
+        self.session.notice = self.notice
+        method_col = runtime.columns.get("METHOD")
+        later = {row: self.planned_rows[i + 1:] for i, row in enumerate(self.planned_rows)}
+
+        def next_method(row: int) -> str:
+            """The action of the next planned step, looking past Wait rows (a dialog is often answered after a Wait)."""
+            for nxt in later.get(row, []) if method_col else []:
+                try:
+                    method = cell_text(runtime.sheet.read(nxt, method_col)).strip().upper()
+                except Exception:
+                    return ""
+                if method != "WAIT":
+                    return method
+            return ""
         stop_reason = ""
         try:
             if runtime.blocked_reason:
@@ -170,7 +189,13 @@ class TestRunner:
                 if step.method in ("BREAK", "STOP"):
                     stop_reason = f"{step.method} step at row {row}"
                     break
+                upcoming = next_method(row)
+                self.session.next_alert = upcoming if upcoming in ("ALERT_OK", "ALERT_CANCEL", "ALERT_TEXT_OUT") else ""   # a dialog this step opens is answered as that step says
                 record = await self._execute(runtime, step, seq, off)
+                if self.session.infra:
+                    result.infra = self.session.infra                    # the machine, not the site: this attempt says nothing about the application
+                    stop_reason = "the browser stopped working"
+                    break
                 if step.method == "CLOSE":
                     closer = (seq, step.name or step.method)
                 if record.status == PASSED:
@@ -200,7 +225,8 @@ class TestRunner:
                     break
                 if give_up_after and self._element_step:                  # Wait / Switch / key presses say nothing about where the page is
                     if record.status == FAILED and record.error != "Comparison Failed":
-                        in_a_row += 1                                     # could not find or use its element
+                        if self._settled:
+                            in_a_row += 1                                 # could not find or use its element on a page that had finished loading
                     elif not record.ignored_error:
                         in_a_row = 0                                      # it worked, or it read the element and only the text differed: the page is where the test expects
                     if in_a_row >= give_up_after:
@@ -211,7 +237,10 @@ class TestRunner:
             executed = result.passed + result.failed
             result.skipped = max(0, result.total_steps - executed) if stop_reason else 0
             if result.status != "CANCELLED":
-                if blocked:
+                if result.infra:
+                    result.status, result.error = NOT_RUN, (f"Not run: {result.infra}. This says nothing about the application: the test is run again "
+                                                            "from the start.")
+                elif blocked:
                     result.status, result.error = "ERROR", (blocked if result.blocked == blocked and blocked.startswith("Blocked") else f"The site did not load. {blocked}")
                 elif result.captcha:
                     result.status, result.error = "ERROR", result.captcha
@@ -244,6 +273,7 @@ class TestRunner:
 
     async def _finish(self, started: float) -> None:
         result = self.result
+        self.notice.end_all()
         if self.session is not None:
             await self.session.close()
             self._write_network_log()
@@ -303,7 +333,7 @@ class TestRunner:
             step, blank_error = await self._fill_blank_params(runtime, step, seq)
         ctx = StepContext(step=step, session=self.session, cfg=cfg, selector_map=self.selector_map,
                           review=self.review, test_dir=self.test_dir, harvest=self.harvest, test_id=self.case.id, seq=seq,
-                          asker=self._asker, secret_values=runtime.secret_values)
+                          asker=self._asker, secret_values=runtime.secret_values, notice=self.notice)
         spec_element = True
         if blank_error:
             ctx.out.error, ctx.out.hard = blank_error, True    # the step does not run: typing the parameter's name would only be a wrong value
@@ -316,6 +346,7 @@ class TestRunner:
                 spec_element = spec.element
             except asyncio.TimeoutError:
                 ctx.out.error = f"Step exceeded the {cfg.runner.step_hard_cap_s}s hard limit"
+        ctx.out.notes.extend(self.notice.take_notes())           # the waits this step went through (a login code, a slow page) stay on it
         return ctx, spec_element
 
     def _captcha_cause(self, environment: str) -> str:
@@ -392,9 +423,32 @@ class TestRunner:
             self._dom_saved += 1
         return diagnosis
 
+    async def _failed_on_settled_page(self, ctx: StepContext) -> bool:
+        """Did the step fail on a page that had finished loading?  (Only those count towards ``runner.stop_after_failed_steps``: a failure while
+        the page was still working says nothing about where the page is.)"""
+        if not self.cfg.patience.enabled:
+            return True
+        if ctx.last_wait is not None and ctx.last_wait.on_settled_page:
+            return True
+        try:
+            return not (await asyncio.wait_for(self.session.activity(), 10)).working
+        except Exception:
+            return True
+
+    def _not_run_step(self, step: PreparedStep, seq: int, ctx: StepContext, t0: float, started_at: str) -> StepRecord:
+        """The step during which the browser went away: recorded as not run (no verdict), with what the machine did."""
+        why = f"Not run: {self.session.infra}"
+        record = StepRecord(seq=seq, row=step.row, name=step.name, action=step.method, status=NOT_RUN, error=why, notes=ctx.out.notes,
+                            started_at=started_at, ended_at=now_iso(), duration_ms=int((time.perf_counter() - t0) * 1000), detail=ctx.out.detail)
+        self.result.steps.append(record)
+        self._emit("step_failed", step=seq, total_steps=self.result.total_steps, row=step.row, name=step.name, action=step.method, status=NOT_RUN,
+                   duration_ms=record.duration_ms, expected="", actual="", error=why, locator="", notes=record.notes, screenshot=None, sets=[])
+        return record
+
     async def _execute(self, runtime, step: PreparedStep, seq: int, off: dict[int, tuple[str, str]] | None = None) -> StepRecord:
         cfg = self.cfg
         self.review.step, self.review.step_name = seq, step.name or step.method
+        self.notice.step = seq
         self.session.mark_step()
         self._emit("step_started", step=seq, total_steps=self.result.total_steps, row=step.row,
                    name=step.name, action=step.method)
@@ -402,6 +456,8 @@ class TestRunner:
         ctx, spec_element = await self._perform(runtime, step, seq)
         self._element_step = bool(spec_element)                        # read by the loop: does this step say anything about where the page is?
         step = ctx.step                                                # (the row again when a parameter was supplied by hand)
+        if await self.session.check_infra(ctx.out.error):
+            return self._not_run_step(step, seq, ctx, t0, started_at)  # the browser went away: no verdict, the test is run again from the start
         if ctx.out.error.startswith("No open browser window"):
             self._no_window = True                                     # even when the step swallows its errors: with no window nothing can be checked
         stop, solved = "", ""
@@ -419,6 +475,8 @@ class TestRunner:
             verdict, self._captcha_stop = Verdict(FAILED, stop), stop        # never swallowed by Ignore_not_existing_object
         writes = runtime.record(step, verdict.status, verdict.error, output)      # the parameters this step set
         failed = verdict.status == FAILED
+        if failed and spec_element:
+            self._settled = await self._failed_on_settled_page(ctx)
         hint = self._skipped_hint(off, step.row) if failed and off and not stop else ""
         error_text = f"{verdict.error} {hint}" if hint else verdict.error          # the sheet's Error_Check keeps the plain verdict
         hidden = sorted((v for v in runtime.secret_values if len(v) >= 4), key=len, reverse=True)      # what people typed in as secrets: never stored
@@ -438,6 +496,8 @@ class TestRunner:
             screenshot_full = await self._full_page_screenshot(seq, step.row, step.name or step.method) if failed and not stop else None
         finally:
             await ctx.release_handle()
+        if self.session.infra:                                         # (a crash event can arrive a moment after the error it caused)
+            return self._not_run_step(step, seq, ctx, t0, started_at)
         duration_ms = int((time.perf_counter() - t0) * 1000)
         value = MASK if "VALUE" in step.secret_columns else mask_text(step.text("VALUE"), hidden)
         record = StepRecord(

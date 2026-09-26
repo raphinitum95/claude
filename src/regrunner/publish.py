@@ -142,9 +142,11 @@ def summary_text(data: dict[str, Any]) -> str:
     s = data.get("summary", {})
     tests = data.get("tests", [])
     bad = s.get("failed", 0) + s.get("errored", 0)
+    not_run = s.get("not_run", 0)
     lines = [f"QA regression run {data.get('run_id', '')}",
              f"Result:       {data.get('status', '')}  ({s.get('passed', 0)} of {s.get('tests', len(tests))} tests passed"
-             + (f", {bad} did not" if bad else "") + ")",
+             + (f", {bad} did not" if bad else "")
+             + (f", {not_run} could not be run on this computer (the browser crashed / ran out of memory): neither passed nor failed" if not_run else "") + ")",
              f"Environment:  {data.get('environment', '')}",
              f"Browser:      {_browser_line(data)}",
              f"Started:      {_clock(data.get('started_at', ''))}  (took {_took(data.get('duration_s', 0))}, {data.get('workers', 1)} at a time)",

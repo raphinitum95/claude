@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Slow answer</title>
+<style>#cover { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); color: #fff; display: grid; place-items: center }</style></head>
+<body><h1>Quote</h1>
+<button id="go" type="button" onclick="document.getElementById('result').textContent = 'Done'">Get quote</button>
+<span id="result"></span>
+<div id="cover">Loading your plan…</div>
+<script>
+// The site's own server takes ?ms= to answer (?path= another call); meanwhile a spinner covers the page and the plan is not there yet.
+const q = new URLSearchParams(location.search);
+const path = q.get('path') || ('/bin/slow?ms=' + (q.get('ms') || '800'));
+fetch(path).then((r) => r.json()).then(() => {
+  document.getElementById('cover').remove();
+  const p = document.createElement('p'); p.id = 'plan'; p.textContent = 'Plan ready'; document.body.appendChild(p);
+});
+</script></body></html>

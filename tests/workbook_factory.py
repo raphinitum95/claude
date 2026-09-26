@@ -185,3 +185,31 @@ def build_workbook(path: Path, *, flows: list[str] | None = None, extra_steps=No
                    '="QAFIRSTNAME"&CHAR(RANDBETWEEN(65,90))'])
     wb.save(path)
     return named
+
+
+def build_steps_workbook(path: Path, flows: dict, *, params: dict[str, dict] | None = None, enabled: list[str] | None = None) -> dict[str, Sheet]:
+    """A workbook whose flows are written by the caller: ``flows`` = {sheet name: fn(sheet)} (``fn`` adds the rows with ``sheet.add``).  Each flow gets a
+    Params sheet with its flag column plus ``params[name]`` ({column: value}; formulas allowed).  Returns the sheets by name."""
+    params = params or {}
+    enabled = enabled if enabled is not None else list(flows)
+    wb = openpyxl.Workbook()
+    g = wb.active
+    g.title = "Global"
+    g.append(["Parameter", "Value", "Comments"])
+    g.append(["Environment", "UAT"])
+    g.append(["QuitBreakOnFailure", "N"])
+    ds = wb.create_sheet("DataSheets")
+    ds.append(["SheetsToExecute", "blnExecute", "ParameterSheet", "Comments", "Tags"])
+    sheets: dict[str, Sheet] = {}
+    for i, (name, fill) in enumerate(flows.items(), start=1):
+        ds.append([name, "Y" if name in enabled else "N", f"Params_{i}", f"Flow {name}", ""])
+        flag = f"bln{i}00{i}"
+        sheet = Sheet(wb.create_sheet(name), flag)
+        fill(sheet)
+        sheets[name] = sheet
+        extra = params.get(name, {})
+        ps = wb.create_sheet(f"Params_{i}")
+        ps.append(["Scenario", "blnExecute", flag, *extra.keys()])
+        ps.append([flag, "Y", "Y", *extra.values()])
+    wb.save(path)
+    return sheets

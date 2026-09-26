@@ -32,7 +32,7 @@ ${warns
 function runIcon(r) {
   if (r.active) return html`<span style="width: 18px; height: 18px; display: grid; place-items: center; color: var(--acc); flex: none"><span class="dot pulse" style="width: 10px; height: 10px"></span></span>`;
   const map = { PASSED: ['passc', 'var(--pass)'], FAILED: ['failc', 'var(--fail)'], CANCELLED: ['stopc', 'var(--warn)'],
-                ERROR: ['warn', 'var(--warn)'], INTERRUPTED: ['warn', 'var(--warn)'] };
+                ERROR: ['warn', 'var(--warn)'], INTERRUPTED: ['warn', 'var(--warn)'], INCOMPLETE: ['warn', 'var(--warn)'] };
   const [name, color] = map[r.status] || ['dashed', 'var(--tx2)'];
   return html`<span style="display: inline-flex; color: ${color}; flex: none">${icon(name, 18)}</span>`;
 }
@@ -60,6 +60,7 @@ function runSub(r) {
   }
   if (r.status === 'INTERRUPTED') return 'process stopped responding';
   if (r.status === 'ERROR') return 'runner stopped early';
+  if (r.status === 'INCOMPLETE') return `${testsLabel(r)} · some could not be run`;
   return `${bookOf(r)}${testsLabel(r)}${r.duration_s != null ? ' · ' + dur(r.duration_s) : ''}${inBrowser(r)}`;
 }
 
@@ -92,9 +93,9 @@ ${runs.length ? '' : html`<div style="border: 1.5px dashed var(--line2); border-
 </aside>`;
 }
 
-/** A banner: tone = warn | fail | acc.  `actions` and `extra` are optional markup. */
+/** A banner: tone = warn | fail | acc | wait (yellow: a worker is waiting on purpose).  `actions` and `extra` are optional markup. */
 export function banner(tone, iconName, body, actions, extra) {
-  const color = { warn: 'var(--warn)', fail: 'var(--fail)', acc: 'var(--acc)' }[tone];
+  const color = { warn: 'var(--warn)', fail: 'var(--fail)', acc: 'var(--acc)', wait: 'var(--wait)' }[tone];
   const stacked = !!(actions || extra);
   return html`<div class="bn bn-${tone}" role="${tone === 'fail' ? 'alert' : 'status'}" style="${stacked ? 'flex-direction: column; gap: 10px' : ''}">
 <div style="display: flex; gap: 11px"><span style="color: ${color}; display: inline-flex; margin-top: 1px">${icon(iconName, 16)}</span><span style="min-width: 0; overflow-wrap: anywhere">${body}</span></div>

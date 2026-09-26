@@ -17,6 +17,10 @@ WAF = {"until": 0.0, "pages": False}
 FLAKY = {"block": 0, "seen": 0}
 
 
+# A stand-in for Okta's code check (``okta.html``): the secret it checks against and the codes it has already accepted (each code works once).
+OKTA: dict = {"secret": "", "used": set(), "seen": []}
+
+
 # A stand-in for the policy API (API tests): what the last request looked like, so tests can see exactly what was sent.
 API_SEEN: dict = {"headers": {}, "body": None, "path": "", "count": 0}
 POLICY = {"transactionStatus": "Success", "detailResponse": {"policyDetail": {
@@ -116,6 +120,27 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if self.path.startswith("/okta/verify"):
+            from urllib.parse import parse_qs, urlparse
+            from regrunner import totp
+            code = (parse_qs(urlparse(self.path).query).get("code") or [""])[0]
+            OKTA["seen"].append(code)
+            if code in OKTA["used"]:
+                return self._json(403, {"errorCode": "E0000068", "errorSummary": "Each code can only be used once", "passCode": code})
+            if not OKTA["secret"] or code != totp.code_at(OKTA["secret"]):             # strict: only the current window's code
+                return self._json(403, {"errorCode": "E0000068", "errorSummary": "Invalid Passcode/Answer", "passCode": code})
+            OKTA["used"].add(code)
+            return self._json(200, {"status": "SUCCESS"})
+        if self.path.startswith("/bin/forever"):
+            import time
+            time.sleep(120)                                    # never, as far as a test is concerned
+            try:
+                self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            except OSError:
+                pass
             return
         if self.path.startswith(("/api/hang", "/bin/hang")):
             import time

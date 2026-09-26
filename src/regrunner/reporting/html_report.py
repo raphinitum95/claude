@@ -26,7 +26,7 @@ _CSS = """
 main{max-width:1400px;margin:0 auto;padding:24px 16px 64px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:32px 0 10px}
 .muted{color:var(--muted)}.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid transparent}
 .PASSED{color:var(--pass);background:var(--pass-bg)}.FAILED,.ERROR{color:var(--fail);background:var(--fail-bg)}
-.CANCELLED,.RUNNING,.QUEUED,.INTERRUPTED{color:var(--warn);background:var(--warn-bg)}.warning{color:var(--warn);background:var(--warn-bg)}
+.CANCELLED,.RUNNING,.QUEUED,.INTERRUPTED,.NOT_RUN,.INCOMPLETE{color:var(--warn);background:var(--warn-bg)}.warning{color:var(--warn);background:var(--warn-bg)}
 .info{color:var(--info);background:var(--info-bg)}.error{color:var(--fail);background:var(--fail-bg)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px}.tile b{display:block;font-size:22px}
@@ -218,7 +218,8 @@ def render_html(data: dict[str, Any], run_dir: Path, screenshots: str = "all") -
     status = data.get("status", "")
     browser = browsers.identity_of(data)
     tiles = [("Tests", summary.get("tests", 0)), ("Passed", summary.get("passed", 0)),
-             ("Failed", summary.get("failed", 0) + summary.get("errored", 0)), ("Steps", summary.get("steps", 0)),
+             ("Failed", summary.get("failed", 0) + summary.get("errored", 0)),
+             *([("Not run (machine)", summary["not_run"])] if summary.get("not_run") else []), ("Steps", summary.get("steps", 0)),
              ("Failed steps", summary.get("steps_failed", 0)), ("To review", summary.get("review_items", 0)),
              ("Duration", f'{data.get("duration_s", 0):.0f} s'), ("Workers", data.get("workers", 1))]
     out = [f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -261,6 +262,9 @@ def render_html(data: dict[str, Any], run_dir: Path, screenshots: str = "all") -
                    f' · {t.get("duration_s", 0):.1f} s · attempt {t.get("attempt", 1)}</span></summary>')
         if t.get("error"):
             out.append(f'<div class="banner">{esc(t["error"])}</div>')
+        for a in t.get("attempts", []):                            # earlier attempts that were run again (the machine failed, the site blocked us, a captcha)
+            why = a.get("infra") and f'not run: {a["infra"]}' or a.get("blocked") and "blocked by the site" or a.get("captcha") and "stopped by a captcha" or a.get("status", "")
+            out.append(f'<div class="muted">Attempt {esc(a.get("attempt"))}: {esc(why)} ({esc(a.get("duration_s", 0))} s). The test was run again from the start.</div>')
         out.append('<div class="scroll"><table><tr><th>#</th><th>Row</th><th>Step</th><th>Action</th><th>Result</th><th>Detail</th><th>Time</th><th>Screenshot</th></tr>')
         out.extend(_step_row(s, run_dir, screenshots) for s in t.get("steps", []))
         out.append("</table></div></details>")

@@ -48,5 +48,7 @@ def _no_codes_handed_out():
     """Codes are single-use per secret (``totp.reserve_window``); what one test took must not make another one wait."""
     from regrunner import totp
     totp._taken.clear()
+    totp._gaps.clear()
     yield
     totp._taken.clear()
+    totp._gaps.clear()

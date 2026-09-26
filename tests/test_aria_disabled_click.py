@@ -38,7 +38,7 @@ async def test_the_old_behaviour_is_one_setting_away(site, make_cfg, tmp_path):
     ])
     result, _, _ = await run(make_cfg, wb, **{"behaviour.click_ignores_aria_disabled": False})
     step = step_named(result, "click Australia")
-    assert step.status == "FAILED" and "element is not enabled" in step.detail and not step.notes
+    assert step.status == "FAILED" and "element is not enabled" in step.detail and not [n for n in step.notes if "aria-disabled" in n]
 
 
 async def test_an_aria_disabled_link_that_is_also_covered_still_fails(site, make_cfg, tmp_path):
@@ -58,7 +58,7 @@ async def test_a_control_that_really_is_disabled_is_still_waited_for(site, make_
     wb = build(tmp_path / "wb.xlsx", site, "/disabled_native.html", [("Click", "click Go", click("//button[@id='b']"))])
     result, _, _ = await run(make_cfg, wb)
     step = step_named(result, "click Go")
-    assert step.status == "FAILED" and "element is not enabled" in step.detail and not step.notes    # the disabled attribute is respected, aria-disabled around it or not
+    assert step.status == "FAILED" and "element is not enabled" in step.detail and not [n for n in step.notes if "aria-disabled" in n]    # the disabled attribute is respected, aria-disabled around it or not
     assert "disabled attribute" in " ".join(step.diagnosis["summary"])
 
 
