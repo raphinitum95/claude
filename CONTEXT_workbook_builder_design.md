@@ -138,6 +138,12 @@ A GUI where a **semi-technical QA person** builds and edits tests intuitively, c
   - A scenario runs as one unit and reports per lane.
   - The purpose is concurrency cases (two users editing one policy), not throughput.
 
+### Run and Results tabs (follow-up, 2026-09-26)
+- Three tabs: **Run · Build · Results**. Finished runs live in Results.
+- Several workbooks in one New run: one grouped test list and one Run plan (Order / Timeline), not a Tests + Run order card per workbook.
+- **A batch is a UI label only**: underneath, each workbook is still its own run. A run started while a batch runs is separate; it joins only via "Add tests to this batch". Re-running failed tests from a batch starts a new batch labelled "re-run of batch …".
+- Details and the engineering side: `CONTEXT_workbook_builder_engineering.md`, section 5. Canvas pages "6 · Run" and "7 · Results".
+
 ### Safety, problems and results
 - **Q31** Problems (variable used but never set, missing expected value, locator not found last run, unmapped template variable, danger step on PROD, missing environment value) appear **live** as red or amber dots on cards and map blocks, plus a "Problems (N)" panel. **Saving is never blocked.**
 - **Q32/Q33** Every failed step in Results gets **"Fix in builder"**. It opens that step with the failure screenshot and error beside the inspector, plus "Replay up to here" and "Re-pick element". Cards show a last-run pass/fail dot.

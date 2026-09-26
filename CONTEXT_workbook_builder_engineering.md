@@ -127,6 +127,16 @@ Also:
 - **"Dismiss if shown" outcomes** appear in results.
 - **Secrets are never shown** in live logs, results or reports.
 - The user said "slight enhancements to the run section" and may have more in mind: **ask them for their list** before starting this part.
+  Their first answer (2026-09-26) is below; the canvas pages "6 · Run" and "7 · Results" show it.
+
+#### Run and Results tabs, and batches (decided 2026-09-26)
+- **Three tabs: Run · Build · Results.** Finished runs move out of the Run tab into Results; the Run tab only shows New run and what is running now.
+- **New run with several workbooks is one screen:** one "What to run" list grouped by workbook (a "waits for …" chip on each test replaces the separate run-order card per workbook), and one **Run plan** for everything picked, with two views: *Order* (chains that run in sequence, drag to reorder or chain) and *Timeline* (chains laid out on the workers, estimated from each test's last run time). Today `newrun.js` repeats a Tests card and a Run order card per workbook.
+- **A batch is only a label.** Launching several workbooks together still creates **one individual run per workbook**, exactly as today: own run id, run folder, `results.json`, `events.jsonl`, report and publish copy. The only addition is a batch id (and label) in each run's `run.json`, so the UI can show them together. Nothing in how runs execute or are stored depends on it; any run can still be opened, re-run or deleted on its own.
+- **A new run started while a batch is running is separate.** It shares the worker pool as runs do today, appears as its own item under "Running now" and has its own results. It joins a batch only through the batch's own "Add tests to this batch" button, and even then it is new individual runs carrying the same batch id.
+- **Re-running from a batch's results starts a new batch** labelled "re-run of batch <id>". Past results never change; the old batch page links to the re-run.
+- **Live batch view:** one progress view for all runs in the batch: per-workbook progress rows (click to filter), worker cards coloured by workbook, and a "Failed so far" list that opens a test's results before the batch ends.
+- **Results tab:** a history list on the left (batches and single runs, filters by workbook, environment, status). A batch page reads each run's `results.json` side by side and shows: a verdict line; what changed since the previous batch (site version, workbook edited in Build, environment, browser); **failures grouped by cause** (page-gate hard stop, element not found, wrong value, skipped because a test it waits for failed, NOT_RUN); every test with a last-10-runs trend strip and "new failure / flaky / fixed" tags; and links to each underlying run. A test page shows where it stopped on the builder's block map, the evidence, the backup-locator card and that test's own history. A Compare view is a tests × last-N-runs grid with "workbook edited" and "site version changed" markers (build on `history.py`).
 
 ## Suggested order
 1. Excel round-trip writer plus the round-trip fidelity test on copies of the real workbooks. Everything depends on it.
