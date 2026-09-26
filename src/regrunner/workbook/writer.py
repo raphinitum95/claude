@@ -539,8 +539,9 @@ class _Sheet:
         return CellInfo() if xml is None else self.book._decode(xml)
 
     def max_row(self) -> int:
+        """Last row holding a value or formula (rows of empty formatted cells do not count)."""
         rows = self.load()
-        used = [r for r, row in rows.items() if row.parsed()]
+        used = [r for r, row in rows.items() if any(_has_content(self.book._decode(x)) for x in row.parsed().values())]
         return max(used) if used else 0
 
     def max_col(self, row: int | None = None) -> int:

@@ -28,3 +28,4 @@ Nothing writes workbook sheets today except `engine/order.py` `save_chains`. Bui
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+2026-09-26 · writer.py + test_workbook_roundtrip.py done (41 tests: 4 real workbooks + synthetic), AGENTS.md updated · next: PR into qa-regression

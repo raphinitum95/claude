@@ -29,7 +29,7 @@ Short doesn't mean incomplete: always include failures, risks, required actions 
    Reports are shared with a QA team (`publish.dir`).
 5. **Python 3.9 must keep working** (`requires-python >= 3.9`; the work computer uses 3.9). Create `asyncio.Event/Lock/Queue`
    inside coroutines only (guarded by `tests/test_py39_compat.py`). Annotations use `from __future__ import annotations`.
-6. **Run only the tests your change touches** (section 5). The full suite is 578 tests / ~40 min: only when the user asks.
+6. **Run only the tests your change touches** (section 5). The full suite is 668 tests / ~40 min: only when the user asks.
    Always tell the user which tests you ran.
 7. **Do not edit the user's workbooks** (`workbooks/*.xlsx`). If a cell is wrong, tell the user which cell and why.
 8. **Changes to server code** (`src/regrunner/web/app.py` or anything it imports at server start) **need the user to restart the UI**.
@@ -82,6 +82,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Failed-step evidence (detail, diagnosis, full-page screenshot, saved HTML) | `engine/failure_capture.py` | `test_failure_capture.py`, `test_full_page_screenshot.py` |
 | Excel formula / function (`VLOOKUP`, `TEXT`, `NUMBERVALUE`...) | `workbook/formula.py` (`@function("NAME")`), `workbook/textfmt.py` | `test_formula.py`, `test_lookup_totp.py` (fast) |
 | Workbook reading, token substitution, blnExecute, write-back, Params rows | `workbook/model.py`, `workbook/sheet.py` | `test_model.py` (fast), `test_blank_params.py`, `test_variables_set.py`, `test_real_workbook.py` (fast, skips without the file) |
+| Writing workbooks (edit cells/rows/columns, hidden `_rr_*` sheets, save + backup, drafts, lock/external-change checks) | `workbook/writer.py` (`WorkbookEditor`) | `test_workbook_roundtrip.py` (`-k "not real"` = 2 s; the real-workbook cases take ~2.5 min) |
 | API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates | `workbook/api.py`, `workbook/api_template.py`, `engine/api_runner.py` | `test_api_tests.py`, `test_api_purchase_flavour.py` |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
 | Workers, several workbooks at once, joining a run, progress, shutdown/cancel | `engine/runner.py`, `engine/pool.py`, `engine/inbox.py`, `engine/diagnostics.py` | `test_multi_run.py`, `test_progress_and_parked_worker.py`, `test_shutdown.py`, `test_py39_compat.py` |
@@ -163,6 +164,7 @@ src/regrunner/
     inbox.py 115 · throttle.py 71 · captcha.py 65 · ask.py 118 · failure_capture.py 449 · api_runner.py 343 · diagnostics.py 17
   workbook/
     model.py 575 (Workbook, TestCase, TestRuntime, prepare_row) · sheet.py 262 · formula.py 755 · textfmt.py 156
+    writer.py 1400 (WorkbookEditor: patches only the XML an edit touches; row insert/delete/move rewrite every reference)
     api.py 495 · api_template.py 113
   selectors/  spec.py resolve.py xpath2css.py migrate.py harvest.py
   reporting/  results.py (data model) html_report.py console.py from_events.py
@@ -179,7 +181,7 @@ tests/
   workbook_factory.py  build_workbook()/build_flow(): synthetic workbooks with the real 26 columns and formula tricks;
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            51 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            52 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -193,11 +195,11 @@ Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv`
 |---|---|---|
 | One file | `.venv/bin/pytest -q tests/test_page_ready.py` | seconds to ~1 min |
 | One test | `.venv/bin/pytest -q tests/test_web_ui.py -k theme` | |
-| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 329 tests, ~1 min |
-| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 578 tests, ~40 min |
+| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 397 tests, ~4 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
+| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 668 tests, ~40 min |
 
 - Marker `browser` = needs Playwright (module-level `pytestmark` or per test); `realworkbook` = needs `workbooks/UAT_AEM_Travelex Regression_v9.1.xlsx` (skips otherwise).
-- Pure-logic files (all fast): `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
+- Pure-logic files (all fast): `test_workbook_roundtrip -k "not real"`, `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
 - `test_web_*.py`, `test_e2e.py`, `test_multi_run.py` are the slow ones: use `-k` to pick the test for the screen/feature you changed.
 - Writing a new test: build a workbook with `tests/workbook_factory.py`, point it at the `site` fixture, add a mock page in `tests/site/`
   (and a route in `server.py` if it needs server behaviour). Name tests as sentences describing the behaviour. Keep them on the mock site.
@@ -251,6 +253,8 @@ dialogs answered as they open when the next step is an ALERT step; `worker_waiti
 Unverified on real sites: Okta per-account limits, real polling/third-party traffic vs. patience, real code-to-Verify gaps.
 
 **Workbook Builder (2026-09-26): built in phases** by separate sessions following `dev/plan/PLAN.md` (status table at its end). PRs go into `qa-regression`.
+P01 (writer) done: everything that writes a workbook goes through `workbook/writer.py`, never openpyxl `save` (it drops printer settings,
+customXml, dynamic-array metadata and cached values). Untested here: opening an edited file in real Excel (no Excel/LibreOffice Calc in the cloud).
 
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
@@ -264,6 +268,8 @@ Gotchas:
 - The UI replays the whole event stream after a reload: new events must rebuild correctly in `runstate.js` and `from_events.py`.
 - "Safari" = Playwright WebKit, not Safari.app. The work computer cannot download Playwright browsers: it uses installed Chrome/Edge.
 - API templates on `L:\...` exist only on the work computer; "template not found" here is expected.
+- Writer: rows a move carries keep relative row refs at the same distance (running counts `=COUNTA($B$1:B15)` stay "row above");
+  `$` refs follow their cell. New text is written as inline strings; after any change `fullCalcOnLoad` makes Excel recalculate.
 - Measure before claiming numbers (sizes, timings) to the user.
 - While a JS dialog is open the page answers nothing (evaluate/screenshot hang): code that probes the page must check `session.pending_dialog` first.
 - Patient waits must stay bounded by *evidence*: only the page's own requests count as "working" (third-party / polling / animation never do).

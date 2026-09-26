@@ -93,11 +93,16 @@ def load_xl(path: Path):
         return openpyxl.load_workbook(path)
 
 
-def test_sheet_with_method(editor: WorkbookEditor) -> str:
+def style_key(cell) -> tuple:
+    return (cell.font.b, cell.font.i, cell.font.color.rgb if cell.font.color else None, cell.fill.fgColor.rgb,
+            cell.fill.fill_type, cell.number_format, cell.alignment.horizontal, cell.alignment.wrap_text,
+            cell.border.left.style, cell.border.bottom.style)
+
+
+def pick_test_sheet(editor: WorkbookEditor) -> str:
     return next(n for n in editor.sheet_names() if editor.column(n, "Method") and editor.max_row(n) > 8)
 
 
-test_sheet_with_method.__test__ = False   # a helper, not a test
 
 
 def build_features_workbook(path: Path) -> dict[str, int]:
@@ -213,7 +218,7 @@ def test_saving_a_real_workbook_without_changes_keeps_every_part_byte_for_byte(r
 @real_workbook
 def test_inserting_and_deleting_rows_in_a_real_test_sheet_keeps_every_formula_value(real_copy, real, tmp_path):
     editor = WorkbookEditor.open(real_copy)
-    sheet = test_sheet_with_method(editor)
+    sheet = pick_test_sheet(editor)
     before = values(real)
     xl_before = load_xl(real)
     editor.insert_rows(sheet, 4, 3)
@@ -249,7 +254,7 @@ def test_inserting_and_deleting_rows_in_a_real_test_sheet_keeps_every_formula_va
 @real_workbook
 def test_rows_nobody_touched_keep_their_exact_xml_in_a_real_workbook(real_copy):
     editor = WorkbookEditor.open(real_copy)
-    sheet = test_sheet_with_method(editor)
+    sheet = pick_test_sheet(editor)
     last = editor.max_row(sheet)
     before = {r: editor.row_xml(sheet, r) for r in range(1, last + 1)}
     notes = editor.column(sheet, "Notes") or editor.column(sheet, "Method")
@@ -266,7 +271,7 @@ def test_rows_nobody_touched_keep_their_exact_xml_in_a_real_workbook(real_copy):
 def test_a_real_workbook_lists_the_same_tests_after_new_columns_rows_and_hidden_sheets(real_copy, real):
     tests_before = [(c.id, c.enabled) for c in Workbook(real, environment="UAT", seed=1).discover()]
     editor = WorkbookEditor.open(real_copy)
-    sheet = test_sheet_with_method(editor)
+    sheet = pick_test_sheet(editor)
     editor.add_column(sheet, "BLOCK")
     editor.insert_rows(sheet, 3, 1)
     editor.ensure_rr_sheet("_rr_variables")
@@ -282,7 +287,7 @@ def test_a_real_workbook_lists_the_same_tests_after_new_columns_rows_and_hidden_
 def test_any_change_drops_the_calc_chain_and_asks_excel_to_recalculate_on_open(real_copy):
     editor = WorkbookEditor.open(real_copy)
     assert "xl/calcChain.xml" in zip_parts(real_copy)
-    editor.set(test_sheet_with_method(editor), 2, 1, "N")
+    editor.set(pick_test_sheet(editor), 2, 1, "N")
     parts = zip_parts(editor.to_bytes())
     assert "xl/calcChain.xml" not in parts
     assert b"calcChain" not in parts["[Content_Types].xml"] and b"calcChain" not in parts["xl/_rels/workbook.xml.rels"]
