@@ -35,9 +35,11 @@ from .inbox import Inbox
 from .order import Flow, Order, load_chains, plan_order
 from .patience import WaitNotice, plain_seconds
 from .pool import Pool
+from .resources import ResourceSampler, machine_info, read_resources, summarize
 from .schedule import Schedule
 from .test_runner import TestRunner
 from .throttle import Throttle
+from .timing import run_summary
 
 
 @dataclass
@@ -255,7 +257,8 @@ async def open_run(plan: RunPlan, bus: EventBus | None, browser_info: dict[str, 
     ProgressTracker(bus)
     cancel = asyncio.Event()
     result = RunResult(run_id=run_id, workbook=str(options.workbook), environment=plan.environment, started_at=now_iso(), workers=1,
-                       seed=options.seed, config=cfg.public(), warnings=list(plan.workbook.warnings), browser=browser_info)
+                       seed=options.seed, config=cfg.public(), warnings=list(plan.workbook.warnings), browser=browser_info,
+                       machine=await asyncio.to_thread(machine_info))
     if not cfg.bypass_token(plan.environment):
         result.warnings.append(f"No {cfg.captcha_bypass.cookie_name} value configured for {plan.environment or 'this environment'}"
                                " - captcha-protected flows may be blocked (set it in secrets.env)")
@@ -614,6 +617,7 @@ class Engine:
                 if picked is None:
                     break
                 ctx, case = picked
+                queued_s, deps_s = ctx.schedule.queued_s(case.id)             # waiting for a worker is the run's time, not the test's
                 try:
                     reason = self.producer_failed(ctx, case)
                     if reason:
@@ -634,6 +638,8 @@ class Engine:
                             res = task.result()
                 finally:
                     await self.pool.finished(ctx, case.id)
+                if ctx.cfg.measure.timing:
+                    res.timing = {**(res.timing or {}), "queue_s": round(queued_s, 2), **({"deps_s": round(deps_s, 2)} if deps_s >= 0.05 else {})}
                 ctx.results[case.id] = res
                 ctx.result.tests = [ctx.results[c.id] for c in ctx.cases if c.id in ctx.results]
                 ctx.result.save(ctx.run_dir / "results.json")
@@ -702,6 +708,9 @@ class Engine:
         result.tests = [ctx.results[c.id] for c in ctx.cases if c.id in ctx.results]
         result.ended_at = now_iso()
         result.duration_s = round(time.perf_counter() - ctx.started, 2)
+        if cfg.measure.timing:
+            result.timing = run_summary(result.tests)
+        result.resources = summarize(read_resources(ctx.run_dir / "resources.jsonl"))
         if ctx.cancel.is_set():
             result.status = "CANCELLED"
         elif any(t.status in ("FAILED", "ERROR") for t in result.tests):
@@ -780,10 +789,19 @@ class Engine:
             await asyncio.sleep(0.4)
         await self.pool.close()
 
+    def sample_counts(self) -> dict[str, Any]:
+        live = [r for r in self.pool.runs if not r.ended]
+        return {"tests_running": sum(r.schedule.running for r in live), "tests_waiting": sum(r.schedule.pending for r in live),
+                "workers": len(self.workers)}
+
     async def serve(self, first: list[RunCtx], workers: int) -> None:
         """Run ``first`` (and whatever joins) to the end."""
         cancel_watch = asyncio.ensure_future(self.propagate_cancel())
         stall = asyncio.ensure_future(self.watch_stall())
+        sampler = None
+        if self.cfg.measure.sample_s > 0:                              # what the computer went through: resources.jsonl in every run that is going
+            sampler = asyncio.ensure_future(ResourceSampler(
+                self.cfg.measure.sample_s, lambda: [r.run_dir for r in self.pool.runs if r.announced and not r.ended], self.sample_counts).run())
         inbox_task = None
         async with self.playwright_session() as pw:
             self.pw = pw
@@ -810,6 +828,8 @@ class Engine:
             finally:
                 cancel_watch.cancel()
                 stall.cancel()
+                if sampler is not None:
+                    sampler.cancel()
                 if inbox_task is not None:
                     inbox_task.cancel()
                 await self.close_window()

@@ -15,6 +15,7 @@ from ..events import now_iso
 from . import captcha
 from .patience import NO_NOTICE, Activity, Patience, plain_seconds
 from .settle import SETTLE_INIT_JS, idle_ms, settle
+from .timing import NO_TIMING, fingerprint_site_code
 
 _TWO_LEVEL_SUFFIXES = {"co.uk", "org.uk", "ac.uk", "gov.uk", "com.au", "net.au", "org.au", "co.nz", "co.jp",
                        "com.br", "com.mx", "co.za", "com.sg", "com.cn", "co.in"}
@@ -146,6 +147,10 @@ class BrowserSession:
         self.next_alert = ""                            # the next step is this ALERT step: a dialog that opens is answered at once, the way that step says
         self.answered_dialog: dict[str, str] | None = None   # ...and what it said, for that step to read
         self.totp: dict[str, Any] | None = None         # the one-time login code handed out last, to measure when it is actually used (GET_GOOGLE_TOKEN)
+        self.timing = NO_TIMING                         # where this test's time goes (engine/timing.py; the test runner gives it its own)
+        self.third_party: dict[str, dict[str, int]] = {}    # host -> {requests, bytes}: what other companies' servers the pages loaded (measure.third_party)
+        self.site_code: dict[str, str] = {}             # the site's own code files (measure.site_code_patterns) -> their version: the "site version"
+        self._site_domains: set[str] = set()            # registrable domains of the documents this test's windows showed (= first party)
 
     # -- lifecycle -----------------------------------------------------------------------------
     @property
@@ -284,12 +289,14 @@ class BrowserSession:
         self._watch_navigation(page)
         self._watch_calls(page)
         self._watch_activity(page)
+        self._watch_hosts(page)
         page.on("crash", lambda *_: self.mark_infra("The browser tab crashed (the computer may have run out of memory)", "browser"))
         self.review.attach(page)
         page.on("dialog", self._on_dialog)
         page.on("close", lambda p=page: self._on_page_closed(p))
 
     def _on_page_closed(self, page) -> None:
+        self.timing.site.forget(self._act.get(page, {}).get("inflight", {}).keys())   # its requests will never answer now
         if page in self.pages:
             self.pages.remove(page)
         if self._current is page:
@@ -359,6 +366,10 @@ class BrowserSession:
         return bool(st and st["pending"] is not None and time.monotonic() - st["pending"] < limit)
 
     async def watch_for_navigation(self, grace_s: float | None = None) -> bool:
+        with self.timing.span("runner", "nav_grace"):
+            return await self._watch_for_navigation(grace_s)
+
+    async def _watch_for_navigation(self, grace_s: float | None = None) -> bool:
         """After a click that may load a page: give the load a moment to *start* (a JS click returns before it does).
         True when one started; the caller then calls ``ensure_ready`` so the click step ends on the new page."""
         page = self._current
@@ -378,6 +389,10 @@ class BrowserSession:
                 await asyncio.sleep(0.02)
 
     async def ensure_ready(self) -> None:
+        with self.timing.span("runner", "ready_wait"):                 # (the site loading meanwhile is counted as the site's: timing.py)
+            await self._ensure_ready()
+
+    async def _ensure_ready(self) -> None:
         """Before acting: a page load that has started must finish, and a freshly loaded document must be really ready.
 
         * a navigation in flight is waited for, for as long as it makes progress (``patience``; without it ``timeouts.navigation_s``);
@@ -464,8 +479,10 @@ class BrowserSession:
             st["progress"] = st["network"] = now
             if own(request):
                 st["inflight"][request] = (now, key)
+                self.timing.site.started(request)
 
         def ended(request) -> None:
+            self.timing.site.ended(request)
             if st["inflight"].pop(request, None) is not None or st["seen"].get(key_of(request), 0) < repeat_after:
                 st["progress"] = st["network"] = time.monotonic()
 
@@ -498,8 +515,10 @@ class BrowserSession:
         own = [(t0, key) for t0, key in st["inflight"].values() if since is None or t0 >= since]
         t0 = time.monotonic()
         try:
-            state, late_ms = await asyncio.wait_for(page.main_frame.evaluate(
-                "[document.readyState, window.__rr && window.__rr.takeLag ? window.__rr.takeLag() : 0]"), max(5.0, pat.lag_ms / 1000 * 5))
+            state, late_ms, late_sum_ms = await asyncio.wait_for(page.main_frame.evaluate(
+                "[document.readyState, window.__rr && window.__rr.takeLag ? window.__rr.takeLag() : 0,"
+                " window.__rr && window.__rr.takeLagSum ? window.__rr.takeLagSum() : 0]"), max(5.0, pat.lag_ms / 1000 * 5))
+            self.timing.lagged(float(late_sum_ms or 0) / 1000)
         except asyncio.TimeoutError:
             state, late_ms = "busy", 0.0
         except Exception:
@@ -674,6 +693,72 @@ class BrowserSession:
         page.on("requestfinished", finished)
         page.on("requestfailed", failed)
 
+    def _watch_hosts(self, page) -> None:
+        """For measuring (``measure``), never for deciding anything: which other companies' servers the pages load (analytics, tag managers,
+        adverts, chat widgets: the input for a tracker block list) - host, requests and bytes, never a full address - and the versions of the
+        site's own code files (``measure.site_code_patterns``), so a run can tell that the site deployed new code since the last one."""
+        measure = self.cfg.measure
+        patterns = [p for p in measure.site_code_patterns if p]
+        if not measure.third_party and not patterns:
+            return
+
+        def registrable(host: str) -> str:
+            return (cookie_domains("http://" + host + "/")[0] if host else "").lstrip(".")
+
+        def navigated(frame) -> None:
+            try:
+                if frame == page.main_frame:
+                    domain = registrable((urlparse(frame.url).hostname or "").lower())
+                    if domain:
+                        self._site_domains.add(domain)
+            except Exception:
+                pass
+
+        def responded(response) -> None:
+            try:
+                request = response.request
+                parts = urlparse(response.url)
+                host = (parts.hostname or "").lower()
+                if not host or parts.scheme not in ("http", "https"):
+                    return
+                if request.is_navigation_request() and request.frame == page.main_frame:
+                    self._site_domains.add(registrable(host))
+                domain = registrable(host)
+                headers = response.headers
+                if domain in self._site_domains:
+                    if any(p in parts.path for p in patterns) and len(self.site_code) < 2000:
+                        # A file's version: its validator when the server gives one, else its size (never its contents).
+                        self.site_code[parts.path] = headers.get("etag") or headers.get("last-modified") or headers.get("content-length") or ""
+                    return
+                if not measure.third_party:
+                    return
+                entry = self.third_party.setdefault(host, {"requests": 0, "bytes": 0})
+                entry["requests"] += 1
+                try:
+                    entry["bytes"] += int(headers.get("content-length") or 0)
+                except ValueError:
+                    pass
+            except Exception:
+                pass
+
+        page.on("framenavigated", navigated)
+        page.on("response", responded)
+
+    def site_version(self) -> dict[str, Any]:
+        """``{"fingerprint", "files"}`` of the site's own code files this test loaded ({} when none matched)."""
+        return fingerprint_site_code(self.site_code)
+
+    async def collect_lag(self) -> None:
+        """At the end of a step: how late the page's heartbeat ran since it was last asked (a busy computer), into this test's timing."""
+        page = self._current
+        if page is None or page.is_closed() or self.pending_dialog is not None:
+            return
+        try:
+            late_sum_ms = await asyncio.wait_for(page.main_frame.evaluate("window.__rr && window.__rr.takeLagSum ? window.__rr.takeLagSum() : 0"), 1.0)
+            self.timing.lagged(float(late_sum_ms or 0) / 1000)
+        except Exception:
+            pass
+
     def calls_snapshot(self) -> tuple[int, frozenset, int]:
         """(servlet calls started so far, the ones in flight right now, blocks seen so far) - taken before an input or a click, so
         that only calls the action starts are waited for and checked, and a long-running background call is never mistaken for one."""
@@ -683,7 +768,8 @@ class BrowserSession:
     async def pace(self) -> None:
         """Before a page load starts (or a click that may start one): the run-wide throttle spaces them out and honours a cool-down."""
         if self.throttle is not None:
-            await self.throttle.before_load(self.cancel)
+            with self.timing.span("wait", "pacing"):
+                await self.throttle.before_load(self.cancel)
 
     async def await_call_results(self, before: tuple, cap: float) -> None:
         """After a click: the servlet calls it started get up to ``cap`` seconds to *answer* (a slow submit is not waited for
@@ -710,6 +796,10 @@ class BrowserSession:
             raise ActionError(self.block_error)
 
     async def settle_after_input(self, before: tuple[int, frozenset] | None = None) -> None:
+        with self.timing.span("runner", "input_settle"):
+            await self._settle_after_input(before)
+
+    async def _settle_after_input(self, before: tuple[int, frozenset] | None = None) -> None:
         """After typing or a key press: if the site made a server call because of it, wait for that call - and only for those.
 
         Leaving a field usually asks the server (a zip code, an e-mail, a voucher) and the answer changes the form; the next step

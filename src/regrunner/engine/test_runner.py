@@ -26,6 +26,7 @@ from .failure_capture import capture_failure
 from .outcome import FAILED, PASSED, Verdict, evaluate
 from .patience import WaitNotice
 from .session import BrowserSession
+from .timing import Timing
 
 NOT_RUN = "NOT_RUN"
 
@@ -75,6 +76,7 @@ class TestRunner:
         self._browser_getter = browser_getter
         self._settled = True                                      # the last failed step failed on a page that had finished (not one still loading)
         self.notice = WaitNotice(bus, case.id, worker)            # when this test waits on purpose, the run screen says why
+        self.timing = Timing()                                    # where its time goes (engine/timing.py; recorded when measure.timing)
 
     # -- helpers ------------------------------------------------------------------------------------
     def _emit(self, type_: str, **fields):
@@ -152,6 +154,7 @@ class TestRunner:
         self.session = BrowserSession(self._browser_getter, self.cfg, self.review, case.id, runtime.environment,
                                       devices=self._devices, throttle=self._throttle, cancel=self.cancel)
         self.session.notice = self.notice
+        self.session.timing = self.timing
         method_col = runtime.columns.get("METHOD")
         later = {row: self.planned_rows[i + 1:] for i, row in enumerate(self.planned_rows)}
 
@@ -280,6 +283,11 @@ class TestRunner:
         result.review = list(self.review.items)
         result.ended_at = now_iso()
         result.duration_s = round(time.perf_counter() - started, 2)
+        if self.cfg.measure.timing:
+            result.timing = self.timing.summary(result.duration_s)
+        if self.session is not None:
+            result.third_party = [{"host": host, **seen} for host, seen in sorted(self.session.third_party.items(), key=lambda kv: (-kv[1]["requests"], kv[0]))]
+            result.site_version = self.session.site_version()
         self._emit("test_finished", status=result.status, passed=result.passed, failed=result.failed,
                    skipped=result.skipped, duration_s=result.duration_s, error=result.error,
                    review_counts=[item["count"] for item in self.review.items])
@@ -308,7 +316,8 @@ class TestRunner:
                 return step, f"{why} Fill the cell in, or start the run from the web UI or a terminal to be asked for it."
             question = f"{token} is empty for {self.case.id} (cell {cell}). Type the value to use in this run; the workbook is not changed.{who}"
             try:
-                answer = (await asker.ask(self.case.id, seq, question, timeout_s=self.cfg.ask.timeout_s)).strip()
+                with self.timing.span("wait", "ask_user"):
+                    answer = (await asker.ask(self.case.id, seq, question, timeout_s=self.cfg.ask.timeout_s)).strip()
             except AskUnavailable as err:
                 return step, f"{why} {err}"
             except AskTimeout as err:
@@ -362,7 +371,8 @@ class TestRunner:
     async def _captcha_gate(self, runtime, step: PreparedStep, seq: int) -> tuple[str, str]:
         """Is a captcha challenge in the way of this test?  Returns (why the test cannot go on, "" if it can; a note for the step when a person
         solved one).  With a person who can see the browser the test waits for them; otherwise it stops: nothing behind a captcha is a result."""
-        hit = await self.session.find_captcha()
+        with self.timing.span("runner", "captcha_check"):
+            hit = await self.session.find_captcha()
         if hit is None:
             return "", ""
         cfg, asker = self.cfg, self._asker
@@ -382,7 +392,8 @@ class TestRunner:
         self._emit("log", level="warning", message=f"{self.case.id}: a captcha needs a person. {question}")
         t0 = time.monotonic()
         try:
-            answer = await asker.ask(self.case.id, seq, question, kind="captcha", timeout_s=cfg.captcha.timeout_s, until=self._captcha_gone)
+            with self.timing.span("wait", "captcha_by_hand"):
+                answer = await asker.ask(self.case.id, seq, question, kind="captcha", timeout_s=cfg.captcha.timeout_s, until=self._captcha_gone)
         except AskTimeout:
             return f"{head} {cause} Nobody solved it within {cfg.captcha.timeout_s:g} s, so the test was stopped here.", ""
         except AskCancelled:
@@ -439,7 +450,8 @@ class TestRunner:
         """The step during which the browser went away: recorded as not run (no verdict), with what the machine did."""
         why = f"Not run: {self.session.infra}"
         record = StepRecord(seq=seq, row=step.row, name=step.name, action=step.method, status=NOT_RUN, error=why, notes=ctx.out.notes,
-                            started_at=started_at, ended_at=now_iso(), duration_ms=int((time.perf_counter() - t0) * 1000), detail=ctx.out.detail)
+                            started_at=started_at, ended_at=now_iso(), duration_ms=int((time.perf_counter() - t0) * 1000), detail=ctx.out.detail,
+                            timing=self.timing.step_ended() if self.cfg.measure.timing else None)
         self.result.steps.append(record)
         self._emit("step_failed", step=seq, total_steps=self.result.total_steps, row=step.row, name=step.name, action=step.method, status=NOT_RUN,
                    duration_ms=record.duration_ms, expected="", actual="", error=why, locator="", notes=record.notes, screenshot=None, sets=[])
@@ -453,6 +465,7 @@ class TestRunner:
         self._emit("step_started", step=seq, total_steps=self.result.total_steps, row=step.row,
                    name=step.name, action=step.method)
         started_at, t0 = now_iso(), time.perf_counter()
+        self.timing.step_started()
         ctx, spec_element = await self._perform(runtime, step, seq)
         self._element_step = bool(spec_element)                        # read by the loop: does this step say anything about where the page is?
         step = ctx.step                                                # (the row again when a parameter was supplied by hand)
@@ -476,7 +489,8 @@ class TestRunner:
         writes = runtime.record(step, verdict.status, verdict.error, output)      # the parameters this step set
         failed = verdict.status == FAILED
         if failed and spec_element:
-            self._settled = await self._failed_on_settled_page(ctx)
+            with self.timing.span("runner", "failure_capture"):
+                self._settled = await self._failed_on_settled_page(ctx)
         hint = self._skipped_hint(off, step.row) if failed and off and not stop else ""
         error_text = f"{verdict.error} {hint}" if hint else verdict.error          # the sheet's Error_Check keeps the plain verdict
         hidden = sorted((v for v in runtime.secret_values if len(v) >= 4), key=len, reverse=True)      # what people typed in as secrets: never stored
@@ -487,17 +501,24 @@ class TestRunner:
         if verdict.ignored_error:
             ctx.out.notes.append(f"ignored (Ignore_not_existing_object=Y): {verdict.ignored_error}")
         detail = mask_text(ctx.out.detail, hidden)
-        diagnosis = await self._diagnose(ctx, step, seq, verdict, detail, stop, lambda text: mask_text(text, hidden), actual) if failed else None
+        with self.timing.span("runner", "failure_capture"):
+            diagnosis = await self._diagnose(ctx, step, seq, verdict, detail, stop, lambda text: mask_text(text, hidden), actual) if failed else None
         box = None
         try:
-            if cfg.screenshots.mode == "every_step" or (failed and cfg.screenshots.mode == "on_failure"):
-                box = await self._element_box(ctx)
-            screenshot = await self._screenshot(seq, step.row, step.name or step.method, failed, box)
-            screenshot_full = await self._full_page_screenshot(seq, step.row, step.name or step.method) if failed and not stop else None
+            with self.timing.span("runner", "screenshots"):
+                if cfg.screenshots.mode == "every_step" or (failed and cfg.screenshots.mode == "on_failure"):
+                    box = await self._element_box(ctx)
+                screenshot = await self._screenshot(seq, step.row, step.name or step.method, failed, box)
+                screenshot_full = await self._full_page_screenshot(seq, step.row, step.name or step.method) if failed and not stop else None
         finally:
             await ctx.release_handle()
         if self.session.infra:                                         # (a crash event can arrive a moment after the error it caused)
             return self._not_run_step(step, seq, ctx, t0, started_at)
+        timing = None
+        if cfg.measure.timing:
+            with self.timing.span("runner", "measuring"):
+                await self.session.collect_lag()
+            timing = self.timing.step_ended()
         duration_ms = int((time.perf_counter() - t0) * 1000)
         value = MASK if "VALUE" in step.secret_columns else mask_text(step.text("VALUE"), hidden)
         record = StepRecord(
@@ -507,7 +528,7 @@ class TestRunner:
             comparison=verdict.comparison, value=value[:500], locator=ctx.out.locator,
             locator_origin=ctx.out.locator_origin, fallback_used=ctx.out.fallback_used, notes=ctx.out.notes, started_at=started_at,
             ended_at=now_iso(), duration_ms=duration_ms, screenshot=screenshot, box=box if screenshot else None, sets=sets,
-            detail=detail, diagnosis=diagnosis, screenshot_full=screenshot_full)
+            detail=detail, diagnosis=diagnosis, screenshot_full=screenshot_full, timing=timing)
         self.result.steps.append(record)
         self.result.variables.extend({**w, "seq": seq, "row": step.row, "step": step.name, "by_hand": False} for w in sets)
         self._emit("step_failed" if failed else "step_passed", step=seq, total_steps=self.result.total_steps,
@@ -516,5 +537,5 @@ class TestRunner:
                    locator=record.locator, locator_origin=record.locator_origin, fallback=record.fallback_used,
                    comparison=record.comparison, notes=record.notes, screenshot=screenshot, sets=sets,
                    **({"detail": detail} if detail else {}), **({"diagnosis": diagnosis} if diagnosis else {}),
-                   **({"screenshot_full": screenshot_full} if screenshot_full else {}))
+                   **({"screenshot_full": screenshot_full} if screenshot_full else {}), **({"timing": timing} if timing else {}))
         return record

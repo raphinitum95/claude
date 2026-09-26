@@ -41,6 +41,7 @@ class StepRecord:
     sets: list[dict[str, str]] = field(default_factory=list)   # parameters this step set: [{name, value, stored, cell}] (a secret is masked)
     detail: str = ""                     # the browser's whole error when ``error`` keeps only its first line (Playwright's call log: why a click could not happen)
     diagnosis: dict[str, Any] | None = None   # failed steps: what the page looked like (see engine/failure_capture.py)
+    timing: dict[str, Any] | None = None      # where the step's time went: {site_ms, wait_ms, runner_ms, computer_ms, other_ms, ...} (engine/timing.py)
 
 
 @dataclass
@@ -68,6 +69,9 @@ class TestResult:
     captcha: str = ""                    # set when a captcha challenge stopped this attempt: what it was and why nobody could get past it
     infra: str = ""                      # set when the machine, not the site, ended this attempt (the browser crashed / ran out of memory / disconnected, the driver died)
     variables: list[dict[str, Any]] = field(default_factory=list)   # every parameter this test set: [{name, value, stored, cell, seq, row, step, by_hand}]
+    timing: dict[str, Any] = field(default_factory=dict)            # where the test's time went (engine/timing.py) + queue_s: waiting for a worker before it started
+    third_party: list[dict[str, Any]] = field(default_factory=list) # other companies' hosts its pages loaded: [{host, requests, bytes}] (measure.third_party)
+    site_version: dict[str, Any] = field(default_factory=dict)      # {fingerprint, files}: the site's own code files it loaded (measure.site_code_patterns)
 
 
 @dataclass
@@ -87,6 +91,9 @@ class RunResult:
     artifacts: dict[str, str] = field(default_factory=dict)
     partial: bool = False                # rebuilt from events.jsonl after the run stopped without finishing
     browser: dict[str, Any] = field(default_factory=dict)   # the browser every test of the run used (browsers.identity: name, engine, version, headless)
+    machine: dict[str, Any] = field(default_factory=dict)   # the computer and the runner's version (engine/resources.py machine_info): for comparing runs
+    timing: dict[str, Any] = field(default_factory=dict)    # where the tests' time went, over the run (engine/timing.py run_summary)
+    resources: dict[str, Any] = field(default_factory=dict) # peaks of resources.jsonl: least free memory, most swap, the browsers' most memory, worst loop lag
 
     @property
     def summary(self) -> dict[str, Any]:

@@ -33,4 +33,4 @@ regrunner = ["web/static/*", "web/static/js/*", "web/static/js/views/*", "report
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = ["browser: needs a Playwright browser", "realworkbook: needs the real workbook in workbooks/"]
+markers = ["browser: needs a Playwright browser", "realworkbook: needs the real workbook in workbooks/", "benchmark: slow scaling benchmark, runs only with RR_BENCHMARK=1"]

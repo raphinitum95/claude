@@ -317,6 +317,36 @@ def cmd_serve(args, cfg: Config) -> int:
     return 0
 
 
+def cmd_history(args, cfg: Config) -> int:
+    """Every run in runs/ as one record: what changed between runs, which steps got slower or started failing since, CSV for Excel."""
+    from .history import compare, export_csv, load_runs, markers, third_party_hosts
+    runs_dir = Path(args.runs) if args.runs else cfg.path(cfg.runs_dir)
+    runs = load_runs(runs_dir, args.workbook)
+    if not runs:
+        print(f"No finished runs in {runs_dir}" + (f" for a workbook named like {args.workbook!r}" if args.workbook else ""))
+        return 1
+    books = sorted({r.workbook for r in runs})
+    print(f"{len(runs)} run(s) of {len(books)} workbook(s) in {runs_dir}, {runs[0].started[:10]} to {runs[-1].started[:10]}")
+    if args.csv:
+        for path in export_csv(runs, Path(args.csv)):
+            print(f"written: {path}")
+    if args.hosts:
+        hosts = third_party_hosts(runs)
+        print("\nThird-party hosts the pages loaded (candidates for the tracker block list; never block sign-in, payment, captcha or the consent manager):")
+        for h in hosts or []:
+            print(f"  {h['host']:<45} {h['requests']:>7} requests  {h['bytes'] / 1048576:>8.1f} MB  in {h['tests']} test(s) of {h['runs']} run(s)")
+        if not hosts:
+            print("  none recorded (runs from before measure.third_party, or pages that load nothing from elsewhere)")
+    changes = markers(runs)
+    print("\nWhat changed between runs:" if changes else "\nNothing recorded changed between runs (runner, browser, site version, speed settings, computer).")
+    for m in changes:
+        print(f"  {m.workbook}: {m.describe()}")
+    print()
+    for line in compare(runs, at=args.at, factor=args.factor, min_s=args.min_s) or ["Too few runs to compare."]:
+        print(line)
+    return 0
+
+
 def cmd_doctor(args, cfg: Config) -> int:
     from .preflight import run_preflight
     report = asyncio.run(run_preflight(cfg, deep=True))
@@ -417,6 +447,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("doctor", help="check the installation and configuration")
     d.set_defaults(fn=cmd_doctor)
+
+    h = sub.add_parser("history", help="all runs in runs/: what changed between them, what got slower or started failing since, CSV export")
+    h.add_argument("--workbook", help="only runs of workbooks whose file name contains this")
+    h.add_argument("--csv", metavar="FOLDER", help="write runs.csv, tests.csv and steps.csv (for Excel) into FOLDER")
+    h.add_argument("--at", metavar="RUN_ID", help="compare the runs before this one with it and the runs after (default: the latest change)")
+    h.add_argument("--factor", type=float, default=2.0, help="a step counts as slower from this many times its earlier time (default 2)")
+    h.add_argument("--min-s", dest="min_s", type=float, default=1.0, help="...and at least this many seconds slower (default 1)")
+    h.add_argument("--hosts", action="store_true", help="also list the third-party hosts the pages loaded (for a tracker block list)")
+    h.add_argument("--runs", metavar="FOLDER", help="the runs folder (default: runs_dir of config.yaml)")
+    h.set_defaults(fn=cmd_history)
     return p
 
 
