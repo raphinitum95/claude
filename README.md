@@ -1,5 +1,3 @@
-> **AI agents: start with [AGENTS.md](AGENTS.md)** (project map, where to change what, which tests to run). This README is the user manual.
-
 # regrunner
 
 A Playwright-based runner for the existing keyword-driven Excel regression workbooks (the ones the old
@@ -15,9 +13,13 @@ workbooks/*.xlsx ──► loader + formula engine ──► step engine (Playwr
 
 ## Quick start
 
-**No terminal needed:** double-click `Start QA Regression.command` (macOS) or `Start QA Regression.bat` (Windows). A
-browser tab opens with the UI (see *Web UI* below): pick a workbook, tick the tests, press Run. Everything the
-command line can do is a control there, and the command it is equivalent to is shown next to the Run button.
+**No terminal needed:** double-click `Start QA Regression.bat` (Windows) or `Start QA Regression.command` (macOS). The UI
+opens in a window of its own (Edge or Chrome in app mode; the default browser if neither is installed; see *Web UI* below):
+pick a workbook, tick the tests, press Run. Everything the command line can do is a control there, and the command it is
+equivalent to is shown next to the Run button. A small launcher window stays open next to it: closing that stops QA Regression.
+
+The first double-click sets the tool up inside its own folder (see *Set up*); on Windows it also adds a **QA Regression** icon
+to the desktop, which starts it from then on with the launcher window minimised.
 
 **From a terminal:**
 
@@ -56,7 +58,23 @@ WAF block and the "one worker fewer" that follows it are kept **per site** (the 
 site's WAF slows only the runs on that site, and the workers it cannot use go to the other runs. Output lines are prefixed with the workbook name; the exit code is `0` only
 when every run passed.
 
-## Set up (once, by whoever maintains this)
+## Set up
+
+**Automatic (what the launchers do).** The first double-click of `Start QA Regression.bat` / `.command` finds Python 3.9 or newer
+(`py -3`, `python` or `python3`), creates `.venv` inside this folder, installs the packages into it (needs the internet), and on
+Windows adds a desktop icon. Nothing goes into Program Files and no admin rights are needed. If Python is missing, the window says
+where to get it: the python.org installer needs no admin rights when *Use admin privileges when installing py.exe* is unticked. No
+browser is downloaded: the installed Chrome or Edge is used (see below). When a newer copy of the folder changes `pyproject.toml`,
+the next start reinstalls the packages by itself. To start over, delete `.venv`. The folder can be moved or renamed afterwards
+(the launchers put `src/` on `PYTHONPATH`; only the desktop icon has to be made again, by deleting `.venv` or with a new shortcut).
+
+**Sharing it with someone.** Run `python3 dev/make_share_folder.py`. It builds `share/QA Regression/` and `share/QA Regression.zip`
+(git-ignored) with only what is needed to run the tool: the launchers, `src/`, the config files, this manual, a one-page
+`START HERE.txt` and the workbooks (`--no-workbooks` leaves them out). It never includes `dev/`, `tests/`, `.claude/`, `secrets.env`,
+`.auth/`, `runs/` or `.venv/`. The other person unzips it (for example into Documents, not a OneDrive or network folder) and
+double-clicks the launcher.
+
+**By hand (for developers).**
 
 ```bash
 python3 -m venv .venv                      # Windows: py -m venv .venv

@@ -1,6 +1,6 @@
 # Context: the same speed at 1 or 20 tests, on an ordinary laptop
 
-Hand-off brief from a design discussion with the user (2026-09-26). Nothing here is built yet. Read `AGENTS.md` first (rules, router, which
+Hand-off brief from a design discussion with the user (2026-09-26). Nothing here is built yet. Read `dev/claude/AGENTS.md` first (rules, router, which
 tests to run), then this file. This work builds on `CONTEXT_accurate_at_any_worker_count.md` (evidence-based waiting in `engine/patience.py`,
 `runner.infra_retries`, `worker_waiting`/`worker_resumed` events): check `git status` and that brief for what of it has landed before starting.
 

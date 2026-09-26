@@ -3,6 +3,7 @@
 > Read this file first and only this file. It tells you where things live, what to change and which tests to run.
 > Open other files only when the table in section 3 points you to them. Do **not** read `README.md` (56 KB) end to end:
 > it is the user manual, organised by the headings listed in section 8, so jump to one heading.
+> Keep the repository root for what users need: AI notes, briefs and designs go in `dev/` (section 4), never at the root.
 > Keep this file true: if you add a module, a test file, a config section or a rule, update the matching line here (section 10).
 
 ---
@@ -104,6 +105,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Styles / theme | `web/static/app.css`, `theme.js` | `test_web_ui.py -k theme` |
 | Measuring a run: time split per step/test, queue time, resource sampler, third-party hosts, site version | `engine/timing.py`, `engine/resources.py`, `engine/session.py` (`_watch_hosts`, `collect_lag`, spans), `engine/test_runner.py`, `engine/schedule.py` (`queued_s`), `config.py` (`MeasureCfg`) | `test_measure.py`; scaling benchmark (opt-in, slow, never in the default subset): `RR_BENCHMARK=1 .venv/bin/pytest -s tests/test_benchmark_scaling.py` |
 | Run history, "what changed" markers, compare, CSV export (`regrunner history`) | `history.py`, `cli.py` (`cmd_history`) | `test_history.py` |
+| Launchers, first-run setup, desktop icon, own-window UI, the folder shared with other people | `Start QA Regression.bat/.command`, `cli.py` (`open_in_app_window`, `serve --app`), `dev/make_share_folder.py`, `dev/share/START HERE.txt` | `test_cli.py` (`-k "app_window or serve"`); launchers have no automated test: say so |
 | Analyse a run folder the user copied in | read `runs/<id>/` (section 7); `regrunner history` for trends across runs; no code change until the cause is proven | none |
 
 Always add to the list: `test_py39_compat.py` if you touched asyncio/runner/CLI; `test_keys_events_config.py` if you touched config, events or input.
@@ -113,18 +115,23 @@ Always add to the list: `test_py39_compat.py` if you touched asyncio/runner/CLI;
 ## 4. Repo map (sizes in lines so you know what is big)
 
 ```
-AGENTS.md            this file (CLAUDE.md imports it)
+dev/                 NOT shared (make_share_folder.py leaves it out): everything for developers and AI agents
+  claude/AGENTS.md   this file (.claude/CLAUDE.md imports it)
+  claude/CONTEXT_*.md  hand-off briefs for a specific piece of work in progress (read only if your task is that work)
+  designs/           design briefs (CONTEXT_workbook_builder_design.md); put new design briefs/exports here, not at the root
+  make_share_folder.py  builds share/QA Regression/ + .zip (git-ignored) for other people: launchers, src/, config, README, workbooks
+  share/START HERE.txt  the one-page instructions copied into that folder
 README.md            user manual, 56 KB: read one section at a time (section 8)
 config.yaml          behaviour settings, every key commented; sections: runner browser timeouts waits output screenshots
                      failure_capture selectors captcha_bypass auth review reports behaviour measure tags patience; publish/api/ask/captcha are
                      commented out (defaults in config.py)
 secrets.env          git-ignored secrets (RR_VAR_<COLUMN>, bypass tokens); never print it. secrets.env.example = the template
 selectors.yaml       logical selector map (sheet Locator column → this → legacy XPath)
-Start QA Regression.command/.bat   double-click launchers → .venv/bin/regrunner serve --open
+Start QA Regression.command/.bat   double-click launchers: first run creates .venv + installs (+ Windows desktop icon, app.ico),
+                     reinstalls when pyproject.toml changes, then `python -m regrunner serve --app` (own Edge/Chrome window)
 workbooks/           the user's real workbooks (DO NOT EDIT, DO NOT RUN live). .trash/ = deleted from UI, .chains/ = saved run orders
 runs/<run-id>/       run folders (git-ignored); many are copies from the work computer
 .auth/               saved sign-in state + totp_last.json (git-ignored)
-CONTEXT_*.md         hand-off briefs for a specific piece of work in progress (read only if your task is that work)
 
 src/regrunner/
   cli.py        486   `regrunner run|list|plan|lint|selectors|auth|report|serve|doctor|publish`; split_workbooks; TerminalAsker
@@ -230,14 +237,14 @@ Values set by the tests, publish, Event stream) · Configuration · Extending ·
 
 ## 9. Current state and known gotchas
 
-**Done 2026-09-26 (uncommitted; check `git status`):** "accurate at any worker count" (brief: `CONTEXT_accurate_at_any_worker_count.md`).
+**Done 2026-09-26 (uncommitted; check `git status`):** "accurate at any worker count" (brief: `dev/claude/CONTEXT_accurate_at_any_worker_count.md`).
 Evidence-based waiting (`engine/patience.py`, `patience:` in config.yaml; `runner.step_hard_cap_s` 7200 / `test_timeout_s` 43200 are backstops only);
 `NOT_RUN` outcome + infra re-runs (`runner.infra_retries`, run status `INCOMPLETE`); TOTP margin from the measured code-to-Verify gap
 (`totp.safe_margin/record_gap`, gaps in `.auth/totp_last.json`); login codes masked like secrets; auth-domain 4xx bodies in `network.jsonl`;
 dialogs answered as they open when the next step is an ALERT step; `worker_waiting`/`worker_resumed` events + yellow banner (`--wait*` CSS tokens).
 Unverified on real sites: Okta per-account limits, real polling/third-party traffic vs. patience, real code-to-Verify gaps.
 
-**In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `CONTEXT_efficiency_at_scale.md`).
+**In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
 Unverified: the Windows paths of `engine/resources.py` (ctypes; no Windows here), numbers from real sites.

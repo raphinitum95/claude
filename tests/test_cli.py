@@ -78,3 +78,31 @@ def test_serve_reports_a_busy_port_instead_of_crashing(capsys):
         taken.listen()
         assert main(["serve", "--port", str(taken.getsockname()[1])]) == 0
     assert "already listening" in capsys.readouterr().out
+
+
+def test_the_app_window_is_the_installed_edge_or_chrome_in_app_mode_and_outlives_the_launcher(monkeypatch, tmp_path):
+    from regrunner import browsers, cli
+    edge = tmp_path / "msedge"
+    monkeypatch.setattr(browsers, "installed_executable", lambda browser: edge if browser.id == "msedge" else None)
+    launched = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: launched.append((cmd, kw)))
+    assert cli.open_in_app_window("http://127.0.0.1:8765") is True
+    (cmd, kw), = launched
+    assert cmd == [str(edge), "--app=http://127.0.0.1:8765"]
+    assert kw.get("start_new_session") or kw.get("creationflags")
+
+
+def test_with_no_edge_or_chrome_the_app_window_falls_back_to_the_default_browser(monkeypatch):
+    import webbrowser
+
+    from regrunner import browsers, cli
+    monkeypatch.setattr(browsers, "installed_executable", lambda browser: None)
+    assert cli.open_in_app_window("http://127.0.0.1:1") is False
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        assert main(["serve", "--port", str(port), "--app"]) == 0
+    assert opened == [f"http://127.0.0.1:{port}"]

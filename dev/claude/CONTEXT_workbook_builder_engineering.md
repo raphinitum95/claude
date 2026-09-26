@@ -1,6 +1,6 @@
 # Context: make the Workbook Builder actually work (engine, file format, API), plus the Run-section changes it needs
 
-You are picking up an **engineering task** on `regrunner`, a Python + Playwright regression runner. The UI for the new **Build** tab is designed separately (`CONTEXT_workbook_builder_design.md`, which lists every product decision as Q1–Q53). **Read that file first.** This file covers what has to exist behind the design and what is missing today.
+You are picking up an **engineering task** on `regrunner`, a Python + Playwright regression runner. The UI for the new **Build** tab is designed separately (`dev/designs/CONTEXT_workbook_builder_design.md`, which lists every product decision as Q1–Q53). **Read that file first.** This file covers what has to exist behind the design and what is missing today.
 
 ## The project in one paragraph
 
