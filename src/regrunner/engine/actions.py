@@ -60,11 +60,15 @@ def action(*names: str, element: bool = False):
 LEGACY_EXISTENCE_ALIASES = {'GETATTRIBUTE("VALUE")'}
 
 UNSUPPORTED = {
-    "DB_CONNECT", "DB_DISCONNECT", "DB_QUERY", "DB_SAVE_JSON_RESULT", "JSON_READ", "SEND_EMAIL",
+    "DB_CONNECT", "DB_DISCONNECT", "DB_QUERY", "DB_SAVE_JSON_RESULT", "SEND_EMAIL",
     "FILE_COMPARE", "RUN_SCRIPT", "UPDATE_SYSTEM_TIMEZONE", "BROKEN_LINK_CHECK",
-    "BROKEN_LINK_CHECK_CRAWL", "SNAGIT_SCREENSHOT", "BS_CAPABILITIES", "FOCUSWINDOW", "SET_VARIABLE",
-    "GO_TO_ROW", "ITERATION_START", "ITERATION_END", "GET_MOUSE_POS", "DRAGANDDROP",
+    "BROKEN_LINK_CHECK_CRAWL", "SNAGIT_SCREENSHOT", "BS_CAPABILITIES", "FOCUSWINDOW",
+    "GO_TO_ROW", "GET_MOUSE_POS", "DRAGANDDROP",
 }
+
+# Steps about variables and the test's own flow (CONTRACT.md 1.3): they never look at the page, so they need no open window, no page-ready wait,
+# no captcha check and no screenshot.
+NO_PAGE_METHODS = {"SET_VARIABLE", "JSON_READ", "IF", "ELSE", "END_IF", "ITERATION_START", "ITERATION_END", "CALL_TEST"}
 
 VISIBLE_TEXT_JS = """el => {
   // Selenium's rule, kept: an <option> / <optgroup> counts as shown when its <select> is (a closed dropdown gives its
@@ -95,6 +99,7 @@ class StepContext:
     secret_values: set = field(default_factory=set)  # what people typed in as secrets in this test: masked in everything that is stored
     notice: Any = None                               # engine.patience.WaitNotice of the test: tells the run screen when this step waits on purpose
     last_wait: Any = None                            # the Patience of the element search that came back empty (why it gave up)
+    flow: Any = None                                 # the test runner's IF / loop / CALL_TEST side (engine/test_runner.py FlowControl); None outside a run
 
 
     # -- timeouts ----------------------------------------------------------------------------------
@@ -980,11 +985,12 @@ async def _typed_fields_hold(ctx: StepContext, current_key: str) -> None:
 
 # Steps that leave typed fields alone.  Anything else (a click, a selection, a navigation...) may legitimately reset a form,
 # so it ends the run of typing steps that is being protected.
-_TYPING_RUN_KEEPS = {"SET", "WRITE", "WAIT", "OUTPUT", "EXIST", "SCREENSHOT", "SWITCHTOFRAME", "SWITCHTODEFAULT"}
+_TYPING_RUN_KEEPS = {"SET", "WRITE", "WAIT", "OUTPUT", "EXIST", "SCREENSHOT", "SWITCHTOFRAME", "SWITCHTODEFAULT", *NO_PAGE_METHODS}
 
 
 _NO_PAGE_GATE = {"OPEN", "QUIT", "WAIT", "BREAK", "STOP",          # these do not depend on the current document
-                 "ALERT_OK", "ALERT_CANCEL", "ALERT_TEXT_OUT"}      # (and while a dialog is open the page cannot answer: it waits for the dialog)
+                 "ALERT_OK", "ALERT_CANCEL", "ALERT_TEXT_OUT",      # (and while a dialog is open the page cannot answer: it waits for the dialog)
+                 *NO_PAGE_METHODS}
 
 
 def ends_typing_run(action_name: str) -> bool:
@@ -1180,6 +1186,76 @@ async def output(ctx: StepContext) -> None:
         text = await _poll(read, accept, ctx.cfg.output.match_timeout_s, ctx.cfg.timeouts.poll_ms / 1000,
                            ctx.cfg.output.stable_ms, ctx.cfg.output.stable_max_ms, give_up=pat.give_up if accept is not None else None)
     ctx.out.output = text
+
+
+# ---------------------------------------------------------------------------------------------
+# Variables and flow (CONTRACT.md 1.3)
+# ---------------------------------------------------------------------------------------------
+@action("SET_VARIABLE")
+async def set_variable(ctx: StepContext) -> None:
+    """Output_Value = the variable, Value = its value (text, ``{NAME}``s, a formula).  The runtime puts it in the run's pool (and the Params cell
+    when the test has that column): ``TestRuntime.record``."""
+    if not ctx.step.output_name:
+        raise ActionError("SET_VARIABLE needs the variable's name in Output_Value (e.g. ORDER_ID or {ORDER_ID})")
+    ctx.out.output = "" if is_blank(ctx.step.value) else ctx.value_text
+
+
+_JSON_INDEX = re.compile(r"\[(\d+)\]")
+
+
+@action("JSON_READ")
+async def json_read(ctx: StepContext) -> None:
+    """Read one value out of a JSON text.  Value = the JSON (usually ``{RESPONSE}``, a variable an API step or another step saved), FindBy_Value =
+    the path (``policy.number``, ``items[0].id``; ``/`` works as a separator too), Output_Value = the variable to save it in, Expected_Value with
+    Exact_Match / Contains = the check.  A path that does not exist fails the step (it never "reads" an empty value)."""
+    import json
+    from ..workbook.api import _MISSING, json_find, output_text
+    text = ctx.value_text.strip()
+    if not text:
+        raise ActionError("JSON_READ has no JSON to read: Value is empty")
+    try:
+        data = json.loads(text)
+    except ValueError as err:
+        raise ActionError(f"Value is not JSON ({err.msg} at character {err.pos})") from None
+    path = _JSON_INDEX.sub(r".[\1]", ctx.step.findby_value.strip())
+    if not path:
+        ctx.out.output = output_text(data) if not isinstance(data, str) else data
+        return
+    found = json_find(data, path)
+    if found is _MISSING:
+        raise ActionError(f"The JSON has nothing at {ctx.step.findby_value.strip()}")
+    ctx.out.output = "" if found is None else (found if isinstance(found, str) else output_text(found))
+
+
+def _flow_of(ctx: StepContext):
+    if ctx.flow is None:
+        raise ActionError(f"{ctx.step.method} only works in a test run")
+    return ctx.flow
+
+
+@action("IF")
+async def if_step(ctx: StepContext) -> None:
+    """Value = the condition (``{A} is filled``, ``{A} = x``, ``{A} > 3``...), on variables only.  The steps up to the matching ELSE / END_IF run only
+    when it holds; the test runner does the jumping."""
+    await _flow_of(ctx).branch(ctx)
+
+
+@action("ELSE", "END_IF", "ITERATION_END")
+async def flow_marker(ctx: StepContext) -> None:
+    """Structure only: the test runner reads these rows itself and never runs them as steps."""
+
+
+@action("ITERATION_START")
+async def iteration_start(ctx: StepContext) -> None:
+    """Value = a data sheet (blank = the test's own Params): the steps up to ITERATION_END run once per enabled row, ``{NAME}`` reading that row."""
+    await _flow_of(ctx).loop(ctx)
+
+
+@action("CALL_TEST")
+async def call_test(ctx: StepContext) -> None:
+    """Value = a test id (``Sheet`` or ``Sheet#n``): run it to the end (its own browser context; none for an API test), then carry on.  What it
+    saves lands in the run's pool.  A called test that fails fails this step."""
+    await _flow_of(ctx).call(ctx)
 
 
 # ---------------------------------------------------------------------------------------------

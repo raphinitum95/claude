@@ -70,7 +70,7 @@ UNMAPPED_RE = re.compile(r"\{\?([A-Za-z_][A-Za-z0-9_]*)\}")
 FLOW_KEYWORDS = ("IF", "ELSE", "END_IF", "ITERATION_START", "ITERATION_END")
 CHECK_KEYWORDS = ("CHECK_VALUE", "CHECK_REGEX", "CHECK_COMPARE", "CHECK_COUNT", "CHECK_ENABLED", "CHECK_CHECKED", "CHECK_SELECTED",
                   "CHECK_DATE_FORMAT")
-NEW_KEYWORDS = ("SET_VARIABLE", *FLOW_KEYWORDS, "CALL_TEST", "ASSERT_PAGE", "WAIT_UNTIL", "DISMISS_IF_SHOWN", "PICK_DATE",
+NEW_KEYWORDS = ("SET_VARIABLE", "JSON_READ", *FLOW_KEYWORDS, "CALL_TEST", "ASSERT_PAGE", "WAIT_UNTIL", "DISMISS_IF_SHOWN", "PICK_DATE",
                 "CHOOSE_SUGGESTION", *CHECK_KEYWORDS)
 NEW_ELEMENT_KEYWORDS = {"WAIT_UNTIL", "DISMISS_IF_SHOWN", "PICK_DATE", "CHOOSE_SUGGESTION", *CHECK_KEYWORDS}
 # rows the builder shows as locked cards (Q28): the new runner cannot do them, or they only made sense on the old Windows runner
@@ -88,7 +88,6 @@ LEGACY_METHODS = {
     "FOCUSWINDOW": "FOCUSWINDOW used the Windows desktop on the old runner only.",
     "GET_MOUSE_POS": "GET_MOUSE_POS used the Windows mouse on the old runner only.",
     "DRAGANDDROP": "DRAGANDDROP is not supported by the new runner yet.",
-    "JSON_READ": "JSON_READ is not supported by the new runner yet; API tests read responses through their InputOutput sheet.",
 }
 FORMULA_FLAG_REASON = "blnExecute is a formula here: {text}. The builder keeps it byte-for-byte; edit it in the Excel grid."
 NOT_PAGE_NAMES = {"", "CHROME", "FIREFOX", "EDGE", "MSEDGE", "IE", "SAFARI", "WEBKIT", "CHROMIUM", "APPLICATION", "BROWSER", "WEB", "NONE"}

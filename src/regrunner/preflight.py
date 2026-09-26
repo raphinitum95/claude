@@ -150,3 +150,12 @@ async def run_preflight(cfg: Config, *, deep: bool = False, browser: str | None 
     counts = {s: sum(c.status == s for c in checks) for s in ("ok", "warn", "err")}
     return {"checks": [c.as_dict() for c in checks], "counts": counts, "tokens": tokens, "sso": sso,
             "browser": launch.as_dict(), "browsers": options, "folders": [c.as_dict() for c in folder_checks(cfg)], "publish": shared}
+
+
+def environment_problem(workbook, environment: str) -> tuple[str, list[str]]:
+    """``(message, missing variables)`` when the workbook's environment table (``_rr_environments``) has a *required* variable with no value for
+    ``environment``: such a run must not start (CONTRACT.md 1.4).  ``("", [])`` when it may.  Used by the runner and by the web server; the message
+    names the variables, never a value."""
+    from .workbook.variables import env_missing_message
+    missing = workbook.missing_required(environment)
+    return (env_missing_message(environment, missing), missing) if missing else ("", [])
