@@ -44,6 +44,7 @@ from ..preflight import browser_check, run_preflight, token_state
 from ..runmeta import read_meta, update_meta
 from ..signin import SignInError, SignInSession
 from ..workbook.model import Workbook
+from .build_api import register_build_routes
 from .presence import UiPresence
 
 STATIC = Path(__file__).parent / "static"
@@ -698,6 +699,7 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
 
     app = FastAPI(title="regrunner", docs_url=None, redoc_url=None, lifespan=lifespan)
     mgr = RunManager(cfg, config_path)
+    register_build_routes(app, mgr)                       # /api/build/*: the Workbook Builder (web/build_api.py)
     wb_cache: dict[tuple, Any] = {}
 
     # -- request guard -------------------------------------------------------------------------------

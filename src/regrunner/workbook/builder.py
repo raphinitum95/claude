@@ -325,7 +325,7 @@ def auto_name(method: str, *, target: str = "", value: str = "", expected: str =
         if save_as:
             return f"Save {t} {prop} as {s}"
         if match:
-            return f"Check {t} {prop} {how} {e}"
+            return f"Check {t} {prop} {how} {e or chr(34) * 2}"
         return f"Read {t} {prop}"
     if m in names:
         return re.sub(r"\s+", " ", names[m]).strip()
@@ -585,9 +585,11 @@ def _step_kind(method: str, legacy: str, save_as: str, match: str) -> str:
 
 
 def parse_test_sheet(editor: WorkbookEditor, sheet: str, variables: set[str], *, secrets: set[str] | None = None,
-                     last: dict[tuple[str, int], dict] | None = None) -> dict:
+                     last: dict[tuple[str, int], dict] | None = None, flags: dict[str, bool] | None = None) -> dict:
     """Steps, blocks and section rows of a keyword sheet (CONTRACT.md 2.3, 2.4, 1.5).  ``variables``: UPPER tokens that are Params columns of
-    this test (whole-cell tokens)."""
+    this test (whole-cell tokens).  ``flags``: the Params flag columns' values in the "Building with" data row (a step whose blnExecute names
+    a flag column is on when that row says Y)."""
+    flags = flags or {}
     grid = _Grid(editor, sheet)
     secrets = secrets or set()
     last = last or {}
@@ -625,7 +627,7 @@ def parse_test_sheet(editor: WorkbookEditor, sheet: str, variables: set[str], *,
             enabled = None
             condition = {"kind": "formula", "text": flag_text}
         elif flag_text.upper() in variables:
-            enabled = None
+            enabled = flags.get(flag_text.upper())
             condition = {"kind": "flag", "text": flag_text}
         else:
             enabled = is_true(flag)
@@ -677,7 +679,7 @@ def parse_test_sheet(editor: WorkbookEditor, sheet: str, variables: set[str], *,
         sets = [save_as.upper()] if save_as else []
         # context (frames / windows) and flow (IF / loops)
         if method == "SWITCHTOFRAME":
-            frame = target or "frame"
+            frame = value or locator_name or "frame"
         elif method == "SWITCHTODEFAULT":
             frame = ""
         elif method == "SWITCHTOWINDOW":
@@ -829,8 +831,10 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
             param_sheets.add(params.name)
         variables = set(params.cols) if params is not None else set()
         if ui:
-            parsed = parse_test_sheet(editor, key, variables, secrets=secret_keys, last=last_steps)
             data_rows = _data_rows(params)
+            with_row = next((r["row"] for r in data_rows if r["enabled"] is not False), None)
+            flags = {h: is_true(params.get(with_row, h)) for h in variables} if params is not None and with_row else {}
+            parsed = parse_test_sheet(editor, key, variables, secrets=secret_keys, last=last_steps, flags=flags)
             kind = "web"
         else:
             parsed = {"steps": [], "blocks": [], "sections": [], "stored": False, "columns": g.header_names}
@@ -905,7 +909,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
         own_sets: set[str] = set()
         needs: dict[str, dict] = {}
         for s in t["steps"]:
-            if s["enabled"] is False:
+            if s["enabled"] is False and not s["condition"]:
                 continue
             cond = s["condition"] or {}
             if cond.get("kind") == "flag" and params is not None:
@@ -1135,9 +1139,13 @@ class _Ops:
         if step_col:
             source = next((r for r in range(at - 1, 1, -1) if is_formula(self.e.get(sheet, r, step_col))), None)
             if source is not None:
+                letter = get_column_letter(step_col)
                 formula = self.e.get(sheet, source, step_col)
-                self.e.set(sheet, at, step_col, Translator(formula, origin=f"{get_column_letter(step_col)}{source}")
-                           .translate_formula(f"{get_column_letter(step_col)}{at}"))
+                shaped = lambda row: Translator(formula, origin=f"{letter}{source}").translate_formula(f"{letter}{row}")
+                self.e.set(sheet, at, step_col, shaped(at))
+                # a running count that points at the row above (=COUNTA($B$1:B15) in row 16) would now skip the new row: keep its shape
+                if self.e.get(sheet, at + 1, step_col) == shaped(at):
+                    self.e.set(sheet, at + 1, step_col, shaped(at + 1))
         fields.setdefault("enabled", True)
         if "name" in fields and fields["name"]:
             fields.setdefault("nameAuto", False)
@@ -1519,8 +1527,14 @@ def _summary(step: dict) -> dict:
             "block": step["block"]}
 
 
+_REF_ROW = re.compile(r"(\$?[A-Za-z]{1,3}\$?)\d+")
+
+
 def _signature(step: dict) -> tuple:
-    return tuple(json.dumps(step.get(k), sort_keys=True) for k in _SIG) + (step["locator"]["value"],)
+    """What makes two versions of a step the same.  Row numbers inside formulas are ignored: they change whenever a row is inserted or
+    deleted above, which is not an edit of that step."""
+    norm = lambda v: _REF_ROW.sub(r"\1#", v) if is_formula(v) else v
+    return tuple(json.dumps(norm(step.get(k)), sort_keys=True) for k in _SIG) + (norm(step["locator"]["value"]),)
 
 
 def diff_models(before: dict, after: dict) -> list[dict]:

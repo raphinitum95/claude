@@ -182,8 +182,8 @@ def builder_problems(model: dict) -> list[dict]:
         stack: list[tuple[str, dict]] = []
         for s in t.get("steps", []):
             m = s["method"]
-            if s["enabled"] is False:
-                continue
+            if s["enabled"] is False and not s["condition"]:
+                continue                                           # switched off (a flag that is N in this data row may be Y in another)
             # unset variables (Q21)
             for u in s["uses"]:
                 k = u["token"]

@@ -160,7 +160,8 @@ API/XML tests have `steps: []` and `blocks: []` in P02 (their editor is P10); `d
   saveAs: "" ,                                                     // variable Output_Value names ("" when Output_Value is not a variable)
   output: "",                                                      // Output_Value as written
   outputProperty: "", onFail: "stop" | "continue",                 // continue = Ignore_not_existing_object Y
-  timeout: 5 | null, enabled: true | false | null,                 // null = decided at run time (see condition)
+  timeout: 5 | null, enabled: true | false | null,                 // flag condition: the flag's value in the buildingWith row;
+                                                                   // null = a formula decides at run time (see condition)
   condition: null | { kind: "formula" | "flag", text: "=IF(...)" | "bln687809" },
   sideEffects: false, context: "" | "frame: card" | "window 2",
   flow: [ { kind: "if" | "else" | "loop", row: 40 } ],             // enclosing IF/ELSE/loop, outermost first
