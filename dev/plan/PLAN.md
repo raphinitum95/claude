@@ -67,8 +67,8 @@ Paths are under `src/regrunner/` unless they start with `dev/` or `tests/`.
 | P02 | merged 2026-09-26 | raphinitum95/claude#3 | Waves 3+ can build against `dev/plan/CONTRACT.md` |
 | P03 | merged 2026-09-26 | raphinitum95/claude#4 | Fixed in review: `JSON_READ` moved out of `builder.LEGACY_METHODS` into `NEW_KEYWORDS`; CONTRACT.md 1.3 documents `JSON_READ`, 1.2 notes the key-name exception |
 | P04 | merged 2026-09-26 | raphinitum95/claude#5 | Fixed in review: merged qa-regression (P03) into the branch, resolved a one-line AGENTS.md test-count conflict. `git push origin --delete` for the branch got HTTP 403 (GitHub App permission) — branch not deleted, needs a person or higher-access token |
+| P05 | merged 2026-09-26 | raphinitum95/claude#6 | Fixed in review: qa-regression moved (P04) after the PR was opened; merged it into the branch and resolved conflicts in `main.js` (combined the run/batch/build hash routes) and `AGENTS.md` (progress log, gotchas, test-file count). `git push origin --delete` for the branch again got HTTP 403 (same GitHub App permission limit as P04) — branch not deleted |
 
-| P05 | not started | | |
 | P06 | not started | | |
 | P07 | not started | | |
 | P08 | not started | | |
