@@ -11,7 +11,8 @@ QA Regression - how to start
    It needs Python 3.9 or newer; if Python is missing, the window says where to get it (no admin rights needed).
    Nothing is installed in Program Files, and no admin rights are needed.
 
-   On Windows it also puts a "QA Regression" icon on your desktop. Use that icon from then on.
+   It also puts a "QA Regression" icon on your desktop. Use that icon from then on
+   (on a Mac you can drag it to the Dock).
 
 3. QA Regression opens in a window of its own. A small black window also opens (on Windows it starts minimised
    in the taskbar). Leave it open while you work: closing it stops QA Regression.

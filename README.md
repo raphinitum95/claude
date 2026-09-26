@@ -18,8 +18,8 @@ opens in a window of its own (Edge or Chrome in app mode; the default browser if
 pick a workbook, tick the tests, press Run. Everything the command line can do is a control there, and the command it is
 equivalent to is shown next to the Run button. A small launcher window stays open next to it: closing that stops QA Regression.
 
-The first double-click sets the tool up inside its own folder (see *Set up*); on Windows it also adds a **QA Regression** icon
-to the desktop, which starts it from then on with the launcher window minimised.
+The first double-click sets the tool up inside its own folder (see *Set up*) and adds a **QA Regression** icon to the desktop,
+which starts it from then on (Windows: a shortcut, launcher window minimised; macOS: a small app you can drag to the Dock).
 
 **From a terminal:**
 
@@ -61,8 +61,8 @@ when every run passed.
 ## Set up
 
 **Automatic (what the launchers do).** The first double-click of `Start QA Regression.bat` / `.command` finds Python 3.9 or newer
-(`py -3`, `python` or `python3`), creates `.venv` inside this folder, installs the packages into it (needs the internet), and on
-Windows adds a desktop icon. Nothing goes into Program Files and no admin rights are needed. If Python is missing, the window says
+(`py -3`, `python` or `python3`), creates `.venv` inside this folder, installs the packages into it (needs the internet), and
+adds a desktop icon (macOS: `QA Regression.app`, made again by the next start if the folder moves; deleting it is fine). Nothing goes into Program Files and no admin rights are needed. If Python is missing, the window says
 where to get it: the python.org installer needs no admin rights when *Use admin privileges when installing py.exe* is unticked. No
 browser is downloaded: the installed Chrome or Edge is used (see below). When a newer copy of the folder changes `pyproject.toml`,
 the next start reinstalls the packages by itself. To start over, delete `.venv`. The folder can be moved or renamed afterwards

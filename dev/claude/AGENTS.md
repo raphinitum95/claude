@@ -129,7 +129,8 @@ config.yaml          behaviour settings, every key commented; sections: runner b
                      commented out (defaults in config.py)
 secrets.env          git-ignored secrets (RR_VAR_<COLUMN>, bypass tokens); never print it. secrets.env.example = the template
 selectors.yaml       logical selector map (sheet Locator column → this → legacy XPath)
-Start QA Regression.command/.bat   double-click launchers: first run creates .venv + installs (+ Windows desktop icon, app.ico),
+Start QA Regression.command/.bat   double-click launchers: first run creates .venv + installs + desktop icon (Windows .lnk
+                     with app.ico; macOS QA Regression.app bundle with app.icns, remade when the folder moves),
                      reinstalls when pyproject.toml changes, then `python -m regrunner serve --app` (own Edge/Chrome window)
 workbooks/           the user's real workbooks (DO NOT EDIT, DO NOT RUN live). .trash/ = deleted from UI, .chains/ = saved run orders
 runs/<run-id>/       run folders (git-ignored); many are copies from the work computer
