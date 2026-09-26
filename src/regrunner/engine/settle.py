@@ -29,10 +29,13 @@ SETTLE_INIT_JS = r"""
     this.addEventListener('loadend', done, { once: true }); return send.apply(this, a); };
   rr.idleFor = () => rr.inflight > 0 ? 0 : performance.now() - Math.max(rr.mutated, rr.network);
   // How late a 100 ms heartbeat ran: a tab whose script hogs it (an overloaded computer, a long task) answers late.  Read and reset by the runner.
-  rr.lag = 0;
+  // lagSum: all the lateness added up (only beats more than 50 ms late: timer jitter is not a busy computer), for the time split (engine/timing.py).
+  rr.lag = 0; rr.lagSum = 0;
   let beat = performance.now();
-  setInterval(() => { const now = performance.now(); if (document.visibilityState !== 'hidden') rr.lag = Math.max(rr.lag, now - beat - 100); beat = now; }, 100);
+  setInterval(() => { const now = performance.now(); if (document.visibilityState !== 'hidden') { const late = now - beat - 100;
+      rr.lag = Math.max(rr.lag, late); if (late > 50) rr.lagSum += late; } beat = now; }, 100);
   rr.takeLag = () => { const lag = rr.lag; rr.lag = 0; return lag; };
+  rr.takeLagSum = () => { const sum = rr.lagSum; rr.lagSum = 0; return sum; };
 })();
 """
 

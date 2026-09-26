@@ -32,6 +32,7 @@ from .outcome import StepOut, compare_ok
 from .patience import NO_NOTICE, Patience, plain_seconds
 from .session import ActionError, BrowserSession, FrameStep
 from .settle import idle_ms, settle
+from .timing import timing_of
 
 
 # ---------------------------------------------------------------------------------------------
@@ -409,7 +410,8 @@ async def ask_person(ctx: StepContext, question: str, *, secret: bool, timeout_s
     if ctx.asker is None:
         raise ActionError("This step asks a person, but there is nobody to ask here.")
     try:
-        answer = await ctx.asker.ask(ctx.test_id, ctx.seq, question, secret=secret, timeout_s=timeout_s)
+        with timing_of(ctx).span("wait", "ask_user"):
+            answer = await ctx.asker.ask(ctx.test_id, ctx.seq, question, secret=secret, timeout_s=timeout_s)
     except AskUnavailable as err:
         raise ActionError(str(err)) from None
     except AskTimeout as err:
@@ -469,7 +471,8 @@ async def get_google_token(ctx: StepContext) -> None:
         notice = ctx.notice or NO_NOTICE
         wait_id = notice.begin("login_code", f"Waiting {booked.wait_s:.0f} s for the next login code: {plain}.", seconds=booked.wait_s)
         try:
-            await asyncio.sleep(booked.wait_s)
+            with timing_of(ctx).span("wait", "login_code"):
+                await asyncio.sleep(booked.wait_s)
         finally:
             notice.end(wait_id)
         ctx.out.notes.append(f"waited {booked.wait_s:.1f}s for the next {STEP_S} s code window ({why})")

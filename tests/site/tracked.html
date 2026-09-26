@@ -1,0 +1,11 @@
+<!doctype html><html><head><title>Tracked</title>
+<script>
+  // The site's own code (AEM client library); ?lib=app2 = the same site after a deployment (tests/test_history.py).
+  document.write('<script src="/etc.clientlibs/site/' + (new URLSearchParams(location.search).get("lib") || "app") + '.js"><\/script>');
+</script>
+<script>
+  // A third-party tracker: same mock server, other host name (localhost vs 127.0.0.1) = another company's server for the runner.
+  const other = location.hostname === "127.0.0.1" ? "localhost" : "127.0.0.1";
+  const s = document.createElement("script"); s.src = location.protocol + "//" + other + ":" + location.port + "/tracker.js"; document.head.appendChild(s);
+</script></head>
+<body><h1 id="title">Tracked page</h1><button id="go" onclick="document.getElementById('title').textContent='Clicked'">Go</button></body></html>

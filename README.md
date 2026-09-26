@@ -338,6 +338,21 @@ A step that failed only because the captcha was covering its element is done onc
 | A lost page stops the test | After `runner.stop_after_failed_steps` (default 5) steps **in a row** that act on an element and could not find or use it *on a page that had finished loading*, the test stops and says so (*"Stopped after 5 steps in a row could not find or use their element…"*) instead of waiting out every remaining step's timeout - a refused login or a form that never opened used to cost minutes of failed steps. A step that works, or reads its element and only differs from the expected text, starts the count again; `Wait`, `Switch…`, key presses and optional (`Ignore_not_existing_object`) elements neither count nor reset it. `0` = never stop. |
 | Reliability | Popup windows and re-created iframes are re-resolved; `behaviour.retries` can re-run a failed test (all attempts are recorded). |
 
+### Where the time went (measuring a run)
+
+Every run measures itself (`measure:` in `config.yaml`; nothing there changes how a test runs), so "5 minutes alone, 10 in a run of 20" can be explained from the run folder:
+
+* **Each step's time is split** into parts that never overlap: **deliberate waits** (the page-load spacing `runner.min_page_load_gap_s`, a login code's 30 s window, a question to a person, a captcha solved by hand), **the site** (at least one of the site's own requests in flight: pages, their files, XHR/fetch; not third-party traffic, not polling), **the runner's own work** (screenshots, failure evidence, the quiet windows before acting, the captcha check), **busy computer** (the page's heartbeat ran late: the tab was not getting the processor) and **browser / actions** (the rest). It is an estimate from the browser's events, not a profiler. Per step in `results.json` (`timing`, ms), per test (`timing`, s, with the kinds of wait and runner work), over the run (`timing`), and as one line in the report (*Where the time went*).
+* **Queue time** is kept apart: `queue_s` = how long a test waited for a free worker once it could start (`deps_s` = how long it waited for tests it depends on). A test's own time counts from its start, so a crowded run shows as a longer run, not as slower tests. The report's test table shows it as *(+N s queued)*.
+* **The computer**: every `measure.sample_s` (5 s) a line in `resources.jsonl`: processor %, free memory, swap / page-file use, the memory of the browsers this run started, the runner's event-loop lag (all tests share one loop), tests running / waiting. Peaks in `results.json` (`resources`) and the report (*The computer*). Read without new dependencies (`/proc`, `vm_stat`/`ps`, the Win32 API; `psutil` is used if installed). Browser memory is the sum of the processes' resident memory, an upper bound. Check it on a computer with `python -m regrunner.engine.resources`.
+* **Third-party hosts** each test's pages loaded (`third_party`: host, requests, bytes from `Content-Length`; never an address) and the **site version** (`site_version`: a fingerprint of the site's own code files matching `measure.site_code_patterns`, default `/etc.clientlibs/`, from their path and `ETag`/`Last-Modified`/size). The machine and the runner's version (a hash of its source files) are in `results.json` (`machine`).
+
+### Run history: what changed, what got slower (`regrunner history`)
+
+`regrunner history` reads every run folder in `runs/` (copies from the work computer included; nothing extra to copy) and prints:
+**what changed** between consecutive runs of a workbook (runner version, browser version, site version, speed settings, computer), then compares the runs before the latest change with the runs since: *"Purchase#1 step "Get Quote" (row 40): 3.1 x slower (6.0 s -> 18.6 s); mostly the site (+11.9 s)"*, *"... passed in every run before, fails in every run since (element_missing)"*.
+`--csv FOLDER` writes `runs.csv`, `tests.csv`, `steps.csv` for Excel (durations and their split, status, failure kind: `site_said_no` / `element_missing` / `infra` / `waf` / `captcha`, the resources at that moment, workers, browser, runner and site version). It never writes what a step typed or read (values, expected/actual text, error messages). `--hosts` lists every third-party host over all runs (the input for a tracker block list: never block sign-in, payment, captcha or the consent manager). `--workbook NAME`, `--at RUN_ID` (split there instead), `--factor 2 --min-s 1` (what counts as slower).
+
 ## Selectors: replacing XPath without touching the workbook
 
 Each step resolves through an ordered chain, tried on every poll (a stale primary never delays a working fallback):
@@ -436,7 +451,7 @@ strict Content-Security-Policy with everything from the workbook escaped. Do not
 `events.jsonl` (the live stream) · `results.json` (everything, machine readable) · `report.html` (single
 self-contained file: every step with result, timestamps, locator used, expected/actual, embedded screenshot, plus the
 *Things to review* section) · `report.pdf` (`--pdf`) · `tests/<test>/screenshots/*.jpg` and `named/*` (explicit
-`SCREENSHOT` steps) · `workbook.xlsx` (a copy of what ran). Console errors, uncaught page exceptions, failed requests and
+`SCREENSHOT` steps) · `workbook.xlsx` (a copy of what ran) · `resources.jsonl` (what the computer went through, see *Where the time went*). Console errors, uncaught page exceptions, failed requests and
 HTTP 4xx/5xx are tagged with test + step and **never affect pass/fail**.
 
 ### API tests (web service sheets)
@@ -588,4 +603,5 @@ Things you are most likely to change: `publish.dir` (shared copy of each run for
 ```bash
 pytest                       # ~190 tests, ~4 min (real Chromium against a local mock site; the UI is driven in a browser)
 pytest -m "not browser"      # fast, no browser
+RR_BENCHMARK=1 pytest -s tests/test_benchmark_scaling.py   # slow, opt-in: a test's time at 1, 5, 10, 20 tests (target <= 1.6 x solo)
 ```

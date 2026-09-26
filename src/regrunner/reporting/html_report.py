@@ -212,6 +212,32 @@ def _browser_details(browser: dict[str, Any]) -> str:
     return '<div class="kv">' + "".join(f"<span>{esc(k)}</span><span>{esc(v)}</span>" for k, v in rows) + "</div>"
 
 
+def _speed_lines(data: dict[str, Any]) -> str:
+    """Where the tests' time went and what the computer went through (``measure``): for "why was this run slow?", not for pass / fail."""
+    from ..engine.timing import describe
+    lines = []
+    split = describe(data.get("timing") or {})
+    if split:
+        lines.append(f'<div><b>Where the time went</b> {esc(split)}.</div>')
+    res = data.get("resources") or {}
+    if res:
+        bits = [f"least free memory {res['min_mem_free_mb']} MB" if res.get("min_mem_free_mb") is not None else "",
+                f"most swap / page file in use {res['max_swap_used_mb']} MB" if res.get("max_swap_used_mb") is not None else "",
+                f"browsers' memory up to {res['max_browsers_mb']} MB" if res.get("max_browsers_mb") is not None else "",
+                f"processor up to {res['max_cpu_pct']:.0f}%" if res.get("max_cpu_pct") is not None else "",
+                f"runner's slowest reaction {res['max_loop_lag_ms']} ms" if res.get("max_loop_lag_ms") is not None else ""]
+        lines.append(f'<div><b>The computer</b> {esc(" · ".join(b for b in bits if b))} <span class="muted">(resources.jsonl)</span></div>')
+    if not lines:
+        return ""
+    return ('<div class="muted" style="margin:8px 0">' + "".join(lines)
+            + '<div>Estimated from the browser\'s own events; a test\'s time counts from its start, not from when it was queued.</div></div>')
+
+
+def _queued(test: dict[str, Any]) -> str:
+    queue = float((test.get("timing") or {}).get("queue_s") or 0.0)
+    return f' <span class="muted">(+{queue:.0f} s queued)</span>' if queue >= 1 else ""
+
+
 def render_html(data: dict[str, Any], run_dir: Path, screenshots: str = "all") -> str:
     summary = data.get("summary", {})
     tests = data.get("tests", [])
@@ -234,12 +260,13 @@ def render_html(data: dict[str, Any], run_dir: Path, screenshots: str = "all") -
     for w in data.get("warnings", []):
         out.append(f'<div class="banner">{esc(w)}</div>')
     out.append('<div class="tiles">' + "".join(f'<div class="tile"><span class="muted">{esc(k)}</span><b>{esc(v)}</b></div>' for k, v in tiles) + "</div>")
+    out.append(_speed_lines(data))
     out.append("<h2>Tests</h2><table><tr><th>Test</th><th>Result</th><th>Steps</th><th>Failed</th><th>Review</th><th>Started</th><th>Duration</th></tr>")
     for t in tests:
         out.append(f'<tr><td><a href="#t-{esc(t["id"])}">{esc(t["title"])}</a> <span class="muted">{esc(t.get("description", ""))}</span></td>'
                    f'<td><span class="pill {esc(t["status"])}">{esc(t["status"])}</span></td><td>{len(t.get("steps", []))}/{t.get("total_steps", 0)}</td>'
                    f'<td>{t.get("failed", 0)}</td><td>{len(t.get("review", []))}</td><td class="muted">{_time(t.get("started_at", ""))}</td>'
-                   f'<td>{t.get("duration_s", 0):.1f} s</td></tr>')
+                   f'<td>{t.get("duration_s", 0):.1f} s{_queued(t)}</td></tr>')
     out.append('</table>')
     rows = [(t, v) for t in tests for v in variables_of(t)]
     if rows:                                                       # what the tests produced: a quote number, a policy number...

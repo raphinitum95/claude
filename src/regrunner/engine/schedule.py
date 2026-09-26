@@ -9,6 +9,7 @@ One :class:`Schedule` belongs to one run.  When several runs share the workers o
 from __future__ import annotations
 
 import asyncio
+import time
 
 
 class Schedule:
@@ -17,6 +18,8 @@ class Schedule:
         self._deps = deps
         self._done: set[str] = set()
         self._running = 0
+        self.opened = time.monotonic()
+        self.ready_at: dict[str, float] = {c.id: self.opened for c in cases if not deps.get(c.id)}   # when each test could have started (queue time)
         self._changed = asyncio.Condition()            # (built inside execute(): Python 3.9 binds it to the loop that is current)
 
     @property
@@ -50,6 +53,16 @@ class Schedule:
     def finish(self, case_id: str) -> None:
         self._done.add(case_id)
         self._running -= 1
+        now = time.monotonic()
+        for case in self._pending:
+            if case.id not in self.ready_at and not self.waiting_for(case.id):
+                self.ready_at[case.id] = now                 # its last dependency just finished: from here on it only waits for a worker
+
+    def queued_s(self, case_id: str) -> tuple[float, float]:
+        """(seconds a test that has just started waited for a worker once it could run, seconds it waited for the tests it depends on)."""
+        now = time.monotonic()
+        ready = self.ready_at.get(case_id, now)
+        return max(0.0, now - ready), max(0.0, ready - self.opened)
 
     async def take(self, cancel: asyncio.Event):
         """The next test that may start, waiting for one to become ready; ``None`` when nothing is left (or the run is cancelled)."""

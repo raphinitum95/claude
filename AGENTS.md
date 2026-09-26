@@ -102,7 +102,9 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Results screen | `web/static/js/views/results.js` | `test_web_ui.py -k "failed_run or failed_step"` |
 | Dialogs (delete workbook, lint/plan/audit, PROD confirm, sign-in) | `web/static/js/views/modals.js`, `actions.js` | `test_web_delete_workbook.py`, `test_web_ui.py -k "prod or lint or signing"` |
 | Styles / theme | `web/static/app.css`, `theme.js` | `test_web_ui.py -k theme` |
-| Analyse a run folder the user copied in | read `runs/<id>/` (section 7); no code change until the cause is proven | none |
+| Measuring a run: time split per step/test, queue time, resource sampler, third-party hosts, site version | `engine/timing.py`, `engine/resources.py`, `engine/session.py` (`_watch_hosts`, `collect_lag`, spans), `engine/test_runner.py`, `engine/schedule.py` (`queued_s`), `config.py` (`MeasureCfg`) | `test_measure.py`; scaling benchmark (opt-in, slow, never in the default subset): `RR_BENCHMARK=1 .venv/bin/pytest -s tests/test_benchmark_scaling.py` |
+| Run history, "what changed" markers, compare, CSV export (`regrunner history`) | `history.py`, `cli.py` (`cmd_history`) | `test_history.py` |
+| Analyse a run folder the user copied in | read `runs/<id>/` (section 7); `regrunner history` for trends across runs; no code change until the cause is proven | none |
 
 Always add to the list: `test_py39_compat.py` if you touched asyncio/runner/CLI; `test_keys_events_config.py` if you touched config, events or input.
 
@@ -114,7 +116,7 @@ Always add to the list: `test_py39_compat.py` if you touched asyncio/runner/CLI;
 AGENTS.md            this file (CLAUDE.md imports it)
 README.md            user manual, 56 KB: read one section at a time (section 8)
 config.yaml          behaviour settings, every key commented; sections: runner browser timeouts waits output screenshots
-                     failure_capture selectors captcha_bypass auth review reports behaviour tags patience; publish/api/ask/captcha are
+                     failure_capture selectors captcha_bypass auth review reports behaviour measure tags patience; publish/api/ask/captcha are
                      commented out (defaults in config.py)
 secrets.env          git-ignored secrets (RR_VAR_<COLUMN>, bypass tokens); never print it. secrets.env.example = the template
 selectors.yaml       logical selector map (sheet Locator column → this → legacy XPath)
@@ -136,6 +138,7 @@ src/regrunner/
   publish.py    243   shared copy (report.html + summary.txt) to publish.dir
   signin.py      87   one-time SSO sign-in → storage state
   runmeta.py     25   run.json;  priority.py 24 (nice)
+  history.py    378   `regrunner history`: all run folders as one record, what-changed markers, compare, CSV (never values typed/read)
   capture/review.py 88  console errors / failed requests collected for review
   engine/
     runner.py      823  orchestration: RunOptions, plan_run/open_run/announce_run, Engine (workers, retries, run_case), execute(_many)
@@ -143,6 +146,8 @@ src/regrunner/
     actions.py    1159  every Method → Playwright (42 @action handlers); JS snippets (VISIBLE_TEXT_JS, CLICKABLE_JS, CURRENT_VALUE_JS...)
     session.py     870  BrowserSession: context, pages, frames, ensure_ready, navigation/call watches, WAF block detection
     patience.py    180  waits that end on evidence, not a clock (Patience) + WaitNotice (worker_waiting / worker_resumed events)
+    timing.py      216  where a step's time went (site / wait / runner / computer / other; SiteClock, spans), run summary, site-version fingerprint
+    resources.py   402  resources.jsonl sampler (CPU, free memory, swap, browsers' memory, loop lag; stdlib, psutil if present), machine_info, runner_version
     settle.py 61 · enabled.py 97 · keys.py 87 · outcome.py 83 · order.py 243 · schedule.py 72 · pool.py 100
     inbox.py 115 · throttle.py 71 · captcha.py 65 · ask.py 118 · failure_capture.py 449 · api_runner.py 343 · diagnostics.py 17
   workbook/
@@ -162,7 +167,7 @@ tests/
   workbook_factory.py  build_workbook()/build_flow(): synthetic workbooks with the real 26 columns and formula tricks;
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            48 files; see section 5
+  test_*.py            51 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -232,8 +237,10 @@ Evidence-based waiting (`engine/patience.py`, `patience:` in config.yaml; `runne
 dialogs answered as they open when the next step is an ALERT step; `worker_waiting`/`worker_resumed` events + yellow banner (`--wait*` CSS tokens).
 Unverified on real sites: Okta per-account limits, real polling/third-party traffic vs. patience, real code-to-Verify gaps.
 
-**Planned, not started (2026-09-26):** "same speed at 1 or 20 tests" (measure, run history, adaptive workers, tracker blocking,
-cold storage for waiting pages, lower per-step overhead). Brief with the user's decisions: `CONTEXT_efficiency_at_scale.md`.
+**In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `CONTEXT_efficiency_at_scale.md`).
+Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
+and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
+Unverified: the Windows paths of `engine/resources.py` (ctypes; no Windows here), numbers from real sites.
 
 Gotchas:
 - `data-key` is the DOM patcher's (`morph.js`) identity attribute: never use it for action parameters (use `data-field`).
@@ -245,6 +252,8 @@ Gotchas:
 - Measure before claiming numbers (sizes, timings) to the user.
 - While a JS dialog is open the page answers nothing (evaluate/screenshot hang): code that probes the page must check `session.pending_dialog` first.
 - Patient waits must stay bounded by *evidence*: only the page's own requests count as "working" (third-party / polling / animation never do).
+- Wrap new runner work or deliberate waits in `timing.span("runner"|"wait", kind)` (`timing_of(ctx)` in actions) so the time split stays honest.
+  Measuring must never change behaviour or record values (history/CSV hold times, statuses, kinds and versions only).
 
 ---
 

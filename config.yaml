@@ -130,6 +130,13 @@ behaviour:
   dialogs: dismiss
   retries: 0
 
+# What a run records about its own speed (nothing here changes how a test runs). See README "Speed, precision and staying out of the way".
+measure:
+  timing: true            # split each step's time: the site / deliberate waits / the runner's own work / busy computer / other (results.json, report)
+  sample_s: 5             # every 5 s: CPU, free memory, swap / page file, the browsers' memory, event-loop lag -> resources.jsonl in the run folder (0 = off)
+  third_party: true       # per test: third-party hosts the pages loaded (host, requests, bytes; never a full address): the input for a tracker block list
+  site_code_patterns: ["/etc.clientlibs/"]   # the site's own code files that make up its "site version" (a new fingerprint = the site deployed new code)
+
 # The workbook has no tags; group tests here and run them with:  regrunner run wb.xlsx --tag smoke
 tags:
   smoke: [CW]

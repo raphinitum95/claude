@@ -13,7 +13,7 @@ Event types (all carry ``type``, ``ts`` and ``run_id``):
     test_started   test, title, total_steps, worker
     step_started   test, step, total_steps, row, name, action
     step_passed    test, step, total_steps, row, name, action, status, duration_ms, expected, actual,
-    step_failed      error, locator, notes, screenshot            (step_failed also on FAILED status)
+    step_failed      error, locator, notes, screenshot, [timing]  (step_failed also on FAILED status; timing: engine/timing.py)
     step_skipped   test, step, row, name, reason
     screenshot_saved  test, step, path, kind
     console_error  test, step, kind, message, url          (kind: console|pageerror)

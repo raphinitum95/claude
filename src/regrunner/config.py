@@ -246,6 +246,17 @@ class PublishCfg:
 
 
 @dataclass
+class MeasureCfg:
+    """What a run records about its own speed, so "slow in a crowd" can be explained from the run folder (nothing here changes how a test runs)."""
+    timing: bool = True              # split every step's time into site / deliberate waits / runner / busy computer / other (results.json, report)
+    sample_s: float = 5.0            # every this many seconds: CPU, free memory, swap / page file, the browsers' memory, event-loop lag -> resources.jsonl (0 = off)
+    third_party: bool = True         # per test: which third-party hosts the pages loaded (host, requests, bytes; never a full address) -> results.json
+    site_code_patterns: list[str] = field(default_factory=lambda: ["/etc.clientlibs/"])
+                                     # first-party files whose names / versions make up the "site version" fingerprint (AEM client libraries): a new
+                                     # fingerprint between two runs = the site deployed new code (see `regrunner history`)
+
+
+@dataclass
 class BehaviourCfg:
     unknown_action: str = "warn"     # warn (existence check, like legacy) | fail
     missing_frame: str = "continue"  # continue = stay in the current document (legacy: silent) | fail
@@ -277,6 +288,7 @@ class Config:
     ask: AskCfg = field(default_factory=AskCfg)
     captcha: CaptchaWatchCfg = field(default_factory=CaptchaWatchCfg)
     behaviour: BehaviourCfg = field(default_factory=BehaviourCfg)
+    measure: MeasureCfg = field(default_factory=MeasureCfg)
     tags: dict[str, list[str]] = field(default_factory=dict)      # tag -> test ids (workbook has no tags)
     chains: dict[str, list[list[str]]] = field(default_factory=dict)   # workbook file name (or *) -> ordered test ids that run one after another
     runs_dir: str = "runs"
