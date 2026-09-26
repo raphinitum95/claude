@@ -83,6 +83,29 @@ async def test_the_run_order_card_shows_the_streams_and_the_arrows_build_a_chain
     chains_file(web.root / "workbooks" / "order-ui.xlsx").unlink(missing_ok=True)
 
 
+@pytest.mark.browser
+async def test_the_run_plan_has_an_order_view_and_a_timeline_view(web):
+    build(web.root / "workbooks" / "order-timeline.xlsx", web.site)
+    async with open_ui(web) as page:
+        await pick_only(page, "order-timeline.xlsx")
+        await js_until(page, "!!document.getElementById('run-order')")
+        order_btn = page.locator('[data-act="plan-view"][data-val="order"]')
+        timeline_btn = page.locator('[data-act="plan-view"][data-val="timeline"]')
+        assert "on" in (await order_btn.get_attribute("class") or "").split()
+
+        await timeline_btn.click()
+        await js_until(page, "!document.getElementById('run-order')")
+        assert "on" in (await timeline_btn.get_attribute("class") or "").split()
+        await js_until(page, "document.querySelectorAll('[data-key^=tl-]').length > 0")            # one lane per worker
+        assert "worker 1" in await page.locator("main").inner_text()
+        assert "No run history yet" in await page.locator("main").inner_text()                     # this workbook has never actually run
+
+        await order_btn.click()
+        await js_until(page, "!!document.getElementById('run-order')")
+        assert page.errors == []
+    chains_file(web.root / "workbooks" / "order-timeline.xlsx").unlink(missing_ok=True)
+
+
 async def tick(page, label: str) -> None:
     """Tick a test's box and make sure the page took it: right after a re-render (the run order arriving) Playwright's click can land on a node the page has
     just replaced, and the page then puts the box back as its state says.  Looking again is what a person does."""

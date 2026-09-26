@@ -3,7 +3,8 @@ import { html, raw, cx } from '../util.js';
 import { icon, pill, STATUS } from '../icons.js';
 import { num, pct, dur, clock, timeOf, plural } from '../fmt.js';
 import { runFileUrl } from '../api.js';
-import { counts, timing, lanes as laneList, pending as pendingList, finished as finishedList, strip, groupReview, reviewOfRun, reviewTotal, varsOfRun, waitsOf, workerSummary } from '../runstate.js';
+import { counts, timing, lanes as laneList, pending as pendingList, finished as finishedList, strip, groupReview, reviewOfRun, reviewTotal, varsOfRun, waitsOf, workerSummary,
+  entryActive, batchLanes, batchRows, batchTotals, batchFailedSoFar, wbColor } from '../runstate.js';
 import { banner, btn } from './shell.js';
 import { browserOf, browserChip } from '../browsers.js';
 
@@ -217,7 +218,7 @@ export function liveView(S) {
 <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0">
 <div class="eyebrow" style="display: flex; align-items: center; gap: 10px"><span>Run</span><span class="mono" style="color: var(--tx2); letter-spacing: .04em">${run.id}</span></div>
 <h1 class="disp" style="font-size: 38px; line-height: 1.05; font-weight: 700; margin: 0; overflow-wrap: anywhere">${baseName(run.workbook) || run.id}</h1>
-<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">${paramChips(run, meta)}</div>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">${paramChips(run, meta)}${batchStrip(meta)}</div>
 ${sharesStrip(run.shares.length ? run.shares : (meta && meta.shares))}</div>
 ${runHeaderActions(S, run, meta, active)}</div>
 ${runBanners(S, run, meta)}
@@ -273,4 +274,104 @@ ${done.map((f) => html`<div data-key="${f.id}" style="display: flex; align-items
 <div class="mono" style="font-size: 12px; color: var(--tx2); width: 58px; text-align: right">${dur(f.duration)}</div>${pill(f.status)}</div>`)}</section>` : ''}
 ${!queue.length && !done.length && !lanes.length ? html`<section class="card" style="padding: 26px; color: var(--tx2)">${v.loading ? 'Loading the run…' : 'Waiting for the first event…'}</section>` : ''}</div>`}
 ${leftEmpty ? html`${variablesCard(varsOfRun(run))}${reviewCard(S, run)}${logCard(run, active)}` : html`<div class="col">${variablesCard(varsOfRun(run))}${reviewCard(S, run)}${logCard(run, active)}</div>`}</div></div>`;
+}
+
+// ---- batches: several runs (one per workbook), tracked and shown together ----------------------------------------------
+/** A one-line link back to the batch this run is part of, so a person who opened one run of a batch can still get to the
+ *  whole picture without the sidebar grouping them (dev/plan/CONTRACT.md: a batch is only a label). */
+export function batchStrip(meta) {
+  if (!meta || !meta.batch_id) return '';
+  return html`<button class="chip" data-act="open-batch" data-id="${meta.batch_id}" style="cursor: pointer">${icon('grid', 14)} part of batch ${meta.batch_id}${meta.batch_label ? ` · ${meta.batch_label}` : ''}</button>`;
+}
+
+function batchLaneCard(S, entry, t) {
+  const c = t.fails.length;
+  const last = c ? t.fails[c - 1] : null;
+  const wait = waitsOf(entry.run).find((w) => w.test === t.id);
+  const elapsed = t.startedMs ? (S.now - t.startedMs) / 1000 : 0;
+  return html`<article class="card" data-key="${entry.id}-${t.id}" style="padding: 16px; display: flex; flex-direction: column; gap: 14px; border-color: ${c ? 'var(--fail-line)' : 'var(--line)'}">
+<div style="display: flex; align-items: center; gap: 10px">
+<span class="dot" style="color: ${entry.color}; width: 10px; height: 10px"></span>
+<span class="mono" style="height: 24px; padding: 0 8px; border-radius: 7px; background: var(--acc-soft); color: var(--acc); border: 1px solid var(--acc-line); font-size: 11px; font-weight: 600; display: inline-flex; align-items: center">W${t.worker ?? '?'}</span>
+<div style="min-width: 0; flex: 1"><div style="font-weight: 650; font-size: 15.5px">${t.id}</div>
+<div class="mono" style="font-size: 11px; color: var(--tx3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${baseName(entry.workbook)} · ${t.scenario}</div></div>${wait ? html`<span class="pill p-warn">${icon('clock', 12)}Waiting</span>` : pill('RUNNING')}</div>
+${wait ? html`<div class="waitline" data-key="lane-wait-${wait.id}"><span style="color: var(--wait); display: inline-flex; margin-top: 1px">${icon('clock', 16)}</span>
+<span style="overflow-wrap: anywhere">${wait.message} <b class="mono" style="white-space: nowrap">${waitClock(S, wait)}</b></span></div>` : ''}
+${shotBox(entry.run, t)}
+<div style="display: flex; align-items: baseline; gap: 9px; min-width: 0">
+<span class="mono" style="font-size: 11px; color: var(--acc); font-weight: 600; letter-spacing: .06em">${t.step ? t.step.action : ''}</span>
+<span style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.step ? t.step.name : 'Starting…'}</span></div>
+<div><div class="ticks" style="background: ${strip(t.done, t.total, t.fails.map((f) => f.seq), true)}"></div>
+<div class="mono" style="display: flex; justify-content: space-between; margin-top: 9px; font-size: 12px; color: var(--tx2)"><span>step ${t.done} / ${t.total}</span><b style="color: var(--tx)">${pct(t.done, t.total)}%</b></div></div>
+${last ? html`<div style="display: flex; gap: 9px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--fail-soft); border: 1px solid var(--fail-line); font-size: 12.5px">
+<span style="color: var(--fail); display: inline-flex; margin-top: 1px">${icon('failc', 16)}</span>
+<span style="color: var(--tx); overflow-wrap: anywhere">Step ${last.seq} failed: ${last.name || last.action}${last.error ? ' · ' + last.error.split('\n')[0] : ''}</span></div>` : ''}
+<div class="mono" style="display: flex; gap: 14px; font-size: 11.5px; color: var(--tx3); padding-top: 12px; border-top: 1px solid var(--line)">
+<span>${dur(elapsed)} elapsed</span><span style="color: ${c ? 'var(--fail)' : 'var(--tx3)'}">${plural(c, 'failed step')}</span></div></article>`;
+}
+
+/** One row per workbook: its own progress bar and counts, coloured to match its worker cards below - click filters everything to it. */
+function batchWorkbookRow(S, row) {
+  const e = row.entry;
+  const c = row.counts;
+  const filter = S.view.filter;
+  const on = filter === e.workbook;
+  const other = c.finished - c.passedTests - c.failedTests - c.notRunTests;
+  return html`<button data-key="wbrow-${e.id}" data-act="batch-filter" data-wb="${e.workbook}" style="display: grid; grid-template-columns: 4px minmax(0, 1fr) 220px 190px 110px; gap: 14px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); width: 100%; text-align: left; ${on ? 'background: var(--surface2)' : ''}">
+<span style="height: 28px; border-radius: 4px; background: ${e.color}"></span><b class="mono" style="font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${baseName(e.workbook)}</b>
+<span style="display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--track)">
+<span style="flex: ${c.passedSteps || 0.001}; background: var(--pass)"></span><span style="flex: ${c.failedSteps}; background: var(--fail)"></span><span style="flex: ${c.inFlight}; background: var(--acc)"></span><span style="flex: ${c.queuedSteps || 0.001}"></span></span>
+<span style="display: flex; gap: 10px; font-size: 12px; flex-wrap: wrap"><span style="color: var(--pass)">${c.passedTests} passed</span>${c.failedTests + c.notRunTests + other ? html`<span style="color: var(--fail)">${c.failedTests + c.notRunTests + other} failed</span>` : ''}${row.active ? html`<span style="color: var(--acc)">${c.running} running</span>` : ''}</span>
+<span class="mono" style="font-size: 11.5px; color: var(--tx3); text-align: right">${row.active ? (row.remaining != null ? `≈ ${dur(row.remaining)} left` : 'running') : pct(c.done, c.total) + '%'}</span></button>`;
+}
+
+function batchFailRow(f) {
+  const e = f.entry;
+  const t = f.test;
+  const where = f.last ? `Step ${f.last.seq} · ${f.last.name || f.last.action}${f.last.error ? ' · ' + f.last.error.split('\n')[0] : ''}` : (t.error || t.status);
+  return html`<div data-key="fail-${e.id}-${t.id}" style="display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line)">
+<span class="dot" style="color: ${e.color}; width: 8px; height: 8px"></span><b style="font-size: 13px">${t.id}</b>
+<span class="mono" style="font-size: 11px; color: var(--tx3)">${baseName(e.workbook)}</span>
+<span style="font-size: 12.5px; color: var(--tx2); flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${where}</span>
+<button class="btn btn-sm" data-act="open-run" data-id="${e.id}">Look now</button></div>`;
+}
+
+export function batchView(S) {
+  const v = S.view;
+  const batch = v.batch;
+  const entries = v.entries;
+  const active = entries.some(entryActive);
+  const totals = batchTotals(entries);                                        // step-level counts, for the progress bar
+  const testCount = entries.reduce((a, e) => a + e.run.order.length, 0);
+  const ringPct = totals.total ? (100 * totals.done) / totals.total : 0;
+  const rows = batchRows(entries, S.now);
+  const runningLanes = batchLanes(entries).filter((t) => !v.filter || t.entry.workbook === v.filter);
+  const failed = batchFailedSoFar(entries).filter((f) => !v.filter || f.entry.workbook === v.filter);
+  const envs = [...new Set(entries.map((e) => e.run.environment).filter(Boolean))];
+  const bChip = entries.length ? browserChip(browserOf(entries[0].run, entries[0].meta)) : '';
+  const startedMs = Math.min(...entries.map((e) => e.run.startedMs || Infinity).filter(Number.isFinite));
+  return html`<div class="page">
+<div style="display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap">
+<div style="display: flex; flex-direction: column; gap: 12px; min-width: 0">
+<div class="eyebrow">${active ? 'Running · ' : ''}batch ${batch.id}${batch.label && batch.label !== `Batch ${batch.id}` ? ` · ${batch.label}` : ''}</div>
+<h1 class="disp" style="font-size: 38px; line-height: 1.05; font-weight: 700; margin: 0">${plural(testCount, 'test')} across ${plural(entries.length, 'workbook')}</h1>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">${envs.length ? html`<span class="chip mono">${envs.join(' + ')}</span>` : ''}${bChip}<span class="chip">${icon('cpu', 14)} shared workers</span>
+${Number.isFinite(startedMs) ? html`<span class="chip mono">${icon('clock', 14)} started ${timeOf(new Date(startedMs).toISOString())}</span>` : ''}</div>
+<div style="font-size: 12px; color: var(--tx3)">Each workbook is its own run, with its own folder and report. This page shows them together.</div></div>
+<div style="margin-left: auto; display: flex; gap: 10px; padding-top: 4px; flex-wrap: wrap">
+<button class="btn" data-act="add-to-batch" data-id="${batch.id}">${icon('plus', 16)} Add tests to this batch</button>
+${active ? html`<button class="btn btn-dng" data-act="cancel-batch">${icon('stop', 16)} Stop</button>` : ''}</div></div>
+<div style="display: flex; height: 14px; border-radius: 6px; overflow: hidden; gap: 2px">
+<span style="flex: ${totals.done - totals.failedSteps || 0.001}; background: var(--pass)"></span>${totals.failedSteps ? html`<span style="flex: ${totals.failedSteps}; background: var(--fail)"></span>` : ''}
+<span style="flex: ${Math.max(0, totals.total - totals.done) || 0.001}; background: var(--track)"></span></div>
+<section class="card" style="overflow: hidden"><div style="padding: 12px 16px; display: flex; align-items: center; gap: 10px"><span class="ttl" style="font-size: 17px">By workbook</span>
+<span style="font-size: 12.5px; color: var(--tx3)">Click one to filter everything below</span>${v.filter ? html`<button class="lnk" data-act="batch-filter" data-wb="">clear filter</button>` : ''}
+<span style="margin-left: auto" class="mono" data-key="ring">${Math.round(ringPct)}% overall</span></div>
+${rows.map((r) => batchWorkbookRow(S, r))}</section>
+${runningLanes.length ? html`<div><div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px"><h2 class="ttl">Now running</h2><span class="chip mono">${runningLanes.length} test${runningLanes.length === 1 ? '' : 's'}</span></div>
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 20px">${runningLanes.map((t) => batchLaneCard(S, t.entry, t))}</div></div>` : ''}
+<section class="card" style="overflow: hidden"><div style="padding: 12px 16px; display: flex; align-items: center; gap: 10px"><span class="ttl" style="font-size: 17px">Failed so far</span><span class="tag tag-fail">${failed.length}</span>
+<span style="font-size: 12.5px; color: var(--tx3)">You don’t have to wait for the end to start looking.</span></div>
+${failed.length ? failed.map(batchFailRow) : html`<div style="padding: 16px; color: var(--tx2); font-size: 12.5px">Nothing so far.</div>`}</section>
+</div>`;
 }

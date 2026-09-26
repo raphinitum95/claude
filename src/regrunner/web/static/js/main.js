@@ -6,7 +6,7 @@ import { icon } from './icons.js';
 import { counts } from './runstate.js';
 import { header, sidebar, banner } from './views/shell.js';
 import { newRunView } from './views/newrun.js';
-import { liveView } from './views/live.js';
+import { liveView, batchView } from './views/live.js';
 import { resultsView } from './views/results.js';
 import { modalView } from './views/modals.js';
 import { buildHeader, buildView } from './views/build/index.js';
@@ -29,9 +29,10 @@ function runScreen() {
     return html`<div class="page"><div class="eyebrow">Run</div><div class="skel" style="height: 46px; width: 420px"></div><div class="skel" style="height: 220px"></div><div class="skel" style="height: 320px"></div></div>`;
   }
   if (v.error) {
-    return html`<div class="page"><div class="eyebrow">Run</div><h1 class="disp" style="font-size: 38px; margin: 0">${v.notFound ? 'That run does not exist' : 'Could not open this run'}</h1>
+    return html`<div class="page"><div class="eyebrow">Run</div><h1 class="disp" style="font-size: 38px; margin: 0">${v.notFound ? (v.kind === 'batch' ? 'That batch does not exist' : 'That run does not exist') : (v.kind === 'batch' ? 'Could not open this batch' : 'Could not open this run')}</h1>
 ${banner('fail', 'failc', v.error.message, html`<button class="btn btn-sm" data-act="new-run">Back to New run</button>`)}</div>`;
   }
+  if (v.kind === 'batch') return batchView(S);
   return v.mode === 'results' && v.results ? resultsView(S) : liveView(S);
 }
 
@@ -42,12 +43,15 @@ function render() {
 ${S.online ? html`<div class="skel" style="height: 30px; width: 260px; margin-top: 10px"></div>` : banner('fail', 'failc', 'Cannot reach the regrunner server. Is it still running? Start it again, then reload this page.')}</div>`);
     return;
   }
-  // The sidebar shows the live percentage of the run being watched, not the last poll.
-  if (S.view && S.view.run && S.view.run.status === 'RUNNING') {
-    const c = counts(S.view.run);
-    const entry = S.runs.find((r) => r.run_id === S.view.id);
+  // The sidebar shows the live percentage of the run(s) being watched, not the last poll.
+  const syncProgress = (id, run) => {
+    if (run.status !== 'RUNNING') return;
+    const c = counts(run);
+    const entry = S.runs.find((r) => r.run_id === id);
     if (entry && entry.active) entry.progress = { done: c.done, total: c.total, percent: c.percent };
-  }
+  };
+  if (S.view && S.view.kind === 'batch') for (const e of S.view.entries || []) syncProgress(e.id, e.run);
+  else if (S.view && S.view.run) syncProgress(S.view.id, S.view.run);
   if (S.route.name === 'new') A.ensureOrder();                                              // the run order follows what is selected, whatever changed it
   if (S.route.name === 'build') {
     morph(appEl(), html`${buildHeader(S)}${buildView(S)}`);
@@ -81,13 +85,17 @@ function focusModal() {
 
 // ---- routing ----------------------------------------------------------------------------------------------------------
 function route() {
-  const run = location.hash.match(/^#\/run\/([A-Za-z0-9._-]+)/);
+  const mRun = location.hash.match(/^#\/run\/([A-Za-z0-9._-]+)/);
+  const mBatch = location.hash.match(/^#\/batch\/([A-Za-z0-9._-]+)/);
   const buildTest = location.hash.match(/^#\/build\/([^/]+)\/test\/([^/]+)$/);
   const buildVars = location.hash.match(/^#\/build\/([^/]+)\/variables$/);
   const buildWb = location.hash.match(/^#\/build\/([^/]+)$/);
-  if (run) {
-    S.route = { name: 'run', id: run[1] };
-    A.openRun(run[1]);
+  if (mRun) {
+    S.route = { name: 'run', id: mRun[1] };
+    A.openRun(mRun[1]);
+  } else if (mBatch) {
+    S.route = { name: 'batch', id: mBatch[1] };
+    A.openBatch(mBatch[1]);
   } else if (buildTest || buildVars || buildWb || location.hash === '#/build') {
     S.route = { name: 'build', id: null };
     A.closeRun();

@@ -43,7 +43,7 @@ export function freshEditor() {
 /** What the form knows about one chosen workbook: what was read from it, which of its tests are ticked, and its own run order. */
 export function freshBook() {
   return {
-    load: 'idle', info: null, err: null, sel: {}, audit: null,
+    load: 'idle', info: null, err: null, sel: {}, audit: null, open: true,                 // open: this workbook's group in the merged Tests list is unfolded
     chains: [], chainsSource: 'none', chainsDirty: false, order: null, orderKey: '', orderAsked: '', orderError: '',      // tests that run one after another; what the server says will wait for what
   };
 }
@@ -57,6 +57,7 @@ export function freshForm(cfg) {
     seed: '', pdf: cfg ? cfg.pdf : false, harvest: cfg ? cfg.harvest : false, headed: false, nice: cfg ? cfg.nice : true,
     noReport: false, upload: null, uploadErr: null, drag: false, cmd: null, cmdKey: '', banner: null, starting: false,
     showMore: false, wbq: '', wbSort: 'new', wbLimit: 6,
+    planView: 'order', durations: {}, joinBatch: null,          // Run plan (Order/Timeline), last-run seconds per workbook/test, "Add tests to this batch"
   };
 }
 

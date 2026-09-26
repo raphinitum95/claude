@@ -102,8 +102,10 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | CLI command / flag | `cli.py` (and `web/app.py` `cli_flags()` so the UI shows the same command) | `test_cli.py`, `test_py39_compat.py`, `test_web_ui.py -k every_setting` |
 | `lint`, `plan`, `list`, preflight/doctor | `lint.py`, `insight.py`, `preflight.py` | `test_web_api.py -k insight`, `test_cli.py`, feature tests that mention lint |
 | Web backend route / run manager | `web/app.py` (routes ~line 695+, `RunManager`) | `test_web_api.py` (+ `-k` the route), `test_web_multi_run.py` for pool/join. **Restart UI.** |
-| New run screen (workbooks, tests, settings, order card) | `web/static/js/views/newrun.js`, `wbfilter.js`, `browsers.js` | `test_web_ui.py -k <feature>`, `test_web_multi_ui.py`, `test_web_workbook_search.py`, `test_web_run_order.py` |
+| New run screen (workbook picker, one merged Tests list, Run plan) | `web/static/js/views/newrun.js`, `wbfilter.js`, `browsers.js` | `test_web_ui.py -k <feature>`, `test_web_multi_ui.py`, `test_web_workbook_search.py`, `test_web_run_order.py` |
+| Run plan: Order view (chains, arrows) or Timeline view (workers, estimated durations) | `web/static/js/views/newrun.js` (`orderGroup`/`runOrderView`, `planTimeline`/`timelineView`), `web/run_batch.py` (`last-durations`) | `test_web_run_order.py` |
 | Run-in-progress screen, banners, live state (yellow "waiting on purpose" banner, lane waitline) | `web/static/js/views/live.js`, `runstate.js` | `test_web_waiting_banner.py`, `test_web_paused_banner.py`, `test_web_variables.py`, `test_web_ask_user.py`, `test_web_ui.py -k "run_from_click"` |
+| Batches (a UI label over several runs: batch id/label, live batch view, `/api/batches`) | `src/regrunner/runmeta.py` (`new_batch_id`), `web/app.py` (`StartRun.batch_id/batch_label`, `RunManager._start`), `web/run_batch.py` (new), `web/static/js/views/live.js` (`batchView`), `runstate.js` (batch helpers), `actions.js` (`openBatch`), `main.js` (`#/batch/:id`) | `test_web_batches.py`, `test_web_multi_ui.py`, `test_web_multi_run.py` |
 | Results screen | `web/static/js/views/results.js` | `test_web_ui.py -k "failed_run or failed_step"` |
 | Dialogs (delete workbook, lint/plan/audit, PROD confirm, sign-in) | `web/static/js/views/modals.js`, `actions.js` | `test_web_delete_workbook.py`, `test_web_ui.py -k "prod or lint or signing"` |
 | Styles / theme | `web/static/app.css`, `theme.js` | `test_web_ui.py -k theme` |
@@ -177,6 +179,8 @@ src/regrunner/
     app.py 1081   FastAPI: create_app, RunManager, cli_flags(), routes under /api/...
     presence.py   UiPresence: which UI windows are open (/api/ui/hello, /api/ui/goodbye) for serve --exit-when-closed
     build_api.py  /api/build/* routes (register_build_routes: one line in create_app); later builder phases add their own modules
+    run_batch.py  /api/batches/* routes (register_batch_routes: one line in create_app): groups runs that share a run.json batch_id, and
+                  last-run-per-test durations for the Run plan's Timeline view. A batch is only a label - it never changes how a run executes.
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
     static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher)}.js
@@ -189,7 +193,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            65 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            66 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -272,11 +276,19 @@ JS views over the P02 model/ops with no browser session yet (add-step menu's "Re
 (which data row the inspector previews) is client-only until a build session exists to replay against. Simplified vs. the design canvas: tests render
 as a responsive card grid rather than a hand-positioned graph with bezier "calls"/"needs" lines; block-to-block drag/reorder is not built (bulk "Move
 to block" and "Rename block" use a plain prompt()).
-
 P03 (engine I) done: the run-wide variable pool (`RunCtx.pool`; every name a step saves, any test, read as `{NAME}`), Needs/Provides ordering,
 SET_VARIABLE / JSON_READ / IF / loops / CALL_TEST (a called test's steps are reported as the caller's steps after the CALL_TEST step, via
 `_CallBus`), `_rr_environments` (required vars refuse the run: `EnvironmentMissing` + `env_missing` event, and HTTP 422 `env_missing` from
 `/api/runs`), `{SECRET:NAME}` masked in events/results/reports/network.jsonl/review items. `step_skipped` is now emitted (IF sides not taken).
+P05 (Run tab: one list, one plan, batch label, live batch) PR open: the New run screen's per-workbook Tests + Run order cards are now one
+merged Tests list (fold/unfold, tag filter across workbooks, "after X" wait chip) and one Run plan card (Order view = the old per-workbook
+chains, unchanged markup, now under one `#run-order`; Timeline view = `planTimeline`, a small HLFET-style scheduler sized from
+`/api/batches/last-durations`, falling back to step counts with no history). A batch is only a label (`batch_id`/`batch_label` in each run's
+`run.json`; `web/run_batch.py` groups them): launching several workbooks together gets one automatically, single runs get none unless they
+join one ("Add tests to this batch"). Live batch view (`#/batch/<id>`) opens one websocket per run in the batch and combines their
+`runstate.js` states client-side; nothing about how a run executes changed. Not built (out of scope for this phase, left for P06/reviewer
+judgement): a manual batch-label input, real drag-and-drop reordering in the Order view (kept the existing arrow buttons instead), and
+sidebar grouping of a batch's runs (shell.js is P04's; a run instead shows a "part of batch" chip that links to the batch view).
 
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
@@ -299,6 +311,9 @@ Gotchas:
 - Patient waits must stay bounded by *evidence*: only the page's own requests count as "working" (third-party / polling / animation never do).
 - Wrap new runner work or deliberate waits in `timing.span("runner"|"wait", kind)` (`timing_of(ctx)` in actions) so the time split stays honest.
   Measuring must never change behaviour or record values (history/CSV hold times, statuses, kinds and versions only).
+- Runs that share a pool (a batch, or one that joined) share one worker numbering (`engine/pool.py`: one process, one set of workers), so a
+  `test_started` event's `worker` is already unique across every run of the batch - no renumbering needed to lay out the live batch view's
+  worker cards.
 - `tests/test_web_workbook_search.py::test_enter_picks_the_best_match...` can flake under load: Playwright's `.uncheck(force=True)` races a
   checkbox whose row is removed (filtered out) the instant it unchecks. Confirmed pre-existing (identical on the pre-P04 tree); a solo re-run passes.
 - `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
