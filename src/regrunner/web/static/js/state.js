@@ -10,7 +10,35 @@ export const S = {
   nr: freshForm(),           // the New run form
   view: null,                // the run being viewed (see actions.openRun)
   modal: null,               // { kind, ... }
+  build: freshBuild(),       // the Workbook Builder (views/build/*)
 };
+
+/** The Build tab's state: which workbook and screen, the model from the server, and the test editor's own UI state. */
+export function freshBuild() {
+  return {
+    name: null, model: null, loading: false, error: null,
+    screen: 'map',            // 'map' | 'variables' | 'test'
+    testId: null,
+    keywords: null,            // GET /api/build/keywords, loaded once and kept across workbooks
+    selVariable: null,
+    env: '',                  // '' = the workbook's own default (Global!Environment)
+    pendingSel: null,         // a step row to select once its test finishes loading (variable map "jump to step")
+    busy: false,              // an edit/undo/redo/save round-trip is in flight
+    ed: freshEditor(),
+  };
+}
+
+/** Per-test editor UI: which block and step are shown, selection, view mode, and the drawer/menu/problems panels. */
+export function freshEditor() {
+  return {
+    block: 0, sel: null, multi: [],
+    mode: 'cards',            // 'cards' | 'grid'
+    grid: null,               // the raw sheet, loaded lazily for the grid view
+    drawer: false, drawerGrid: undefined, drawerSheetName: null,
+    buildingWith: null,       // which data row the inspector previews with (client-side only; no build session yet)
+    problems: false, menu: false, menuQuery: '',
+  };
+}
 
 /** What the form knows about one chosen workbook: what was read from it, which of its tests are ticked, and its own run order. */
 export function freshBook() {
