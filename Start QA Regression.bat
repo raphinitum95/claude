@@ -36,8 +36,8 @@ echo.
 
 :start
 echo QA Regression is running and opens in its own window.
-echo Keep this window open while you use it. Close this window to stop QA Regression.
-"%VENV_PY%" -m regrunner serve --app || goto failed
+echo Closing the QA Regression window stops it and closes this one. Closing this one stops it straight away.
+"%VENV_PY%" -m regrunner serve --app --exit-when-closed || goto failed
 goto :eof
 
 :nopython

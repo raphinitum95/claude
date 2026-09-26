@@ -68,5 +68,28 @@ PLIST
 fi
 
 echo "QA Regression is running and opens in its own window."
-echo "Keep this window open while you use it. Close this window to stop QA Regression."
-"$VENV_PY" -m regrunner serve --app || failed
+echo "Closing the QA Regression window stops it and closes this one. Closing this one stops it straight away."
+"$VENV_PY" -m regrunner serve --app --exit-when-closed || failed
+
+# Stopped cleanly (the UI window was closed): close this Terminal window too. Terminal would otherwise leave it open saying
+# "[Process completed]". Only this window is closed (matched by its tty); after a failure it stays open so the messages can be read.
+THIS_TTY="$(tty 2>/dev/null)"
+if [ -n "$THIS_TTY" ] && [ "$TERM_PROGRAM" = "Apple_Terminal" ]; then
+  osascript - "$THIS_TTY" >/dev/null 2>&1 <<'OSA' &
+on run argv
+  delay 0.5
+  tell application "Terminal"
+    repeat with w in windows
+      repeat with t in tabs of w
+        if tty of t is (item 1 of argv) then
+          close w saving no
+          return
+        end if
+      end repeat
+    end repeat
+  end tell
+end run
+OSA
+  disown
+fi
+exit 0

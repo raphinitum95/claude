@@ -10,6 +10,7 @@ import { liveView } from './views/live.js';
 import { resultsView } from './views/results.js';
 import { modalView } from './views/modals.js';
 import * as A from './actions.js';
+import { startPresence } from './presence.js';
 
 const baseTitle = document.title;
 const appEl = () => document.getElementById('app');
@@ -144,6 +145,7 @@ document.addEventListener('drop', (ev) => {
 // ---- boot ----------------------------------------------------------------------------------------------------------------------
 async function boot() {
   setRenderer(render);
+  startPresence();
   window.addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) A.refreshEnv(); });
   window.addEventListener('focus', () => A.refreshEnv());

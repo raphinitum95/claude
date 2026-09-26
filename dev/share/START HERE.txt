@@ -22,6 +22,7 @@ QA Regression - how to start
    If the message names your company or IT instead, the block is IT's: ask them to allow the folder.
 
 3. QA Regression opens in a window of its own. A small black window also opens (on Windows it starts minimised
-   in the taskbar). Leave it open while you work: closing it stops QA Regression.
+   in the taskbar). When you are done, just close the QA Regression window: a few seconds later it stops and the
+   black window closes too. A run that is still going is finished first.
 
 The full user manual is README.md in this folder.

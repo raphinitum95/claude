@@ -26,7 +26,7 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Callable, Literal
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -44,6 +44,7 @@ from ..preflight import browser_check, run_preflight, token_state
 from ..runmeta import read_meta, update_meta
 from ..signin import SignInError, SignInSession
 from ..workbook.model import Workbook
+from .presence import UiPresence
 
 STATIC = Path(__file__).parent / "static"
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._ -]+")
@@ -63,6 +64,10 @@ class ApiError(HTTPException):
     def __init__(self, status: int, message: str, kind: str = "", **extra: Any):
         super().__init__(status, message)
         self.kind, self.extra = kind, extra
+
+
+class UiPage(BaseModel):
+    page: str = Field(min_length=1, max_length=64)       # a random id the page picks, so two open windows are told apart
 
 
 class Answer(BaseModel):
@@ -653,14 +658,40 @@ def _origin_ok(origin: str | None, host: str) -> bool:
     return bool(match) and match.group(1).lower() == host.strip().lower()
 
 
-def create_app(cfg: Config, config_path: str | None = None) -> FastAPI:
+def create_app(cfg: Config, config_path: str | None = None, on_all_windows_closed: Callable[[], None] | None = None) -> FastAPI:
+    """``on_all_windows_closed`` (``serve --exit-when-closed``) is called once every UI window has been closed and nothing is
+    left running: no run, no workers, no sign-in window. A run that is going when the last window closes is finished first."""
     signin: dict[str, SignInSession | None] = {"session": None}
+    presence = UiPresence()
+
+    def busy() -> bool:
+        return bool(mgr.active_runs() or mgr.active_pools() or signin["session"] is not None)
+
+    async def stop_when_windows_closed() -> None:
+        told_about_run = False
+        while True:
+            await asyncio.sleep(1)
+            if not presence.all_closed():
+                told_about_run = False
+                continue
+            if busy():
+                if not told_about_run:
+                    print("The QA Regression window was closed while a run is going. It stops by itself when the run finishes;"
+                          " reopen the window to watch it.", flush=True)
+                    told_about_run = True
+                continue
+            print("The QA Regression window was closed: stopping.", flush=True)
+            on_all_windows_closed()
+            return
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         warm = asyncio.create_task(browser_check(browser=cfg.browser.kind.id))   # the first "is the browser ready?" probe takes a moment: do it now
+        watcher = asyncio.create_task(stop_when_windows_closed()) if on_all_windows_closed else None
         yield
         warm.cancel()
+        if watcher is not None:
+            watcher.cancel()
         session = signin["session"]                        # never leave a sign-in window open behind us
         if session is not None:
             await session.close()
@@ -704,6 +735,17 @@ def create_app(cfg: Config, config_path: str | None = None) -> FastAPI:
     app.mount("/static", NoCacheStatic(directory=STATIC), name="static")
 
     # -- configuration / preflight ---------------------------------------------------------------------
+    # -- is a UI window open? (serve --exit-when-closed) ------------------------------------------------
+    @app.post("/api/ui/hello")
+    async def ui_hello(body: UiPage):
+        presence.hello(body.page)
+        return {"ok": True}
+
+    @app.post("/api/ui/goodbye")
+    async def ui_goodbye(body: UiPage):
+        presence.goodbye(body.page)
+        return {"ok": True}
+
     @app.get("/api/config")
     async def api_config(request: Request):
         c = mgr.current()

@@ -16,7 +16,9 @@ workbooks/*.xlsx ──► loader + formula engine ──► step engine (Playwr
 **No terminal needed:** double-click `Start QA Regression.bat` (Windows) or `Start QA Regression.command` (macOS). The UI
 opens in a window of its own (Edge or Chrome in app mode; the default browser if neither is installed; see *Web UI* below):
 pick a workbook, tick the tests, press Run. Everything the command line can do is a control there, and the command it is
-equivalent to is shown next to the Run button. A small launcher window stays open next to it: closing that stops QA Regression.
+equivalent to is shown next to the Run button. A small launcher window (Terminal / Command Prompt) stays open next to it. Closing the
+UI window stops QA Regression a few seconds later and closes the launcher window too; a run that is still going is finished first
+(`regrunner serve --exit-when-closed`; a reload is not a close). Closing the launcher window stops it straight away.
 
 The first double-click sets the tool up inside its own folder (see *Set up*) and adds a **QA Regression** icon to the desktop,
 which starts it from then on (Windows: a shortcut, launcher window minimised; macOS: a small app you can drag to the Dock).

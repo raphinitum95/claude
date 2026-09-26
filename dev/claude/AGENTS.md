@@ -105,7 +105,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Styles / theme | `web/static/app.css`, `theme.js` | `test_web_ui.py -k theme` |
 | Measuring a run: time split per step/test, queue time, resource sampler, third-party hosts, site version | `engine/timing.py`, `engine/resources.py`, `engine/session.py` (`_watch_hosts`, `collect_lag`, spans), `engine/test_runner.py`, `engine/schedule.py` (`queued_s`), `config.py` (`MeasureCfg`) | `test_measure.py`; scaling benchmark (opt-in, slow, never in the default subset): `RR_BENCHMARK=1 .venv/bin/pytest -s tests/test_benchmark_scaling.py` |
 | Run history, "what changed" markers, compare, CSV export (`regrunner history`) | `history.py`, `cli.py` (`cmd_history`) | `test_history.py` |
-| Launchers, first-run setup, desktop icon, own-window UI, the folder shared with other people | `Start QA Regression.bat/.command`, `cli.py` (`open_in_app_window`, `serve --app`), `dev/make_share_folder.py`, `dev/share/START HERE.txt` | `test_cli.py` (`-k "app_window or serve"`); launchers have no automated test: say so |
+| Launchers, first-run setup, desktop icon, own-window UI, the folder shared with other people | `Start QA Regression.bat/.command`, `cli.py` (`open_in_app_window`, `serve --app --exit-when-closed`), `web/presence.py` + `static/js/presence.js` (hello/goodbye; stop when the last window closes, never mid-run), `dev/make_share_folder.py`, `dev/share/START HERE.txt` | `test_cli.py` (`-k "app_window or serve"`), `test_exit_when_closed.py`; launchers have no automated test: say so |
 | Analyse a run folder the user copied in | read `runs/<id>/` (section 7); `regrunner history` for trends across runs; no code change until the cause is proven | none |
 
 Always add to the list: `test_py39_compat.py` if you touched asyncio/runner/CLI; `test_keys_events_config.py` if you touched config, events or input.
@@ -131,7 +131,8 @@ secrets.env          git-ignored secrets (RR_VAR_<COLUMN>, bypass tokens); never
 selectors.yaml       logical selector map (sheet Locator column → this → legacy XPath)
 Start QA Regression.command/.bat   double-click launchers: first run creates .venv + installs + desktop icon (Windows .lnk
                      with app.ico; macOS QA Regression.app bundle with app.icns, remade when the folder moves),
-                     reinstalls when pyproject.toml changes, then `python -m regrunner serve --app` (own Edge/Chrome window)
+                     reinstalls when pyproject.toml changes, then `python -m regrunner serve --app --exit-when-closed` (own Edge/Chrome window;
+                     closing it stops the server, then the .command closes its Terminal window via osascript)
 workbooks/           the user's real workbooks (DO NOT EDIT, DO NOT RUN live). .trash/ = deleted from UI, .chains/ = saved run orders
 runs/<run-id>/       run folders (git-ignored); many are copies from the work computer
 .auth/               saved sign-in state + totp_last.json (git-ignored)
@@ -167,7 +168,8 @@ src/regrunner/
   reporting/  results.py (data model) html_report.py console.py from_events.py
   web/
     app.py 1081   FastAPI: create_app, RunManager, cli_flags(), routes under /api/...
-    static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter}.js
+    presence.py   UiPresence: which UI windows are open (/api/ui/hello, /api/ui/goodbye) for serve --exit-when-closed
+    static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
 
 tests/

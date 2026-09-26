@@ -339,7 +339,15 @@ def cmd_serve(args, cfg: Config) -> int:
     if args.open or args.app:
         threading.Timer(1.2, show_ui).start()
     config_path = args.config or (str(cfg.base_dir / "config.yaml") if (cfg.base_dir / "config.yaml").is_file() else None)
-    uvicorn.run(create_app(cfg, config_path), host=args.host, port=args.port, log_level="warning")
+    server: uvicorn.Server | None = None
+
+    def stop_server() -> None:
+        if server is not None:
+            server.should_exit = True
+
+    app = create_app(cfg, config_path, on_all_windows_closed=stop_server if args.exit_when_closed else None)
+    server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="warning"))
+    server.run()
     return 0
 
 
@@ -471,6 +479,8 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--open", action="store_true", help="open the UI in your default browser")
     sv.add_argument("--app", action="store_true",
                     help="open the UI in a window of its own (Edge or Chrome app mode); the default browser if neither is installed")
+    sv.add_argument("--exit-when-closed", action="store_true",
+                    help="stop once every UI window is closed (a run still going is finished first); the launchers use this")
     sv.set_defaults(fn=cmd_serve)
 
     d = sub.add_parser("doctor", help="check the installation and configuration")
