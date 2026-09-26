@@ -22,8 +22,11 @@ from typing import Any, Mapping
 
 from .api import is_api_sheet
 from .sheet import BookState, ErrorText, SheetState, WorkbookData, cell_text
+from .variables import (INLINE_COLUMNS, INLINE_RE, MARKERS, SAVE_METHODS, TOKEN_RE, EnvironmentTable, FlowMap, VariablePool, declared_variables,
+                        flow_map, read_environment_table, secret_value, substitute)
 
 UI_COLUMNS = ("METHOD", "PAGE", "FINDBY", "FINDBY_VALUE")
+_KEY_METHODS = {"SENDKEYS", "SENDKEY", "SEND_KEY", "SEND_KEYS", "SPECIALKEY", "CLICK_SENDKEYS", "CUSTOMINPUTDATA"}   # {TAB}, {ENTER} in their Value are keys
 RESULT_COLUMNS = ("STATUS", "ERROR_CHECK", "OUTPUT_VALUE", "START_TIME", "END_TIME", "DURATION")
 BLANK_OK_METHODS = {"GET_GOOGLE_TOKEN", "ASK_USER", "PROMPT", "ASK"}     # steps that deal with an empty Value themselves (they ask a person for the code / the answer)
 DATA_COLUMNS = ("VALUE", "FINDBY_VALUE", "EXPECTED_VALUE")       # where a row's data comes from: a parameter named here that is empty is a problem
@@ -90,6 +93,10 @@ class PreparedStep:
     secret_columns: set[str] = field(default_factory=set)
     blank_params: list[tuple[str, str]] = field(default_factory=list)   # (column, parameter as authored) whose Params cell is empty: the token stays in the cell
     param_reads: list[tuple[str, str]] = field(default_factory=list)    # (column, parameter as authored) for every parameter the row's data comes from
+    missing_vars: list[str] = field(default_factory=list)                # {NAME}s nobody has a value for: the step fails, the name is never typed
+    unmapped: list[str] = field(default_factory=list)                    # {?NAME} template placeholders nobody mapped: the step fails
+    inline_names: list[str] = field(default_factory=list)                # every {NAME} the row's cells use (for Needs / Provides)
+    output_name: str = ""                                                # the variable this step saves into ("" = none)
 
     def text(self, column: str) -> str:
         return cell_text(self.values.get(column))
@@ -173,6 +180,45 @@ class Workbook:
         self.secrets = {str(k).upper(): str(v) for k, v in (secrets or {}).items() if v not in (None, "")}
         self.warnings: list[str] = []
         self._discovered: list[TestCase] = []           # what discover() found last (param_writers reads it)
+        self._env_table: EnvironmentTable | None = None
+        self._variable_names: set[str] | None = None
+
+    # -- variables (CONTRACT.md 1.2 / 1.4) ----------------------------------------------------------
+    def environment_table(self) -> EnvironmentTable:
+        if self._env_table is None:
+            self._env_table = read_environment_table(self.data)
+        return self._env_table
+
+    def missing_required(self, environment: str) -> list[str]:
+        """Required environment variables that have no value for ``environment``: a run there must not start."""
+        return self.environment_table().missing_required(environment)
+
+    def variable_names(self) -> set[str]:
+        """Every name a step can save into by writing it bare in Output_Value: the headers of the parameter sheets, and ``_rr_variables``."""
+        if self._variable_names is None:
+            names = set(declared_variables(self.data))
+            ds = self.data.sheet("DataSheets")
+            col = ds.headers.get("PARAMETERSHEET") if ds is not None else None
+            for row in range(2, (ds.max_row if ds is not None else 1) + 1):
+                params = self.data.sheet(_raw(ds, row, col)) if col else None
+                if params is not None:
+                    names |= {h for h in params.headers if TOKEN_RE.match(h) and h != "BLNEXECUTE"}
+            self._variable_names = names
+        return self._variable_names
+
+    def find_case(self, test_id: str) -> TestCase:
+        """The test ``CALL_TEST`` names: its id (``Login``, ``Login#2``), or a sheet with a single test.  Raises ``ValueError``."""
+        cases = self._discovered or self.discover()
+        want = test_id.strip().upper()
+        exact = [c for c in cases if c.id.upper() == want]
+        if exact:
+            return exact[0]
+        by_sheet = [c for c in cases if c.sheet.upper() == want]
+        if len(by_sheet) == 1:
+            return by_sheet[0]
+        if by_sheet:
+            raise ValueError(f"{test_id} has {len(by_sheet)} tests (one per data row): name one of {', '.join(c.id for c in by_sheet)}")
+        raise ValueError(f"there is no test {test_id!r} in this workbook")
 
     # -- discovery ---------------------------------------------------------------------------
     def global_settings(self) -> dict[str, Any]:
@@ -309,8 +355,9 @@ class Workbook:
                 book.sheet(sheet).set(row, col, value)
         return ApiRuntime(book, case, globals_, self.secrets)
 
-    def runtime(self, case: TestCase, *, seed: int | None = None, shared: dict | None = None) -> "TestRuntime":
-        """``shared``: parameter cells other tests of the run wrote (or a person supplied), ``{(sheet, row, col): value}``; this test sees them."""
+    def runtime(self, case: TestCase, *, seed: int | None = None, shared: dict | None = None, pool: VariablePool | None = None) -> "TestRuntime":
+        """``shared``: parameter cells other tests of the run wrote (or a person supplied), ``{(sheet, row, col): value}``; this test sees them.
+        ``pool``: the run's shared variables (values any test saved under a name); ``None`` = a pool of its own (planning)."""
         if case.kind == "api":
             return self.api_runtime(case, shared, seed=seed)               # type: ignore[return-value]
         book = BookState(self.data, now=self.now, seed=self.seed if seed is None else seed)
@@ -326,7 +373,8 @@ class Workbook:
                 if other is not None and sheet != case.param_sheet and is_api_sheet(other.headers) and book.has_sheet(sheet):
                     book.sheet(sheet).set(row, col, value)
             params_state.freeze()            # one consistent value per volatile formula for this test
-        return TestRuntime(book, case, globals_, params_state, self.secrets, writers=self.param_writers())
+        return TestRuntime(book, case, globals_, params_state, self.secrets, writers=self.param_writers(), pool=pool,
+                           env_table=self.environment_table(), variable_names=self.variable_names())
 
     def param_writers(self) -> dict[str, list[str]]:
         """Which sheets have a step that writes a parameter (its Output_Value cell holds the parameter's name): ``{PARAMETER: [sheet, ...]}``.
@@ -363,7 +411,8 @@ class TestRuntime:
     __test__ = False  # not a pytest class
 
     def __init__(self, book: BookState, case: TestCase, globals_: dict[str, Any],
-                 params: SheetState | None, secrets: Mapping[str, str], writers: Mapping[str, list[str]] | None = None):
+                 params: SheetState | None, secrets: Mapping[str, str], writers: Mapping[str, list[str]] | None = None,
+                 pool: VariablePool | None = None, env_table: EnvironmentTable | None = None, variable_names: set[str] | None = None):
         self.book = book
         self.writers = writers or {}                             # PARAMETER -> sheets that fill it in (for the message about an empty one)
         self.needs: list[dict[str, Any]] = []                    # filled by plan(): parameters this test uses that are empty and nothing in it sets
@@ -382,9 +431,20 @@ class TestRuntime:
                 self.params[header] = params.read(case.param_row, col)
         self.total_rows = self.sheet.data.max_row
         self.written: dict[tuple[str, int, int], Any] = {}         # parameter cells this test wrote: handed to the API tests of the run
-        self.secret_values: set[str] = set()                       # answers a person typed in as secrets: masked wherever a later step shows them
+        self.pool = pool if pool is not None else VariablePool()   # the run's shared variables (CONTRACT.md 1.2)
+        self.secret_values: set[str] = self.pool.secret_values     # secrets (typed in by a person, {SECRET:X}): masked wherever a step is shown, in every test of the run
+        self.env_table = env_table or EnvironmentTable()
+        self.variable_names = variable_names or set()
+        self.loops: list[dict[str, Any]] = []                      # the data rows of the loops the test is in (innermost last): {HEADER: value}
+        self.pool_reads: set[str] = set()                          # filled by plan(): {NAME}s it needs from another test (Needs, Q21)
+        self.pool_sets: set[str] = set()                           # filled by plan(): names its steps save (Provides)
+        self.calls: list[str] = []                                 # filled by plan(): the tests its CALL_TEST steps run
+        self._authored_output: dict[int, str] = {}                 # Output_Value of each row before a result was written over it (a loop runs a row again)
+        self._flow: FlowMap | None = None
         self.blocked_reason = "" if case.param_enabled else (
             f"Parameter sheet {case.param_sheet!r} has no row with blnExecute=Y")
+        if not self.blocked_reason and self.flow().errors:
+            self.blocked_reason = "The IF / loop steps do not match up: " + "; ".join(self.flow().errors)
 
     # -- global helpers -----------------------------------------------------------------------
     def global_flag(self, name: str, default: bool = False) -> bool:
@@ -411,14 +471,130 @@ class TestRuntime:
         # influences behaviour, so it is synthesised instead.
         values = {name: (row - 1 if name == "STEP_NUMBER" else self.sheet.read(row, col))
                   for name, col in self.columns.items()}
+        if "OUTPUT_VALUE" in values:
+            if row in self._authored_output:
+                values["OUTPUT_VALUE"] = self._authored_output[row]           # (the result a loop's earlier pass wrote over it is not the cell)
+            else:
+                self._authored_output[row] = values["OUTPUT_VALUE"]
         if not is_true(values.get("BLNEXECUTE")):
             return None
-        raw_output = self._authored_text(row, "OUTPUT_VALUE")
+        raw_output = cell_text(values.get("OUTPUT_VALUE")).strip()
         prepared = PreparedStep(row=row, values=values, raw_output_name=raw_output, blank_params=blanks, param_reads=reads)
         self._assign_secrets(prepared)
         if not prepared.method:
             return None
+        prepared.output_name = self.output_name(prepared)
+        self._substitute_inline(prepared)
         return prepared
+
+    # -- variables (CONTRACT.md 1.2) ------------------------------------------------------------------------
+    def output_name(self, step: PreparedStep) -> str:
+        """The variable a step saves into: its Output_Value is ``{NAME}``, or a bare name that is a variable (a Params column, ``_rr_variables``)
+        or is written by a step whose job is to save (``SET_VARIABLE``, ``ASK_USER``...).  "" otherwise (a literal the step is compared with)."""
+        text = step.raw_output_name
+        if not text:
+            return ""
+        m = INLINE_RE.fullmatch(text)
+        if m:
+            return m.group(1)
+        if TOKEN_RE.match(text) and (text.upper() in self.params or text.upper() in self.variable_names or step.method in SAVE_METHODS):
+            return text
+        return ""
+
+    def value_of(self, name: str, secrets: list[str] | None = None) -> tuple[str | None, bool]:
+        """``(value, is it a Params column of this test)`` of ``{NAME}``: the loop row, the Params row, the run's pool, the environment table.
+        A value from the environment table may be ``{SECRET:X}``: the secret is put in, and ``secrets`` gets it (masked wherever the step shows)."""
+        key = name.upper().strip()
+        for row in reversed(self.loops):
+            if key in row and not is_blank(row[key]):
+                return cell_text(row[key]), False
+        is_param = key in self.params
+        if is_param and not is_blank(self.params[key]):
+            return cell_text(self.params[key]), True
+        pooled = self.pool.get(key)
+        if pooled is not None:
+            return pooled, is_param
+        env = self.env_table.value(key, self.environment)
+        if env is not None:
+            from .variables import SECRET_RE
+            found: list[str] = []
+
+            def put(m) -> str:
+                value = secret_value(m.group(1), self.environment)
+                if value is None:
+                    return m.group(0)
+                found.append(value)
+                return value
+            env = SECRET_RE.sub(put, env)
+            if found:
+                self.secret_values.update(found)
+                if secrets is not None:
+                    secrets.extend(found)
+            return env, is_param
+        return None, is_param
+
+    def _substitute_inline(self, step: PreparedStep) -> None:
+        """``{NAME}`` / ``{SECRET:NAME}`` / ``{?NAME}`` in the text columns (CONTRACT.md 1.2).  An IF keeps its condition as written (it reads the
+        variables itself); a SendKeys value keeps ``{TAB}``, ``{ENTER}``... (keys, not variables)."""
+        from ..engine.keys import SPECIAL
+        keep = {k.upper() for k in SPECIAL} if step.method in _KEY_METHODS else None
+        for column in INLINE_COLUMNS:
+            if column not in step.values or (column == "VALUE" and step.method == "IF"):
+                continue
+            cell = step.values[column]
+            if is_blank(cell) or isinstance(cell, ErrorText):
+                continue
+            text = cell_text(cell)
+            if "{" not in text:
+                continue
+            found: list[str] = []
+            done = substitute(text, lambda n: self.value_of(n, found),
+                              lambda n: secret_value(n, self.environment), keep=keep if column == "VALUE" else None)
+            step.inline_names.extend(n.upper() for n in INLINE_RE.findall(text) if not (keep and column == "VALUE" and n.upper() in keep))
+            step.unmapped.extend(done.unmapped)
+            step.missing_vars.extend(done.missing)
+            for name in done.blank_params:
+                step.blank_params.append((column, name))
+            secrets = done.secrets + found
+            if secrets:
+                self.secret_values.update(secrets)
+                step.secret_columns.add(column)
+            if done.text != text:
+                step.values[column] = done.text
+
+    def iteration_rows(self, sheet_name: str) -> list[dict[str, Any]]:
+        """The data rows an ``ITERATION_START`` repeats over: every row of ``sheet_name`` (blank = the test's own Params sheet) whose blnExecute
+        is Y (every non-empty row when it has no blnExecute column), as ``{HEADER: value}``.  Raises ``ValueError`` for a sheet that does not exist."""
+        name = sheet_name.strip() or (self.case.param_sheet or "")
+        if not name:
+            raise ValueError("the loop names no data sheet and the test has no Params sheet")
+        if not self.book.has_sheet(name):
+            raise ValueError(f"the loop's data sheet {name!r} does not exist")
+        sheet = self.book.sheet(name)
+        headers = sheet.data.headers
+        flag = headers.get("BLNEXECUTE")
+        rows = []
+        for r in range(2, sheet.data.max_row + 1):
+            values = {h: sheet.read(r, c) for h, c in headers.items()}
+            if flag is not None:
+                if not is_true(values.get("BLNEXECUTE")):
+                    continue
+            elif all(is_blank(v) for v in values.values()):
+                continue
+            rows.append(values)
+        return rows
+
+    def flow(self) -> FlowMap:
+        """Where each IF / ELSE / loop of the sheet ends (from the Method column as written)."""
+        if self._flow is None:
+            col = self.columns.get("METHOD")
+            methods = {}
+            for row in range(2, self.total_rows + 1) if col else ():
+                m = self.method_at(row)
+                if m in ("IF", "ELSE", "END_IF", "ITERATION_START", "ITERATION_END"):
+                    methods[row] = m
+            self._flow = flow_map(methods)
+        return self._flow
 
     def _authored_text(self, row: int, column: str) -> str:
         col = self.columns.get(column)
@@ -466,31 +642,39 @@ class TestRuntime:
                 step.secret_columns.add(name)
 
     def record(self, step: PreparedStep, status: str, error: str, output: Any) -> list[dict[str, str]]:
-        """Write the step result back into the sheet and (when named) into the parameter row.  Returns the parameters this step set:
-        ``[{name, value, stored, cell}]`` (``value`` what the step wrote, ``stored`` what the cell holds now: writes to one parameter add up)."""
+        """Write the step result back into the sheet and (when named) into the parameter row, and put what the step saved into the run's pool.
+        Returns the variables this step set: ``[{name, value, stored, cell}]`` (``value`` what the step wrote, ``stored`` what the cell holds now:
+        legacy writes to one parameter add up; ``cell`` is ``run variable`` for a name that is not a Params column)."""
         out_text = "" if output is None else cell_text(output)
         for column, value in (("STATUS", status), ("ERROR_CHECK", error), ("OUTPUT_VALUE", out_text)):
             col = self.columns.get(column)
             if col:
                 self.sheet.set(step.row, col, value)
         sets: list[dict[str, str] | None] = []
-        if self.params_sheet is None:
-            return []
-        for column, cell in step.values.items():
-            if is_blank(cell):
-                continue
-            token = cell_text(cell).upper().strip()
-            if token not in self.params or column in step.secret_columns:
-                continue
-            authored = cell_text(cell).strip()
-            if column == "ERROR_CHECK":
-                if not is_blank(error):
-                    sets.append(self._write_param(token, error, authored))
-            elif column == "STATUS":
-                sets.append(self._write_param(token, status, authored))
-            elif column == "OUTPUT_VALUE":
-                if not is_blank(out_text) and out_text.upper() != token:
-                    sets.append(self._write_param(token, out_text, authored))
+        saved = step.output_name.upper()
+        if self.params_sheet is not None:
+            for column, cell in step.values.items():
+                if is_blank(cell):
+                    continue
+                token = cell_text(cell).upper().strip()
+                if column == "OUTPUT_VALUE" and saved:
+                    token = saved                                   # (``{NAME}`` saves into NAME like a bare NAME)
+                if token not in self.params or column in step.secret_columns:
+                    continue
+                authored = cell_text(cell).strip()
+                if column == "ERROR_CHECK":
+                    if not is_blank(error):
+                        sets.append(self._write_param(token, error, authored))
+                elif column == "STATUS":
+                    sets.append(self._write_param(token, status, authored))
+                elif column == "OUTPUT_VALUE":
+                    if not is_blank(out_text) and out_text.upper() != token:
+                        sets.append(self._write_param(token, out_text, step.output_name or authored, replace=step.method == "SET_VARIABLE"))
+        keeps = status == "PASSED" if step.method == "SET_VARIABLE" else not is_blank(out_text)      # SET_VARIABLE may set "" on purpose
+        if saved and keeps and out_text.upper() != saved:
+            self.pool.set(saved, out_text, self.case.id)
+            if not any(x and x["name"].upper() == saved for x in sets):
+                sets.append({"name": step.output_name, "value": out_text, "stored": out_text, "cell": "run variable"})
         return [x for x in sets if x]
 
     def param_cell(self, token: str) -> str:
@@ -511,16 +695,22 @@ class TestRuntime:
         self.params_sheet.set(self.case.param_row, col, value)
         self.written[(self.params_sheet.name, self.case.param_row, col)] = value
 
-    def _write_param(self, token: str, value: str, authored: str = "") -> dict[str, str] | None:
+    def _write_param(self, token: str, value: str, authored: str = "", replace: bool = False) -> dict[str, str] | None:
         col = self.params_sheet.data.headers.get(token)
         if col is None:
             return None
         current = self.params.get(token)
-        new = str(value) if is_blank(current) else f"{cell_text(current)};{value}"
+        new = str(value) if is_blank(current) or replace else f"{cell_text(current)};{value}"
         self.params[token] = new
         self.params_sheet.set(self.case.param_row, col, new)
         self.written[(self.params_sheet.name, self.case.param_row, col)] = new
         return {"name": authored or token, "value": str(value), "stored": new, "cell": self.param_cell(token)}
+
+    def method_at(self, row: int) -> str:
+        """The Method of ``row`` as written (UPPER), whatever its blnExecute says: ELSE / END_IF / ITERATION_END are structure and always count."""
+        col = self.columns.get("METHOD")
+        cell = self.sheet.data.cells.get((row, col)) if col else None
+        return "" if cell is None or cell.formula else cell_text(cell.value).strip().upper()
 
     def empty_flag_step(self, row: int) -> tuple[str, str] | None:
         """(method, step name) when ``row`` holds a step but its ``blnExecute`` cell is *empty*: an ``N`` is a decision, an empty cell is easily
@@ -540,7 +730,8 @@ class TestRuntime:
     def plan(self) -> list[tuple[int, str, str]]:
         """Dry-run the row loop (no browser) and return ``(row, step name, method)`` for each step.
 
-        Statuses are assumed PASSED so status-gated rows are planned; used for progress totals.
+        Statuses are assumed PASSED so status-gated rows are planned; used for progress totals.  Both sides of an IF are planned (which one runs
+        is only known then); a loop's steps are planned once per data row; ELSE / END_IF / ITERATION_END are structure, not steps.
         """
         planned = []
         if self.blocked_reason:
@@ -548,11 +739,33 @@ class TestRuntime:
         setters: set[str] = set()                                # parameters an earlier step of this test fills in
         needs: dict[str, dict[str, Any]] = {}
         reads: dict[str, dict[str, Any]] = {}
+        saved: set[str] = set()                                  # names an earlier step of this test saves (into the pool)
+        pool_reads: set[str] = set()
+        loops: dict[int, int] = {}                               # ITERATION_START row -> how many data rows
+        loop_columns: list[tuple[int, set[str]]] = []            # (ITERATION_END row, columns of that loop's data sheet)
+        env_names = {r.variable.upper() for r in self.env_table.rows}
+        fm = self.flow()
         for row in range(2, self.total_rows + 1):
+            loop_columns = [(end, cols) for end, cols in loop_columns if row < end]
             step = self.prepare_row(row)
-            if step is None:
+            if step is None or step.method in MARKERS:
                 continue
             planned.append((row, step.name, step.method))
+            if step.method == "ITERATION_START" and row in fm.end_of:
+                try:
+                    data = self.iteration_rows(step.text("VALUE"))
+                except ValueError:
+                    data = []
+                loops[row] = len(data)
+                loop_columns.append((fm.end_of[row], {h for d in data[:1] for h in d}))
+            if step.method == "CALL_TEST" and step.text("VALUE").strip():
+                self.calls.append(step.text("VALUE").strip())
+            in_loop = set().union(*(cols for _, cols in loop_columns)) if loop_columns else set()
+            for name in step.inline_names:
+                key = name.upper()
+                if key in in_loop or key in saved or key in env_names or (key in self.params and not is_blank(self.params[key])):
+                    continue
+                pool_reads.add(key)
             for _, token in step.param_reads:
                 if token.upper() not in setters:
                     col = self.params_sheet.data.headers.get(token.upper()) if self.params_sheet is not None else None
@@ -560,7 +773,7 @@ class TestRuntime:
                                                             "key": (self.params_sheet.name, self.case.param_row, col) if col else None})
                     read["rows"].append(row)
             for _, token in ([] if step.method in BLANK_OK_METHODS else step.blank_params):
-                if token.upper() not in setters:
+                if token.upper() not in setters and token.upper() not in pool_reads:
                     need = needs.setdefault(token.upper(), {"param": token, "cell": self.param_cell(token), "rows": [], "steps": [],
                                                             "set_by": [w for w in self.writers.get(token.upper(), []) if w != self.case.sheet]})
                     need["rows"].append(row)
@@ -569,7 +782,28 @@ class TestRuntime:
                         reads[token.upper()]["blank"] = True
             if step.raw_output_name and step.raw_output_name.upper().strip() in self.params:
                 setters.add(step.raw_output_name.upper().strip())
+            if step.output_name:
+                saved.add(step.output_name.upper())
             self.record(step, "PASSED", "", "")
         self.needs = list(needs.values())
         self.reads, self.sets = reads, setters
-        return planned
+        self.pool_reads, self.pool_sets = pool_reads, saved
+        return _unroll(planned, fm, loops)
+
+
+def _unroll(planned: list[tuple[int, str, str]], fm: FlowMap, loops: dict[int, int]) -> list[tuple[int, str, str]]:
+    """A loop's steps once per data row (none when it has no row), loops inside loops included."""
+    out: list[tuple[int, str, str]] = []
+    i = 0
+    while i < len(planned):
+        item = planned[i]
+        out.append(item)
+        i += 1
+        if item[2] == "ITERATION_START" and item[0] in loops:
+            end = fm.end_of[item[0]]
+            body = []
+            while i < len(planned) and planned[i][0] < end:
+                body.append(planned[i])
+                i += 1
+            out.extend(_unroll(body, fm, loops) * loops[item[0]])
+    return out
