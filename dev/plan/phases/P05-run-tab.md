@@ -31,4 +31,5 @@ Replace the per-workbook Tests + Run order cards with one grouped list and one p
 - 2026-09-26 · Done: batch id/label on run.json + `web/run_batch.py` (`/api/batches`, `/api/batches/{id}`, last-run durations); merged Tests
   list + one Run plan (Order/Timeline) in `newrun.js`; live batch view (`#/batch/:id`) in `live.js` + `runstate.js` batch helpers +
   `actions.js`/`main.js` wiring; `test_web_multi_ui.py`/`test_web_run_order.py` updated for the new layout, `test_web_batches.py` added.
-  AGENTS.md updated. PR opened into `qa-regression`. **Restart UI** (server routes + JS changed). Next: dev-lead review.
+  AGENTS.md updated. Merged `qa-regression` (P03) into the branch first. PR: raphinitum95/claude#6. **Restart UI** (server routes + JS
+  changed). Next: dev-lead review.
