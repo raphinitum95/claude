@@ -119,6 +119,8 @@ dev/                 NOT shared (make_share_folder.py leaves it out): everything
   claude/AGENTS.md   this file (.claude/CLAUDE.md imports it)
   claude/CONTEXT_*.md  hand-off briefs for a specific piece of work in progress (read only if your task is that work)
   designs/           design briefs (CONTEXT_workbook_builder_design.md); put new design briefs/exports here, not at the root
+  designs/workbook-builder-canvas/  scripts that generate every Workbook Builder design board (markup to copy when building a screen)
+  plan/              the Workbook Builder build plan: PLAN.md (rules, order, status), CONTRACT.md, phases/Pxx-*.md, YOUR_GUIDE.md (for the user)
   make_share_folder.py  builds share/QA Regression/ + .zip (git-ignored) for other people: launchers, src/, config, README, workbooks
   share/START HERE.txt  the one-page instructions copied into that folder
 README.md            user manual, 56 KB: read one section at a time (section 8)
@@ -182,6 +184,7 @@ tests/
 ## 5. Tests: what to run
 
 Runner: `.venv/bin/pytest` (Python 3.12 venv; editable install; Chromium + WebKit already downloaded on this Mac).
+Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv` at start and pins Playwright 1.56.0 to the image's Chromium; WebKit is not available there.
 
 | Scope | Command | Size / time |
 |---|---|---|
@@ -243,6 +246,8 @@ Evidence-based waiting (`engine/patience.py`, `patience:` in config.yaml; `runne
 (`totp.safe_margin/record_gap`, gaps in `.auth/totp_last.json`); login codes masked like secrets; auth-domain 4xx bodies in `network.jsonl`;
 dialogs answered as they open when the next step is an ALERT step; `worker_waiting`/`worker_resumed` events + yellow banner (`--wait*` CSS tokens).
 Unverified on real sites: Okta per-account limits, real polling/third-party traffic vs. patience, real code-to-Verify gaps.
+
+**Workbook Builder (2026-09-26): built in phases** by separate sessions following `dev/plan/PLAN.md` (status table at its end). PRs go into `qa-regression`.
 
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
