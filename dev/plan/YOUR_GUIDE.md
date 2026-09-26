@@ -24,6 +24,7 @@ Your job is to **start the chats in the order below and paste the text**.
 **Two kinds of chats:**
 - A **work chat** builds one piece and opens a PR.
 - A **review chat** (always **Sonnet**) checks that PR, merges it and deletes its branch. Start one after every work chat finishes.
+  **Always start a new review chat each time** (never reuse an old one): a fresh chat only reads that one PR, so it stays cheap and doesn't mix things up.
 
 ---
 
