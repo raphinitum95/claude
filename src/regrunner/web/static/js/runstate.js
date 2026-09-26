@@ -86,8 +86,8 @@ export function apply(run, e) {
         pushLog(run, e.ts, 'FAIL', 'var(--fail)', `${t.id} #${e.step} · ${title(e.action)} "${e.name || ''}"${e.error ? ' · ' + first(e.error) : ''}`);
       }
       break;
-    case 'variable_set':                                   // a person supplied an empty parameter
-      if (t) t.vars.push({ name: e.name, value: e.value, stored: e.value, cell: e.cell || '', seq: e.step, row: 0, step: '', by_hand: true });
+    case 'variable_set':                                   // a person supplied an empty parameter (a value a step saved comes with the step's sets)
+      if (t && e.by_hand !== false) t.vars.push({ name: e.name, value: e.value, stored: e.value, cell: e.cell || '', seq: e.step, row: 0, step: '', by_hand: true });
       break;
     case 'screenshot_saved':
       if (!t) break;

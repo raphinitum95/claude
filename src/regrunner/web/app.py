@@ -40,7 +40,7 @@ from ..engine.ask import write_answer
 from ..engine.order import chains_file, clean_chains, load_chains, plan_order, save_chains
 from ..engine.runner import RunOptions, SelectionError, new_run_id, select_cases
 from ..events import now_iso, read_events
-from ..preflight import browser_check, run_preflight, token_state
+from ..preflight import browser_check, environment_problem, run_preflight, token_state
 from ..runmeta import new_batch_id, read_meta, update_meta
 from ..signin import SignInError, SignInSession
 from ..workbook.model import Workbook
@@ -334,6 +334,9 @@ class RunManager:
         except Exception as err:
             raise ApiError(422, f"Could not read workbook: {err}", "unreadable") from err
         environment = (req.env or str(wb.global_settings().get("Environment", ""))).upper()
+        problem, _missing = environment_problem(wb, environment)           # a required environment variable is empty: the run refuses to start
+        if problem:
+            raise ApiError(422, (f"{wb_path.name}: " if len(req.picks()) > 1 else "") + problem, "env_missing")
         try:
             if pick.all:
                 chosen = [c for c in cases if c.runnable]
