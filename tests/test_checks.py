@@ -115,3 +115,56 @@ def test_page_fingerprints_are_read_by_name_whatever_the_case(tmp_path):
     found = read_fingerprints(WorkbookData.load(tmp_path / "f.xlsx"))
     assert list(found) == ["PAYMENT PAGE"]
     assert found["PAYMENT PAGE"].url_contains == "/pay" and found["PAYMENT PAGE"].landmark_text == "Payment details"
+
+
+class _Asker:
+    """Answers a side-effect question the way a person would on the run screen."""
+
+    def __init__(self, answer: str):
+        self.answer, self.asked = answer, []
+
+    async def ask(self, test, step, question, **kw):
+        self.asked.append(question)
+        return self.answer
+
+
+def _side_effect_ctx(tmp_path, *, environment: str, mode: str, asker=None):
+    from types import SimpleNamespace
+    from regrunner.config import Config
+    from regrunner.engine.actions import StepContext
+    events: list = []
+    runtime = SimpleNamespace(environment=environment, env_table=EnvironmentTable(source="rr", names=["UAT", "LIVE"], production=["LIVE"]))
+    ctx = StepContext(step=PreparedStep(row=7, values={"METHOD": "CLICK", "STEP_NAME": "Pay now", "SIDE_EFFECTS": "Y"}), session=SimpleNamespace(),
+                      cfg=Config(base_dir=tmp_path), selector_map=None, review=None, test_dir=tmp_path, seq=3, asker=asker, runtime=runtime,
+                      emit=lambda type_, **f: events.append({"type": type_, **f}), side_effects=mode)
+    return ctx, events
+
+
+async def test_a_build_mode_replay_asks_before_a_side_effect_step_and_runs_it_only_on_yes(tmp_path):
+    from regrunner.engine.actions import ActionError, side_effect_gate
+    yes = _Asker("yes")
+    ctx, events = _side_effect_ctx(tmp_path, environment="UAT", mode="ask", asker=yes)
+    await side_effect_gate(ctx)
+    assert "Run it for real?" in yes.asked[0] and '"Pay now"' in yes.asked[0] and not ctx.out.stop
+    assert [e["type"] for e in events] == ["side_effect_paused"] and events[0]["row"] == 7 and events[0]["name"] == "Pay now"
+    ctx, _ = _side_effect_ctx(tmp_path, environment="UAT", mode="ask", asker=_Asker("no thanks"))
+    with pytest.raises(ActionError, match="chose not to run it"):
+        await side_effect_gate(ctx)
+    assert ctx.out.hard and "were not run" in ctx.out.stop
+
+
+async def test_a_side_effect_step_is_never_run_on_production_even_when_a_person_would_say_yes(tmp_path):
+    from regrunner.engine.actions import ActionError, side_effect_gate
+    asker = _Asker("yes")
+    ctx, events = _side_effect_ctx(tmp_path, environment="LIVE", mode="ask", asker=asker)
+    with pytest.raises(ActionError, match="Blocked"):
+        await side_effect_gate(ctx)
+    assert asker.asked == [] and [e["type"] for e in events] == ["side_effect_blocked"] and ctx.out.hard and ctx.out.stop
+
+
+async def test_a_normal_run_does_not_ask_before_a_side_effect_step(tmp_path):
+    from regrunner.engine.actions import side_effect_gate
+    asker = _Asker("no")
+    ctx, events = _side_effect_ctx(tmp_path, environment="UAT", mode="run", asker=asker)
+    await side_effect_gate(ctx)
+    assert asker.asked == [] and events == []
