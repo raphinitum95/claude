@@ -227,6 +227,7 @@ class BuildSession:
         page to pick on; otherwise a blank window opens."""
         from playwright.async_api import async_playwright
         self._cancel = asyncio.Event()                             # (made inside a coroutine: Python 3.9 binds it to the running loop)
+        self.recorder._lock = asyncio.Lock()                       # (the same)
         await asyncio.to_thread(self._select, test_id, data_row)
         self.folder.mkdir(parents=True, exist_ok=True)
         try:
@@ -461,9 +462,9 @@ class BuildSession:
         if mode not in ("pick", "browse", "check", "save", "wait"):
             raise BuildError("mode is pick, check, save, wait or browse.", "mode", 400)
         self.mode, self.pick_for = mode, pick_for
+        self.purpose = mode if mode != "browse" else "pick"
         if mode != "browse":
             self.which = None
-            self.purpose = mode
         self.touch()
         await self.broadcast({"card": None} if mode != "browse" else {})
 
@@ -489,7 +490,7 @@ class BuildSession:
         if frame is None or not desc:
             raise BuildError("Nothing was picked.", "pick", 409)
         self._picked_frame = frame
-        purpose = self.purpose if self.mode in ("check", "save", "wait") else "pick"
+        purpose = self.purpose if self.mode in ("check", "save", "wait", "which") else "pick"      # ("which one?" keeps what the pick is for)
         cands = L.candidates(desc)
         await self._check(frame, cands)
         choice = L.choose(cands)

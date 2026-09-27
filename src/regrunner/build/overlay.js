@@ -150,7 +150,7 @@
       classes: Array.from(el.classList || []), text: short(el.innerText), label: labelOf(el),
       context: sameNameCount(el, name) > 1 || !name ? contextOf(el, name) : null,
       cssPath: cssPath(el), frame: TOP ? '' : (window.name || location.href),
-      current: { value: 'value' in el && typeof el.value === 'string' ? el.value.slice(0, 200) : '', checked: !!el.checked,
+      current: { value: 'value' in el && typeof el.value === 'string' && (el.getAttribute('type') || '').toLowerCase() !== 'password' ? el.value.slice(0, 200) : '', checked: !!el.checked,
         enabled: !el.disabled && el.getAttribute('aria-disabled') !== 'true', visible, selected },
     };
   }

@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from ..build.session import BuildSession, SessionStore
+from .record_api import register_record_routes
 from ..workbook.builder import BuildDocument, BuildError, BuildStore, keyword_catalogue, new_workbook
 from ..workbook.writer import WriterError
 
@@ -309,6 +310,7 @@ def register_session_routes(app: FastAPI, mgr: Any, doc, run) -> SessionStore:
             await s.close()
         return {"open": False, "workbook": path.name}
 
+    register_record_routes(app, mgr, doc, run, sessions)                 # P09: record, check / save this, prompts
     return sessions
 
 

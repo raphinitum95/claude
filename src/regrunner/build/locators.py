@@ -361,6 +361,8 @@ def to_desc(value: Any) -> dict:
     tid = out.get("testid")
     out["testid"] = {"attr": str(tid.get("attr") or ""), "value": str(tid.get("value") or "")[:200]} if isinstance(tid, dict) else None
     cur = out.get("current")
+    if isinstance(cur, dict) and str(out.get("type") or "").lower() == "password":
+        cur = {**cur, "value": ""}                                  # (a password's value is never kept with a pick)
     out["current"] = ({"value": str(cur.get("value") or "")[:200], "checked": bool(cur.get("checked")), "enabled": cur.get("enabled") is not False,
                        "visible": cur.get("visible") is not False, "selected": str(cur.get("selected") or "")[:200]}
                       if isinstance(cur, dict) else {})

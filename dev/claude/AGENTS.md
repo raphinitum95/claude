@@ -87,6 +87,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Writing workbooks (edit cells/rows/columns, hidden `_rr_*` sheets, save + backup, drafts, lock/external-change checks) | `workbook/writer.py` (`WorkbookEditor`) | `test_workbook_roundtrip.py` (`-k "not real"` = 2 s; the real-workbook cases take ~2.5 min) |
 | Workbook Builder model (tests/blocks/steps/variables JSON, ops, undo/draft/save/history/diff), builder problems, `/api/build/*` | `workbook/builder.py`, `lint.py` (`builder_problems`), `web/build_api.py`; the shapes are fixed in `dev/plan/CONTRACT.md` | `test_builder_model.py` (~10 s, real workbooks included), `test_build_api.py` (2 s). **Restart UI** for build_api changes |
 | Build tab UI (Run · Build · Results tabs, workbook map, variable map, test editor: block map/cards/inspector/grid/drawer/problems/add-step menu, new-workbook/environments/fingerprint/history/file-changed dialogs) | `web/static/js/views/build/*.js` (state in `state.js`'s `freshBuild`/`freshEditor`), `views/shell.js` (`tabs`, `headerShell`), `views/modals.js` (routes `build-*` modal kinds to `build/dialogs.js`), `main.js` (`#/build...` routes, merges `build/actions.js` into the action tables), `icons.js`, `app.css` ("Build tab" section) | `test_web_build.py`, `test_web_ui.py -k theme`. JS only: reload the page, no UI restart |
+| Recording + Check/Save/Wait until in the build window (Rec toggle, steps at the cursor, typed text → variable, password → secret in secrets.env, switch window/frame/Back steps, calendar → PICK_DATE, suggestion → CHOOSE_SUGGESTION, fingerprint + gate proposal, check card with every kind prefilled) | `build/recorder.py` (`Recorder`; pure helpers `check_kinds`/`check_step`/`token_for`/`store_secret` at the top), `build/overlay.js` (recording listeners, page-side locator counts, pill, cards, prompts), `build/session.py` (`_on_call` routing, modes), `web/record_api.py`, `web/static/js/views/build/record.js` | `test_build_recorder.py` (fast), `test_build_recording.py` (mock site `build_record*.html`, `widgets.html`), `test_web_build_record.py`. **Restart UI** for recorder/session/record_api; overlay.js is read at server start |
 | Build window (Build tab's live browser: overlay pill/pick/which-one, locator + backups + plain words, word → variable, run up to here / this step / next N, side-effect pause, "earlier steps changed") | `build/session.py` (`BuildSession`, `SessionStore`, `BuildAsker`), `build/locators.py` (pure), `build/overlay.js`, `web/build_api.py` (`register_session_routes`), `web/static/js/views/build/session.js`, `engine/test_runner.py` (`prepare_runtime`/`open_session`) | `test_build_locators.py` (fast), `test_build_session.py` (mock site `build_pick.html`), `test_web_build_session.py`. **Restart UI** for session.py/build_api changes; overlay.js is read at server start too |
 | API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates | `workbook/api.py`, `workbook/api_template.py`, `engine/api_runner.py` | `test_api_tests.py`, `test_api_purchase_flavour.py` |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
@@ -183,7 +184,9 @@ src/regrunner/
                 on every context, pick -> locator checked with the engine's selectors, word -> {VARIABLE}, replays with TestRunner's own steps,
                 BuildAsker for the side-effect pause, stale check; SessionStore: one per workbook, 3 max), locators.py (candidates id -> test id ->
                 attribute -> text -> text in container -> class+position, choose, plain words, words_of_locator), overlay.js (pill, hover outline,
-                pick, which-one numbers; closed shadow root; presses swallowed in the window capture phase)
+                pick, which-one numbers; closed shadow root; presses swallowed in the window capture phase), recorder.py (P09: Record -> steps at the
+                cursor, typed -> {VARIABLE} / {SECRET:NAME}, switch window/frame/Back steps, widget collapse, fingerprint proposals, Check / Save / Wait
+                until cards; the overlay proves its calls with the session key)
   selectors/  spec.py resolve.py xpath2css.py migrate.py harvest.py
   reporting/  results.py (data model) html_report.py console.py from_events.py
   web/
@@ -191,6 +194,7 @@ src/regrunner/
     presence.py   UiPresence: which UI windows are open (/api/ui/hello, /api/ui/goodbye) for serve --exit-when-closed
     build_api.py  /api/build/* routes (register_build_routes: one line in create_app); later builder phases add their own modules
                   (+ register_session_routes: /api/build/session/{name}/* for the build window, P08)
+    record_api.py /api/build/session/{name}/record|check|save|prompt (P09; register_record_routes: one line in register_session_routes)
     run_batch.py  /api/batches/* routes (register_batch_routes: one line in create_app): groups runs that share a run.json batch_id, and
                   last-run-per-test durations for the Run plan's Timeline view. A batch is only a label - it never changes how a run executes.
     results_api.py  /api/results/* routes (register_results_routes: one line in create_app): batch page (causes, trend, what changed,
@@ -200,7 +204,8 @@ src/regrunner/
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
     static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher),
-                  session (P08: build window strip, pick panel, which-one, side-effect dialog; polls /api/build/session/<wb>)}.js
+                  session (P08: build window strip, pick panel, which-one, side-effect dialog; polls /api/build/session/<wb>),
+                  record (P09: Rec / Check / Save / Wait until buttons, the check card, the recorder's prompts)}.js
     static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen),batch,test,compare,index (header+screen dispatcher)}.js;
                   results.js stays the single finished-run page opened from Run (`#/run/:id`); `#/results...` is the separate browsable tab
 
@@ -212,7 +217,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            72 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            75 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -226,7 +231,7 @@ Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv`
 |---|---|---|
 | One file | `.venv/bin/pytest -q tests/test_page_ready.py` | seconds to ~1 min |
 | One test | `.venv/bin/pytest -q tests/test_web_ui.py -k theme` | |
-| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 510 tests, ~4 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
+| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 554 tests, ~4.5 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
 | Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 808 tests, 40+ min |
 
 - Marker `browser` = needs Playwright (module-level `pytestmark` or per test); `realworkbook` = needs `workbooks/UAT_AEM_Travelex Regression_v9.1.xlsx` (skips otherwise).
@@ -343,6 +348,25 @@ workbook (the run reads the saved file in its own process). Not built (P09): rec
 auto switch-to-frame steps (a pick inside a frame only says so). Unverified: headed Chrome/Edge on the work computer (tests run headless).
 Fixed in passing (P04's editor): a block's `start` is inclusive (CONTRACT 2.4), the cards view hid each block's first step.
 
+P09 (build session II: recorder) PR open: `build/recorder.py` + `overlay.js` + `web/record_api.py` + `views/build/record.js`. **Record** (pill ● Rec,
+the strip's Rec, the add-step menu's "Record from here"): the person's own actions (`isTrusted` only; a replay's own clicks are dropped) become steps
+after the cursor (the selected step, then each recorded one): CLICK / SET / SELECT / TICK / UNTICK / CLEAR / SPECIALKEY {ENTER} / BACK, never a wait.
+A clicked element's locator candidates are **counted in the page as the click happens** (the overlay mirrors `locators.candidates`; the server
+recounts anything missing and still chooses with `locators.choose`), because a click that navigates takes the page away. An action in another
+window/frame first gets SWITCHTOWINDOW (-1) / SWITCHTOMAINWINDOW / SWITCHTOFRAME (name, else Index) / SWITCHTODEFAULT, and the replay's own
+session follows them. Typed text / a choice becomes `{TOKEN}` (label -> UPPER_SNAKE; an existing Params column whose "Building with" value is the
+same is reused; a new one is added with the value in every data row); a password becomes `{SECRET:NAME}` + `RR_SECRET_<ENV>_<NAME>` in
+`secrets.env` (never another value overwritten: a new name instead) + `_rr_variables` Secret=Y. Prompts (`state.record.prompts`, beside the field
+and in the Build tab): keep / fixed / rename (taken back with undo when it is still the last edit, so no unused column stays), keep raw clicks,
+save fingerprint + gate (ASSERT_PAGE after the step that navigated), unflag a side effect (a click on Pay/Purchase/... is flagged). Calendar clicks
+after a read-only field -> one PICK_DATE; typing then a click on a suggestion -> CHOOSE_SUGGESTION. **Check / Save / Wait until** modes: a pick
+gets a card with every CHECK_KINDS entry (disabled with a reason when it does not fit), prefilled from the live element; adding writes OUTPUT /
+EXIST / NOT_EXIST / CHECK_* / WAIT_UNTIL (after the recorder's cursor while recording, else after the step picked for). Decided: the overlay's calls
+carry a per-session key baked into its source (the binding is taken before any site script runs); without it the page can only say hello, switch
+a mode and pick. Fixed in passing (P08): the pill's buttons never worked (a window listener cannot see into a closed shadow root: now
+`shadowRoot.elementFromPoint`/`activeElement`). Not built: a typed URL in the address bar (not recorded), a "smart action shortlist" on a plain
+Pick (Q9), in-page "Edit" of a proposed fingerprint (the Build tab's prompt card edits it). Unverified: real sites' calendars/suggestion lists.
+
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
@@ -375,6 +399,11 @@ Gotchas:
 - Build window: the overlay lives in a **closed** shadow root on `<rr-build-overlay>` (Playwright's `text=`/CSS engines do not see into it), and
   `window.__rrBuild` is non-enumerable; the picked element is `window.__rrBuild.picked()` (never a DOM attribute). Evaluating in a page with a JS
   dialog open hangs: `BuildSession.broadcast`/`_page` check `pending_dialog` first. `build.headless: true` is for tests only.
+  A listener outside a closed shadow root never sees the nodes inside it (`composedPath()` stops at the host): the overlay finds what was pressed
+  with `shadowRoot.elementFromPoint` and what is typed into with `shadowRoot.activeElement`.
+- Recorder: a new variable may not equal a whole cell of its own step (a Params header replaces an equal cell at run time, the legacy rule), so a
+  field whose id is `plan` gets `{PLAN_VALUE}`, not `{PLAN}`. Playwright's `select_option`/`dispatchEvent` fire untrusted events (never recorded):
+  tests drive selects with the keyboard.
 - `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
   narrow window clips it instead of pushing the header wider than the viewport (see the `Run` tab's version tag vs. the `Build` tab's breadcrumb).
 

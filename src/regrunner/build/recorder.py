@@ -358,8 +358,7 @@ class Recorder:
     # -- small helpers -----------------------------------------------------------------------------------------------------------------
     @property
     def lock(self) -> asyncio.Lock:
-        if self._lock is None:
-            self._lock = asyncio.Lock()              # (made inside a coroutine: Python 3.9 binds it to the running loop)
+        assert self._lock is not None, "BuildSession.start makes the recorder's lock"
         return self._lock
 
     def trusted(self, payload: Any) -> bool:
@@ -878,11 +877,18 @@ class Recorder:
             elif choice == "gate":
                 applied = await self._gate(prompt, fields or {})
             elif choice == "unflag":
+                self._expect(prompt["row"], "CLICK")
                 applied = await self._apply([{"op": "update_step", "test": self._test(), "row": prompt["row"], "set": {"sideEffects": False}}])
             self.prompts = [p for p in self.prompts if p["id"] != prompt_id]
             self.s.touch()
         await self.s.broadcast()
         return applied
+
+    def _expect(self, row: int, method: str) -> None:
+        """The prompt's step must still be at its row (edits since may have moved it): else the Build tab's editor is the place to change it."""
+        step = next((st for st in self._steps() if st["row"] == row), None)
+        if step is None or step["method"] != method:
+            raise BuildError("That step has moved or changed since: change it in the editor.", "prompt", 409)
 
     def _latest(self, prompt: dict) -> bool:
         """Is the edit that wrote the prompt's step still the last edit of the workbook (then it can be taken back cleanly)?"""
@@ -912,12 +918,14 @@ class Recorder:
                 self._last.update(row=row, fields=ops[-1]["step"], version=self._version)
             prompt["row"] = row
         else:
+            self._expect(prompt["row"], prompt["_ops"][-1]["step"]["method"])
             applied = await self._apply(add + [{"op": "update_step", "test": self._test(), "row": prompt["row"], "set": {"value": new_value}}])
         return applied
 
     async def _keep_raw(self, prompt: dict) -> list[dict]:
         raw = prompt.get("_raw") or []
         row = prompt["row"]
+        self._expect(row, "CHOOSE_SUGGESTION" if prompt.get("widget") == "suggestion" else "PICK_DATE")
         if prompt.get("widget") == "suggestion":
             ops = [{"op": "update_step", "test": self._test(), "row": row, "set": {"method": "SET", "expected": ""}},
                    self._insert_op(raw[0], row)]

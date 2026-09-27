@@ -147,6 +147,9 @@ async def test_a_password_becomes_a_secret_in_secrets_env_and_its_value_is_never
         variables = s.doc.model()["variables"]
         assert any(v["key"] == "ACCOUNT_PASSWORD" and v["secret"] for v in variables)
         assert "Hunter2" not in json.dumps(s.state()) and "Hunter2" not in s.doc.editor.to_bytes().decode("latin-1")
+        await s.recorder.stop()
+        pick = await pick_for(s, "check", page.locator("#password"))              # a password field picked to check: its value stays out
+        assert pick["current"]["value"] == "" and "Hunter2" not in json.dumps(s.state())
         s.run("to", row=3)                                        # the replay types the secret from secrets.env
         state = await settled(s)
         assert results(state) == [(1, "PASSED"), (2, "PASSED")] and await s._page().input_value("#password") == "Hunter2!x"

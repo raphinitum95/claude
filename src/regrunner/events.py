@@ -32,6 +32,8 @@ Event types (all carry ``type``, ``ts`` and ``run_id``):
                    never a run's events.jsonl: the Build tab polls GET /api/build/session/<workbook>, which also carries the replayed steps' events)
     build_session_replay_progress  row, step, status, done | kind, done, finished, stopped   a step of a build replay ended / the replay ended
     build_session_closed   workbook, reason                            the build window closed (by the person, idle, or the browser went away)
+    build_session_step_recorded  test, step, row, method, name, what    a step written by the recorder or a Check / Save / Wait card (build/recorder.py;
+                   what = click | type | toggle | key | back | switch | suggestion | gate | <check kind>; never the typed value)
     screenshot_saved  test, step, path, kind
     console_error  test, step, kind, message, url          (kind: console|pageerror)
     network_error  test, step, kind, url, status, method, message   (kind: requestfailed|http_error)
