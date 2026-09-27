@@ -252,4 +252,7 @@ details.more > summary::-webkit-details-marker { display: none }
 .sess-bar.stale { background: var(--warn-soft) }
 .sess-line { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; max-width: 360px }
 .sess-card { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: none }
+.rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tx3); flex: none; display: inline-block }
+.rec-dot.live, .rec-on .rec-dot { background: var(--fail) }
+.btn.rec-on { color: var(--fail); background: var(--fail-soft); border-color: var(--fail-line, var(--fail)) }
 .which-num { width: 20px; height: 20px; flex: none; border-radius: 50%; background: var(--warn); color: #06121C; display: grid; place-items: center; font: 700 11px var(--f-mono) }

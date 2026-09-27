@@ -292,6 +292,13 @@ per workbook. Every route below 409s `closed` (`{error, kind: "closed"}`) when t
 | `POST /api/build/session/{name}/stop` | | state: cancels a replay in progress |
 | `POST /api/build/session/{name}/answer` | `{id, answer}` | `{ok}`: answers the question named in `state.question` (`ASK_USER`, a blank parameter, the side-effect pause) |
 | `POST /api/build/session/{name}/close` | | `{open: false, workbook}`: closes the browser |
+| `POST /api/build/session/{name}/record` | `{on, after?}` | state (P09, `web/record_api.py`): recording on (new steps after row `after`, default the last step) / off. `state.record` = `{on, cursor, count, prompts, widget}` |
+| `POST /api/build/session/{name}/check` | `{kind, expected?, token?, after?}` | `{applied, model, session}`: a check / wait of the element picked in `check` / `wait` mode (`/pick {mode}`; `state.pick.card.form` lists the kinds, prefilled). `kind`: `text_is text_contains shown gone value ticked selected enabled gt lt between regex date_format count wait_shown wait_gone wait_text`; `token` = also save (text checks) |
+| `POST /api/build/session/{name}/save` | `{token, after?}` | `{applied, model, session}`: an `OUTPUT` step saving the picked element's text (a field's value) as `{token}` |
+| `POST /api/build/session/{name}/prompt` | `{id, choice, token?, fields?}` | `{applied, model, session}`: answers `state.record.prompts[id]`: `keep` / `fixed` / `rename` (typed value), `raw` (widget), `gate` (fingerprint; `fields` overrides name/urlContains/landmark/landmarkText), `unflag` (side effect), `dismiss` |
+
+`/pick {mode}` also takes `check`, `save`, `wait` (P09). The overlay's own calls carry the session's key; without it the page can only say hello,
+switch a mode and report a pick (never record or add a step).
 
 API / XML editor (P10, `web/build_apitest.py`; edits are `api_*` ops through `/edit`, 3.1):
 
@@ -304,8 +311,7 @@ API / XML editor (P10, `web/build_apitest.py`; edits are `api_*` ops through `/e
 | `GET /api/build/api/{name}/templates?location=` | | `{templates: [{file, folder, format}], folders}` |
 | `GET /api/build/api/{name}/templates/fields?folder=&file=&test=&row=` | | `{file, folder, format, preview, fields: [{placeholder, count, column, mapped, value}]}`; 400 outside the template folders |
 
-Reserved for later phases (they add them in their own modules, same prefix): templates `/api/build/templates*` (P11); build session
-`/api/build/session/{name}/record|check|save` (P09: recorder, check/save this);
+Reserved for later phases (they add them in their own modules, same prefix): templates `/api/build/templates*` (P11);
 scenarios `/api/build/workbooks/{name}/scenarios*` (P12). Runs and batches stay under `/api/runs`, `/api/batches` (P05/P06).
 One build document per workbook per server (`BuildStore`); a run of the same workbook uses its own copy of the file, so they coexist.
 

@@ -144,7 +144,8 @@ function addStepMenu(S) {
   const groups = (S.build.keywords && S.build.keywords.groups) || [];
   return html`<div class="menu" style="position: absolute; right: 16px; top: 8px; width: 320px; padding: 6px; z-index: 6" role="menu">
 <div class="field" style="margin-bottom: 6px">${icon('search', 14)}<input class="fld" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Search actions…" value="${ed.menuQuery || ''}" data-input="build-menu-query" autocomplete="off"></div>
-<button class="mitem" disabled style="opacity: .5; cursor: default" title="Available once recording ships (P08)">${icon('rec', 14)}<span style="flex: 1">Record from here in the browser</span></button>
+${sessionOpen() ? html`<button class="mitem" data-act="build-rec-here">${icon('rec', 14)}<span style="flex: 1">Record from here in the browser</span></button>`
+  : html`<button class="mitem" disabled style="opacity: .5; cursor: default" title="Open the site first (the button under the test's header)">${icon('rec', 14)}<span style="flex: 1">Record from here in the browser</span></button>`}
 ${sessionOpen() ? html`<button class="mitem" data-act="build-sess-pick">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>`
   : html`<button class="mitem" disabled style="opacity: .5; cursor: default" title="Open the site first (the button under the test's header)">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>`}
 <div class="hr" style="margin: 5px 0"></div>
