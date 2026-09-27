@@ -23,3 +23,4 @@ Recording and the "Check this" flow.
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+- 2026-09-27 · `build/recorder.py` + overlay (Rec/Check/Save/Wait pill, trusted-only recording, page-side locator counts, cards, prompts) + session wiring; mock pages `build_record*.html`; `tests/test_build_recording.py` (13 browser tests) green · next: fast tests, `/record|check|save|prompt` routes, Build tab `record.js`, docs

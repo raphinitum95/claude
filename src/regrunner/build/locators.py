@@ -362,5 +362,6 @@ def to_desc(value: Any) -> dict:
     out["testid"] = {"attr": str(tid.get("attr") or ""), "value": str(tid.get("value") or "")[:200]} if isinstance(tid, dict) else None
     cur = out.get("current")
     out["current"] = ({"value": str(cur.get("value") or "")[:200], "checked": bool(cur.get("checked")), "enabled": cur.get("enabled") is not False,
-                       "visible": cur.get("visible") is not False} if isinstance(cur, dict) else {})
+                       "visible": cur.get("visible") is not False, "selected": str(cur.get("selected") or "")[:200]}
+                      if isinstance(cur, dict) else {})
     return out
