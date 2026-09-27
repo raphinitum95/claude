@@ -6,6 +6,7 @@ import { html, raw, toast } from '../../util.js';
 import { icon } from '../../icons.js';
 import { api } from '../../api.js';
 import { bm, currentTest, selectedStep, effectiveBuildingWith, applyOps, refreshModel } from './actions.js';
+import { recordActs, recordInputs, recordButtons, recordPanel } from './record.js';
 
 const enc = encodeURIComponent;
 const NEXT = 5;
@@ -42,7 +43,7 @@ async function poll() {
   if (!name || name !== S.build.name || S.route.name !== 'build') { ui.name = S.route.name === 'build' ? ui.name : null; return; }
   try { take(await api(`${path(name)}?since=${ui.since}`)); } catch (e) { /* the next poll tries again */ }
   const st = sess();
-  if (st && st.open) ui.timer = setTimeout(poll, st.status === 'running' || st.mode !== 'browse' ? 500 : 1500);
+  if (st && st.open) ui.timer = setTimeout(poll, st.status === 'running' || st.mode !== 'browse' || (st.record && st.record.on) ? 500 : 1500);
 }
 
 /** Called while the editor renders: follow the workbook on screen, and keep polling while its window is open. Idempotent. */
@@ -53,7 +54,7 @@ export function watchSession() {
   if (!ui.timer) ui.timer = setTimeout(poll, ui.st ? 800 : 0);
 }
 
-async function call(what, body, { quiet = false } = {}) {
+export async function call(what, body, { quiet = false } = {}) {
   const name = S.build.name;
   if (!name || ui.busy) return null;
   ui.busy = true; rerender();
@@ -160,11 +161,13 @@ export const acts = {
   'build-sess-yes'() { answer('yes'); },
   'build-sess-no'() { answer('no'); },
   'build-sess-send'() { answer(S.modal ? S.modal.answer : ''); },
+  ...recordActs,
 };
 
 export const inputs = {
   'build-sess-which-text'(el) { ui.whichText = el.value; },
   'build-sess-answer'(el) { if (S.modal) S.modal.answer = el.value; },
+  ...recordInputs,
 };
 
 // R = run up to here (Q39), while the window is open and nobody is typing.
@@ -218,6 +221,7 @@ ${busy ? html`<button class="btn btn-sm" data-act="build-sess-stop">${icon('stop
 <button class="btn btn-sm btn-ghost" data-act="build-sess-run-step" ${sel && !other ? '' : raw('disabled')} title="Run only the selected step, in the window as it is">Run this step</button>
 <button class="btn btn-sm btn-ghost" data-act="build-sess-run-next" ${st.next && !other ? '' : raw('disabled')} title="${st.next ? `Carry on from step ${st.next.n || '…'}` : 'Run up to a step first'}">Run next ${NEXT}</button>`}
 <button class="btn btn-sm ${st.mode === 'pick' ? 'btn-pri' : ''}" data-act="build-sess-pick" ${busy || other ? raw('disabled') : ''} title="Click an element in the build window">${icon('target', 12)} ${st.mode === 'pick' ? 'Picking…' : 'Pick'}</button>
+${recordButtons(st, busy || other)}
 <span style="flex: 1"></span>${replayLine(st)}
 <button class="icon-btn" style="width: 28px; height: 28px" data-act="build-sess-close" aria-label="Close the build window" title="Close the build window">${icon('x', 13)}</button>
 </div>
@@ -255,7 +259,7 @@ ${vars.map((v) => html`<button class="mitem" data-act="build-sess-var" data-role
 export function pickPanel(S0, t, s) {
   const st = sess();
   if (!st || !st.open) return '';
-  const blocks = [];
+  const blocks = [recordPanel(st)];
   if (st.which) {
     const w = st.which;
     blocks.push(html`<div class="card sess-card"><div style="display: flex; align-items: center; gap: 8px"><b style="font-size: 13px">${w.matches.length} match${w.matches.length === 1 ? '' : 'es'} “${w.text}”${w.matches.length > 1 ? '. Which one?' : ''}</b>
@@ -264,7 +268,7 @@ export function pickPanel(S0, t, s) {
 ${w.matches.map((m) => html`<button class="mitem" data-act="build-sess-choose" data-i="${m.i}" data-key="wm-${m.i}"><span class="which-num">${m.i + 1}</span><span class="trunc" style="flex: 1">${m.text}</span>${m.inFrame ? html`<span class="tag">frame</span>` : ''}</button>`)}
 </div>`);
   }
-  const p = st.pick;
+  const p = st.pick && !(st.pick.card && st.pick.card.form) ? st.pick : null;       // (a Check / Save / Wait pick shows as its card: record.js)
   if (p) {
     const loc = p.locator || {};
     const forN = p.for ? nOf(p.for) : null;

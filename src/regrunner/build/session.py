@@ -16,6 +16,8 @@ One session per workbook, opened by the UI server (``web/build_api.py``) in its 
   with the engine's own selectors (``selectors.spec.legacy_strategy``) - the first that finds exactly that element becomes the step's locator,
   others that also find it its backups.  A word of the description can become a variable: the locator is rebuilt with ``{NAME}`` and checked
   again with each data row's value.
+* **Recording, Check / Save / Wait until** (P09): ``recorder.py``.  The overlay proves its calls with the session's ``key`` (baked into its
+  source, which the site's scripts cannot read); only such calls can record or add a check.
 * **Run up to here / this step / next N** keep the browser and the test's state between calls.  When a step at or above the last replayed one
   changes (or the data row / environment), the session says "earlier steps changed: replay from the start to be sure".
 """
@@ -41,6 +43,7 @@ from ..workbook.model import TestCase, Workbook
 from ..workbook.sheet import cell_text
 from ..workbook.variables import MARKERS
 from . import locators as L
+from .recorder import Recorder
 
 OVERLAY_JS = (Path(__file__).with_name("overlay.js")).read_text(encoding="utf-8")
 BINDING = "__rrBuildCall"
@@ -137,7 +140,8 @@ class BuildSession:
         self.data_row: int | None = None
         self.status = "starting"                                  # starting | ready | running | closed
         self.error = ""
-        self.mode = "browse"                                      # browse | pick | which
+        self.mode = "browse"                                      # browse | pick | check | save | wait | which
+        self.purpose = "pick"                                     # what the next pick is for: pick | check | save | wait
         self.pick_for: int | None = None                          # the step row a pick is for
         self.pick: dict | None = None
         self.which: dict | None = None
@@ -166,6 +170,8 @@ class BuildSession:
         self._meta: dict = {}                                     # the test's sheet, parameter sheet and data rows (from the model, at start)
         self._steps_cache: tuple[int, list[dict]] | None = None
         self.asker = BuildAsker(self)
+        self.key = uuid.uuid4().hex + uuid.uuid4().hex            # the overlay's proof that a call is its own (P09)
+        self.recorder = Recorder(self)
         self.bus = EventBus(run_id=f"build:{self.name}")
         self.bus.subscribe(self._on_event)
         self.touched = time.monotonic()
@@ -221,6 +227,7 @@ class BuildSession:
         page to pick on; otherwise a blank window opens."""
         from playwright.async_api import async_playwright
         self._cancel = asyncio.Event()                             # (made inside a coroutine: Python 3.9 binds it to the running loop)
+        self.recorder._lock = asyncio.Lock()                       # (the same)
         await asyncio.to_thread(self._select, test_id, data_row)
         self.folder.mkdir(parents=True, exist_ok=True)
         try:
@@ -271,6 +278,7 @@ class BuildSession:
         await asyncio.to_thread(self._select, test_id, data_row)
         if environment and environment != self.environment:
             self.environment = environment
+        await self.recorder.stop()
         await self._drop_runner()
         self.pick = self.which = None
         self.replay = None
@@ -294,6 +302,7 @@ class BuildSession:
                 return
 
     async def close(self) -> None:
+        self.recorder.on = False
         if self._cancel is not None:
             self._cancel.set()
         task, self._task = self._task, None
@@ -339,7 +348,7 @@ class BuildSession:
     async def arm(self, context) -> None:
         """Every context the build browser opens gets the overlay and the way back to the builder."""
         await context.expose_binding(BINDING, self._on_call)
-        await context.add_init_script(script=OVERLAY_JS)
+        await context.add_init_script(script=OVERLAY_JS.replace("__RR_KEY__", self.key))
 
     async def _open_blank(self) -> None:
         context = await self._browser.new_context(viewport=None if not self.headless else {"width": 1280, "height": 800})
@@ -377,7 +386,9 @@ class BuildSession:
         return pages[-1]
 
     def overlay_state(self) -> dict:
-        if self.mode == "pick":
+        if self.mode in ("check", "save", "wait"):
+            label = {"check": "Check: click an element", "save": "Save: click an element", "wait": "Wait until: click an element"}[self.mode]
+        elif self.mode == "pick":
             n = self._n_of(self.pick_for)
             label = f"Picking for step {n}" if n else "Pick an element"
         elif self.mode == "which":
@@ -385,22 +396,38 @@ class BuildSession:
         elif self.replay and self.replay.get("running"):
             cur = (self.replay.get("current") or {}).get("row")
             label = f"running step {self._n_of(cur) or '…'}"
+        elif self.recorder.on:
+            label = self.recorder.label()
         else:
             n, total = self._n_of(self.cursor_row), len(self._steps())
             label = f"step {n} of {total}" if n else f"{self.test_id} · not run yet"
-        return {"mode": self.mode, "label": label}
+        return {"mode": self.mode, "label": label, "rec": self.recorder.on, "prompts": self.recorder.overlay_prompts()}
 
     async def _on_call(self, source: dict, payload: Any):
-        """The overlay calling (``window.__rrBuildCall``): never raises into the page.  The site's scripts can call it too, so nothing it can
-        ask for writes to the workbook: hello, Pick on / off, and a pick (which a person still has to use)."""
+        """The overlay calling (``window.__rrBuildCall``): never raises into the page.  The site's scripts can call it too, so without the
+        session's key (``Recorder.trusted``) nothing it asks for writes to the workbook: hello, a mode, and a pick (which a person still has to
+        use).  With the key (the overlay itself): record on / off, a recorded action, a check from the card, an answer to a prompt."""
         try:
             kind = payload.get("kind") if isinstance(payload, dict) else ""
+            trusted = self.recorder.trusted(payload)
             if kind == "hello":
+                if trusted:
+                    asyncio.ensure_future(self.recorder.handle(source, payload))
                 return self.overlay_state()
             self.touch()
             if kind == "mode":
                 mode = payload.get("mode")
-                await self.set_mode(mode if mode in ("pick", "browse") else "browse", self.pick_for)
+                await self.set_mode(mode if mode in ("pick", "browse", "check", "save", "wait") else "browse", self.pick_for)
+            elif kind == "rec" and trusted and not self.recorder.replaying():       # (a replay's own clicks are not the person's)
+                asyncio.ensure_future(self.recorder.handle(source, payload))
+            elif kind == "record" and trusted:
+                asyncio.ensure_future(self._quietly(self.recorder.start(self.recorder.cursor) if payload.get("on") else self.recorder.stop()))
+            elif kind == "check-add" and trusted:
+                asyncio.ensure_future(self._quietly(self.recorder.add_check(str(payload.get("check") or ""), str(payload.get("expected") or ""),
+                                                                            str(payload.get("token") or ""))))
+            elif kind == "prompt" and trusted:
+                asyncio.ensure_future(self._quietly(self.recorder.answer(str(payload.get("id") or ""), str(payload.get("choice") or ""),
+                                                                         token=str(payload.get("token") or ""))))
             elif kind == "pick":
                 self.which = None
                 frame = source.get("frame") if isinstance(source, dict) else None
@@ -408,6 +435,14 @@ class BuildSession:
         except Exception:
             return None
         return None
+
+    async def _quietly(self, coro) -> None:
+        try:
+            await coro
+        except Exception as err:                                          # (the page must never see an error; the Build tab gets it)
+            self.emit("log", level="warning", message=(str(err).splitlines() or [str(err)])[0])
+            self.touch()
+            await self.broadcast()
 
     async def broadcast(self, extra: dict | None = None, frames: list | None = None) -> None:
         state = {**self.overlay_state(), **(extra or {})}
@@ -424,17 +459,20 @@ class BuildSession:
         await asyncio.gather(*(one(f) for f in targets))
 
     async def set_mode(self, mode: str, pick_for: int | None = None) -> None:
-        if mode not in ("pick", "browse"):
-            raise BuildError("mode is pick or browse.", "mode", 400)
+        if mode not in ("pick", "browse", "check", "save", "wait"):
+            raise BuildError("mode is pick, check, save, wait or browse.", "mode", 400)
         self.mode, self.pick_for = mode, pick_for
-        if mode == "pick":
+        self.purpose = mode if mode != "browse" else "pick"
+        if mode != "browse":
             self.which = None
         self.touch()
-        await self.broadcast({"card": None} if mode == "pick" else {})
+        await self.broadcast({"card": None} if mode != "browse" else {})
 
     # -- picking -----------------------------------------------------------------------------------------------------------------------
-    async def _check(self, frame, candidates: list[L.Candidate], values: dict[str, str] | None = None) -> None:
-        """How many elements each candidate finds on the live page, and where the picked one is among them (the engine's selectors)."""
+    async def _check(self, frame, candidates: list[L.Candidate], values: dict[str, str] | None = None, ref: str = "") -> None:
+        """How many elements each candidate finds on the live page, and where the picked one is among them (the engine's selectors).
+        ``ref``: the element is one the overlay remembered for a recorded action, not the pick."""
+        which = ("els => els.indexOf(window.__rrBuild.ref(" + json.dumps(ref) + "))") if ref else "els => els.indexOf(window.__rrBuild.picked())"
         for cand in candidates:
             selector = cand.selector(values)
             if not selector:
@@ -442,7 +480,7 @@ class BuildSession:
             try:
                 loc = frame.locator(selector)
                 cand.count = await asyncio.wait_for(loc.count(), CHECK_S)
-                cand.position = (await asyncio.wait_for(loc.evaluate_all("els => els.indexOf(window.__rrBuild.picked())"), CHECK_S)
+                cand.position = (await asyncio.wait_for(loc.evaluate_all(which), CHECK_S)
                                  if cand.count else -1)
             except Exception:
                 cand.count, cand.position = 0, -1
@@ -452,13 +490,18 @@ class BuildSession:
         if frame is None or not desc:
             raise BuildError("Nothing was picked.", "pick", 409)
         self._picked_frame = frame
+        purpose = self.purpose if self.mode in ("check", "save", "wait", "which") else "pick"      # ("which one?" keeps what the pick is for)
         cands = L.candidates(desc)
         await self._check(frame, cands)
         choice = L.choose(cands)
         words = L.plain_words(desc)
-        self.pick = {"desc": desc, "words": words, "text": L.describe(words), "locator": choice.to_json(), "ok": choice.ok, "variables": {},
-                     "rows": [], "frame": desc.get("frame") or "", "url": _path_of(getattr(frame, "url", "")), "for": self.pick_for,
-                     "forN": self._n_of(self.pick_for), "current": desc.get("current") or {}}
+        pick = {"desc": desc, "words": words, "text": L.describe(words), "locator": choice.to_json(), "ok": choice.ok, "variables": {},
+                "rows": [], "frame": desc.get("frame") or "", "url": _path_of(getattr(frame, "url", "")), "for": self.pick_for,
+                "forN": self._n_of(self.pick_for), "current": desc.get("current") or {}, "purpose": purpose}
+        if purpose != "pick":
+            pick["similar"] = await self.recorder.similar(frame, desc) if purpose == "check" else None
+            pick["card"] = self.recorder.card(pick)
+        self.pick = pick                                              # (whole: the Build tab may be looking)
         self.mode = "browse"
         self.touch()
         self.emit("log", level="info", message=f"picked {self.pick['text']}: "
@@ -468,6 +511,8 @@ class BuildSession:
 
     def _card(self) -> dict:
         p = self.pick or {}
+        if p.get("card"):
+            return p["card"]
         loc = p.get("locator") or {}
         if not p.get("ok"):
             return {"title": p.get("text", ""), "ok": False, "lines": ["No locator finds only this element. Pick the element around it."]}
@@ -713,6 +758,7 @@ class BuildSession:
                 self.replay.update(running=False, stopped=stopped or self.replay.get("stopped", ""), current=None, ended=time.time())
             self.status = "closed" if self.status == "closed" else "ready"
             self.question = None
+            self.recorder.resync()
             self.emit("build_session_replay_progress", kind=kind, done=len((self.replay or {}).get("results", [])), finished=True,
                       stopped=stopped)
             self.touch()
@@ -821,7 +867,7 @@ class BuildSession:
                 "pickFor": self.pick_for, "pick": _public_pick(self.pick), "which": self.which, "question": self.question,
                 "replay": self.replay, "cursor": {"row": self.cursor_row, "n": self._n_of(self.cursor_row)} if self.cursor_row else None,
                 "next": {"row": self.next_row, "n": self._n_of(self.next_row)} if self.next_row and self._runner is not None else None,
-                "stale": self.stale(), "version": self.version, "modelVersion": self.doc.version,
+                "stale": self.stale(), "version": self.version, "modelVersion": self.doc.version, "record": self.recorder.state(),
                 "log": [e for e in self.log if e["seq"] > since], "seq": self._seq}
 
 
@@ -829,7 +875,7 @@ def _public_pick(pick: dict | None) -> dict | None:
     """The pick as the Build tab sees it (the overlay's raw reading of the element stays here)."""
     if not pick:
         return None
-    return {k: v for k, v in pick.items() if k != "desc"}
+    return {k: v for k, v in pick.items() if k not in ("desc", "similar")}
 
 
 def _path_of(url: str) -> str:

@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Traveler information</title>
+<style>
+  body { font-family: Georgia, serif; margin: 0; padding: 80px 40px 20px; }
+  label { display: block; margin-top: 12px; }
+  .total { font-size: 20px; }
+</style>
+</head>
+<body>
+<!-- The recorder's tests (P09): fields with labels (typed text -> variables), a password (-> a secret), a dropdown, a check box, a button that
+     loads the next page (a new URL -> a page fingerprint), a link that opens a new window, an iframe, a button that looks like a payment (side
+     effects), plain text to check and save. -->
+<h1>Traveler information</h1>
+<form onsubmit="event.preventDefault(); location.href = 'build_record2.html'">
+  <label for="firstName">First name</label><input id="firstName" type="text" autocomplete="off">
+  <label>Last name <input name="lastName" type="text" autocomplete="off"></label>
+  <label for="password">Account password</label><input id="password" type="password" autocomplete="off">
+  <label for="plan">Plan</label><select id="plan"><option>Basic</option><option>Plus</option><option>Max</option></select>
+  <label><input type="checkbox" id="offers"> Send me offers</label>
+</form>
+<p class="total">Total: <span id="total" class="price">$1,234.50</span> · Ref <span id="ref">REF-12345</span> · Starts <span id="starts">15/03/2027</span></p>
+<ul id="items"><li class="item">a</li><li class="item">b</li><li class="item">c</li></ul>
+<p><button type="button" id="continue" onclick="location.href = 'build_record2.html'">Continue</button>
+   <button type="button" data-testid="pay" onclick="document.getElementById('paid').textContent = 'paid ' + (++window.payCount)">Pay now</button>
+   <span id="paid">not paid</span></p>
+<p><a href="build_frame.html" target="_blank" id="new-window">Open in a new window</a></p>
+<iframe name="inner" src="build_frame.html" style="width: 420px; height: 70px"></iframe>
+<script>
+  window.payCount = 0;
+  // A site's own script pretending to be a person: never recorded (not isTrusted).
+  window.fakeClick = () => document.getElementById('continue').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+</script>
+</body>
+</html>
