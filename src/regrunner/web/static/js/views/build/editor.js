@@ -5,6 +5,7 @@ import { buildRail } from './rail.js';
 import {
   bm, currentTest, selectedStep, buildUrl, effectiveBuildingWith,
 } from './actions.js';
+import { sessionBar, sessionMark, pickPanel, sessionOpen } from './session.js';
 
 const KIND_BADGE = { nav: 'Go', act: 'Click', input: 'Type', check: 'Check', save: 'Save', wait: 'Wait', call: 'Call', flow: 'Flow', legacy: 'Legacy', other: 'Step', empty: '' };
 const BLOCK_KIND_LABEL = { page: 'Page', window: 'Window', call: 'Call', loop: 'Repeat' };
@@ -91,6 +92,7 @@ function stepCard(S, t, s) {
 <span class="trunc" style="font-weight: 600; text-align: left; ${s.enabled === false ? 'text-decoration: line-through' : ''}">${tokenHtml(s.nameAuto ? s.autoName : s.name)}</span>
 ${s.context ? html`<span class="tag">${icon('frame', 10)} ${s.context}</span>` : ''}
 <span style="flex: 1"></span>
+${sessionMark(s.row)}
 ${s.sideEffects ? html`<span class="tag tag-warn">${icon('bolt', 10)} side effects</span>` : ''}
 ${s.legacy ? html`<span class="tag">${icon('lock', 10)} legacy</span>` : ''}
 ${(s.problems || []).length ? html`<span class="pdot" style="background: var(--${s.problems.includes('error') ? 'fail' : 'warn'})" title="Problem on this step"></span>` : ''}
@@ -142,7 +144,8 @@ function addStepMenu(S) {
   return html`<div class="menu" style="position: absolute; right: 16px; top: 8px; width: 320px; padding: 6px; z-index: 6" role="menu">
 <div class="field" style="margin-bottom: 6px">${icon('search', 14)}<input class="fld" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Search actions…" value="${ed.menuQuery || ''}" data-input="build-menu-query" autocomplete="off"></div>
 <button class="mitem" disabled style="opacity: .5; cursor: default" title="Available once recording ships (P08)">${icon('rec', 14)}<span style="flex: 1">Record from here in the browser</span></button>
-<button class="mitem" disabled style="opacity: .5; cursor: default" title="Available once recording ships (P08)">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>
+${sessionOpen() ? html`<button class="mitem" data-act="build-sess-pick">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>`
+  : html`<button class="mitem" disabled style="opacity: .5; cursor: default" title="Open the site first (the button under the test's header)">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>`}
 <div class="hr" style="margin: 5px 0"></div>
 ${groups.map((g) => { const methods = g.methods.filter((m) => !q || m.method.toLowerCase().includes(q) || (m.label || '').toLowerCase().includes(q)); return methods.length ? html`<span class="lbl" style="padding: 4px 10px; display: block">${g.group}</span>
 ${methods.map((m) => html`<button class="mitem" data-act="build-insert" data-method="${m.method}">${icon(m.element ? 'target' : 'bolt', 13)}<span style="flex: 1">${m.label || m.method}</span></button>`)}` : ''; })}
@@ -199,6 +202,7 @@ ${s.sideEffects ? html`<span class="tag tag-warn">${icon('bolt', 10)} side effec
 <div class="disp" style="font-size: 16px; font-weight: 700">${tokenHtml(s.nameAuto ? s.autoName : s.name)}</div>
 </div>
 <div class="scroll" style="flex: 1; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 16px">
+${pickPanel(S, t, s)}
 ${s.legacy ? html`<div class="bn">${icon('lock', 14, 'color: var(--tx3)')}<span><b>Legacy row, kept exactly as it is.</b> ${s.legacy} Move it with bulk edit; edit its cells in the Excel grid.</span></div>`
   : html`
 <div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Name</span>
@@ -207,6 +211,8 @@ ${s.legacy ? html`<div class="bn">${icon('lock', 14, 'color: var(--tx3)')}<span>
 ${s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Runs this test, then carries on</span>
 <div class="field" style="min-height: 40px">${icon('api', 15, 'color: var(--k-api)')}<b>${s.call}</b><span style="flex: 1"></span><a href="${buildUrl(S.build.name, 'test', s.call)}">Open</a></div></div>` : ''}
 ${s.locator && (s.locator.value || s.locator.findBy) ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">On which element</span>
+${(s.locator.plainWords || []).length ? html`<div style="display: flex; flex-wrap: wrap; gap: 5px; align-items: center">${s.locator.plainWords.map((w) => (w.role === 'name' || w.role === 'context')
+    ? (w.variable ? html`<span class="var">${icon('braces', 11)} ${w.variable}</span>` : html`<b style="font-size: 12.5px">“${w.text}”</b>`) : html`<span class="tag">${w.text}</span>`)}</div>` : ''}
 <div class="field mono" style="align-items: flex-start; font-size: 11.5px; color: var(--tx2)"><span class="tag">${s.locator.findBy || '–'}</span><span style="word-break: break-all">${s.locator.value || '–'}</span></div>
 ${(s.locator.backups || []).length ? html`<span style="font-size: 12px; color: var(--tx3)">${s.locator.backups.length} backup locator${s.locator.backups.length === 1 ? '' : 's'} stored.</span>` : ''}</div>` : ''}
 ${!s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Value</span>
@@ -244,6 +250,7 @@ export function testEditor(S) {
   return html`<div class="app-body">${buildRail(S)}
 <main class="main" style="display: flex; flex-direction: column; position: relative; min-width: 0">
 ${subHeader(S, t)}
+${sessionBar(S)}
 ${blockStrip(S, t)}
 ${t.blocks.length ? blockHeader(S, t, b, Math.max(0, idx)) : ''}
 ${ed.mode === 'grid' ? gridView(S, t) : cardsView(S, t, b)}

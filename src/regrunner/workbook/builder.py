@@ -30,6 +30,7 @@ from typing import Any, Iterable
 from openpyxl.formula.translate import Translator
 from openpyxl.utils import get_column_letter
 
+from ..build.locators import words_of_locator
 from .writer import (RR_PREFIX, RowMap, SaveResult, WorkbookEditor, WriterError, backups_dir, discard_draft, draft_path, has_draft,
                      is_locked)
 
@@ -704,7 +705,8 @@ def parse_test_sheet(editor: WorkbookEditor, sheet: str, variables: set[str], *,
             "row": r, "n": len(steps) + 1, "method": method, "kind": _step_kind(method, legacy, save_as, match),
             "name": name, "nameAuto": name_auto, "autoName": generated, "block": grid.raw(r, BLOCK_COLUMN) if stored else "",
             "page": grid.raw(r, "PAGE"),
-            "locator": {"findBy": grid.raw(r, "FINDBY"), "value": locator, "index": index, "name": locator_name, "backups": backups, "plainWords": []},
+            "locator": {"findBy": grid.raw(r, "FINDBY"), "value": locator, "index": index, "name": locator_name, "backups": backups,
+                        "plainWords": words_of_locator(grid.raw(r, "FINDBY"), locator)},             # (P08: the words of a locator the builder wrote)
             "target": target, "value": value, "expected": expected, "match": match, "saveAs": save_as, "output": output,
             "outputProperty": output_property, "onFail": "continue" if is_true(grid.get(r, "IGNORE_NOT_EXISTING_OBJECT")) else "stop",
             "timeout": timeout, "enabled": enabled, "condition": condition, "sideEffects": is_true(grid.get(r, SIDE_EFFECTS_COLUMN)),

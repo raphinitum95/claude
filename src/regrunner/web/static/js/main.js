@@ -13,12 +13,13 @@ import { buildHeader, buildView } from './views/build/index.js';
 import { resultsHeader, resultsTabView } from './views/results/index.js';
 import * as A from './actions.js';
 import * as AB from './views/build/actions.js';
+import * as BS from './views/build/session.js';
 import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
-const acts = { ...A.acts, ...AB.acts, ...AR.acts };
+const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...AR.acts };
 const changes = { ...A.changes, ...AB.changes };
-const inputs = { ...A.inputs, ...AB.inputs, ...AR.inputs };
+const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...AR.inputs };
 
 const baseTitle = document.title;
 const appEl = () => document.getElementById('app');
