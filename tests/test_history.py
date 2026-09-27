@@ -11,7 +11,7 @@ import pytest
 from regrunner.cli import main
 from regrunner.engine.runner import RunOptions, execute
 from regrunner.events import EventBus
-from regrunner.history import compare, export_csv, load_runs, markers, step_error_kind, third_party_hosts
+from regrunner.history import compare, export_csv, last_n_statuses, load_runs, markers, step_error_kind, third_party_hosts, trend_verdict
 from tests.workbook_factory import build_steps_workbook
 
 
@@ -85,6 +85,21 @@ def test_runner_browser_and_setting_changes_are_markers_too(tmp_path):
     assert kinds == {("runner", "b"), ("browser", "b"), ("settings", "b")}
     settings = next(m for m in markers(load_runs(runs)) if m.kind == "settings")
     assert "runner.workers=3" in settings.before and "runner.workers=5" in settings.after
+
+
+def test_last_n_statuses_and_verdict_track_a_tests_own_trend_across_runs(runs):
+    seq = last_n_statuses(load_runs(runs), "Purchase#1", 10)
+    assert [(s["run_id"], s["status"]) for s in seq] == [("r1", "PASSED"), ("r2", "PASSED"), ("r3", "FAILED")]
+    assert trend_verdict(seq) == "new"                                  # its first failure in the window, right now
+    assert trend_verdict(seq[:2]) == "stable"
+    assert trend_verdict([]) == "no_history"
+
+
+def test_verdict_tells_a_streak_of_failures_from_scattered_ones(runs):
+    failing = [{"status": "FAILED"}, {"status": "FAILED"}, {"status": "FAILED"}]
+    flaky = [{"status": "FAILED"}, {"status": "PASSED"}, {"status": "FAILED"}]
+    fixed = [{"status": "FAILED"}, {"status": "FAILED"}, {"status": "PASSED"}]
+    assert trend_verdict(failing) == "failing" and trend_verdict(flaky) == "flaky" and trend_verdict(fixed) == "fixed"
 
 
 def test_the_csv_export_has_times_kinds_and_versions_but_never_what_a_step_typed_or_read(runs, tmp_path):
