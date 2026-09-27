@@ -39,3 +39,14 @@ The productivity features around editing.
   value builder's own preview shows. Tests: `test_formula.py` (+2), `test_templates.py`, `test_refactor.py`, `test_templates_api.py`,
   `test_refactor_api.py` (all fast/no-browser), `test_web_build_p11.py` (browser: save-as-template + insert with mapping, duplicate, find &
   replace, value builder, merge-from-disk). `pytest -m "not browser"` 552 passed (was 531 before this phase); `builder.py` untouched.
+- 2026-09-27 · Review: the branch had forked before P10 merged, so qa-regression (P10's API/XML building) was merged into it, resolving
+  conflicts in `AGENTS.md` and `CONTRACT.md` (P10's API editor section plus P11's templates/duplicate/find-replace/merge sections, in that
+  order; test counts refreshed to the real post-merge numbers: 584 passed / 915 collected). Found and fixed a real bug in `merge_ops`: it
+  copied the disk version's *displayed* name (`step["name"] or step["autoName"]`) straight into every merged step's `update_step.set.name`,
+  and `update_step` treats any non-empty `name` it receives as a manual rename (turns `nameAuto` off) - so picking "theirs" on a step whose
+  name was still auto-generated silently pinned that generated text as a literal name from then on, even when naming had nothing to do with
+  what was merged. Fix: `_summary()` (`builder.py`) now also reports `nameAuto`; `merge_ops` sends `name: ""` (which `update_step` reads as
+  "keep auto-naming") when the disk version's name was still auto, and the literal name otherwise. `builder.py` is therefore touched by this
+  phase after all, by one field on one function. New test: `test_merge_ops_restores_auto_naming_instead_of_pinning_the_generated_name`.
+  Everything else in the diff matched CONTRACT.md and AGENTS.md's hard rules (Python 3.9-safe, no secrets touched, no OS-level input, tests
+  named as sentences). Merged into qa-regression.

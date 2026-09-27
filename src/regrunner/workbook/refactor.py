@@ -127,13 +127,18 @@ def duplicate_candidates(model: dict, new_name: str) -> list[dict]:
 # ---------------------------------------------------------------------------------------------
 # Merge a per-step "theirs vs mine" pick into ops (file changed on disk, Q29)
 # ---------------------------------------------------------------------------------------------
-_MERGE_FIELDS = ("method", "name", "locator", "value", "expected", "enabled", "block")
+_MERGE_FIELDS = ("method", "locator", "value", "expected", "enabled", "block")
 
 
 def merge_ops(hits: list[dict], picks: dict[str, str]) -> list[dict]:
     """``hits``: the ``changes`` list of ``BuildDocument.diff("disk")`` (``before`` = the version on disk, ``after`` = the
     open draft). ``picks``: ``{"<test>:<row>": "theirs" | "mine"}``. Only ``kind == "changed"`` hits can be merged this
-    way (an add/remove is a bigger structural difference than one cell: reload or save-anyway covers those)."""
+    way (an add/remove is a bigger structural difference than one cell: reload or save-anyway covers those).
+
+    ``name`` is handled separately from the other fields: ``update_step`` treats any ``name`` it is sent as a manual rename
+    (it turns ``nameAuto`` off), so blindly copying the disk version's *displayed* name would silently pin an auto-named
+    step the moment any of its other fields got merged. Sending ``name: ""`` is how ``update_step`` is told to keep (or
+    restore) auto-naming, so that is what a disk version with ``nameAuto`` still true gets."""
     ops: list[dict] = []
     for h in hits:
         if h.get("kind") != "changed" or h.get("before") is None:
@@ -142,7 +147,9 @@ def merge_ops(hits: list[dict], picks: dict[str, str]) -> list[dict]:
         if picks.get(key) != "theirs":
             continue
         before = h["before"]
-        ops.append({"op": "update_step", "test": h["test"], "row": h["row"], "set": {f: before[f] for f in _MERGE_FIELDS}})
+        fields = {f: before[f] for f in _MERGE_FIELDS}
+        fields["name"] = "" if before.get("nameAuto") else before["name"]
+        ops.append({"op": "update_step", "test": h["test"], "row": h["row"], "set": fields})
     return ops
 
 

@@ -54,14 +54,17 @@ class Handler(SimpleHTTPRequestHandler):
             return False
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""
-        API_SEEN.update(headers={k.lower(): v for k, v in self.headers.items()}, path=self.path, count=API_SEEN["count"] + 1,
-                        body=json.loads(raw) if raw else None)
+        try:
+            body = json.loads(raw) if raw else None
+        except ValueError:
+            body = raw.decode("utf-8", "replace")                          # an XML (SOAP) request: kept as text
+        API_SEEN.update(headers={k.lower(): v for k, v in self.headers.items()}, path=self.path, count=API_SEEN["count"] + 1, body=body)
         if self.path.split("?")[0] == "/policy/v4/":                       # the gateway's answer to a URL that is not one of its routes: JSON, from the API itself
             self._json(403, {"message": "Invalid key=value pair (missing equal-sign) in Authorization header (hashed with SHA-256 and encoded with Base64): 'abc='."},
                        {"Via": "1.1 abc.cloudfront.net (CloudFront)", "X-Amz-Cf-Id": "xyz", "x-amzn-ErrorType": "IncompleteSignatureException"})
         elif self.path.startswith("/cloudfront"):
             self._json(403, {"message": "Request blocked."}, {"Server": "CloudFront", "X-Cache": "Error from cloudfront", "X-Amz-Cf-Id": "abc"})
-        elif method == "POST" and self.path == "/policy/purchase/v2":       # the purchase API: the key only; answers with the last name it was sent
+        elif method == "POST" and self.path.split("?")[0] == "/policy/purchase/v2":     # the purchase API: the key only; answers with the last name it was sent
             if self.headers.get("apiKey") != "KEY-123":
                 self._json(401, {"message": "Unauthorized"})
             else:
@@ -69,6 +72,22 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"transactionStatus": "Success", "siteUrl": f"http://{self.headers.get('Host')}/", "purchaseResponse": {"policyResponses": [
                     {"policyDetail": {"policyNumber": "P-777", "policyHolder": {"firstName": "Claim", "lastName": body.get("lastName")}}},
                     {"policyDetail": {"policyNumber": "P-778", "policyHolder": {"firstName": "Duplicate", "lastName": "Second"}}}]}})
+        elif method == "POST" and self.path == "/policy/xml/v1":            # a SOAP policy service: the key only; XML in, XML (with namespaces) out
+            if self.headers.get("apiKey") != "KEY-123":
+                self._json(401, {"message": "Unauthorized"})
+            else:
+                import re as _re
+                last = _re.search(r"<LastName>(.*?)</LastName>", API_SEEN["body"] or "", _re.S)
+                xml = ('<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><ns:PolicyResponse xmlns:ns="urn:policy">'
+                       '<ns:Status code="0">Success</ns:Status><ns:Policies>'
+                       f'<ns:Policy id="P-901"><ns:Plan>Basic</ns:Plan><ns:LastName>{last.group(1) if last else ""}</ns:LastName></ns:Policy>'
+                       '<ns:Policy id="P-902"><ns:Plan>Max</ns:Plan><ns:LastName>Other</ns:LastName></ns:Policy>'
+                       '</ns:Policies></ns:PolicyResponse></soap:Body></soap:Envelope>').encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/xml; charset=utf-8")
+                self.send_header("Content-Length", str(len(xml)))
+                self.end_headers()
+                self.wfile.write(xml)
         elif self.headers.get("apiKey") != "KEY-123" or not str(self.headers.get("Authorization", "")).startswith("Bearer TOKEN-"):
             self._json(401, {"message": "Unauthorized"})
         elif method == "GET" and self.path == "/policy/v4/P-100":

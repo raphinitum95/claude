@@ -85,13 +85,27 @@ def test_duplicate_candidates_seeds_name_domain_and_repeated_text(wb):
 def test_mergeable_hits_and_merge_ops_only_act_on_changed_rows():
     hits = [
         {"test": "Book", "row": 3, "kind": "changed",
-         "before": {"method": "SET", "name": "Type destination", "locator": "//input", "value": "Italy", "expected": "", "enabled": True, "block": "Trip"},
-         "after": {"method": "SET", "name": "Type destination", "locator": "//input", "value": "Japan", "expected": "", "enabled": True, "block": "Trip"}},
+         "before": {"method": "SET", "name": "Type destination", "nameAuto": False, "locator": "//input", "value": "Italy",
+                    "expected": "", "enabled": True, "block": "Trip"},
+         "after": {"method": "SET", "name": "Type destination", "nameAuto": False, "locator": "//input", "value": "Japan",
+                   "expected": "", "enabled": True, "block": "Trip"}},
         {"test": "Book", "row": 5, "kind": "added", "before": None, "after": {"method": "CLICK"}},
     ]
     assert [h["row"] for h in mergeable_hits(hits)] == [3]
     ops = merge_ops(hits, {"Book:3": "theirs"})
     assert ops == [{"op": "update_step", "test": "Book", "row": 3,
-                    "set": {"method": "SET", "name": "Type destination", "locator": "//input", "value": "Italy",
-                           "expected": "", "enabled": True, "block": "Trip"}}]
+                    "set": {"method": "SET", "locator": "//input", "value": "Italy",
+                           "expected": "", "enabled": True, "block": "Trip", "name": "Type destination"}}]
     assert merge_ops(hits, {"Book:3": "mine"}) == []
+
+
+def test_merge_ops_restores_auto_naming_instead_of_pinning_the_generated_name():
+    """A step whose name is still auto-generated (nameAuto True) must not come out of a merge with that generated text
+    frozen as a literal name - update_step treats any non-empty ``name`` as a manual rename."""
+    hits = [{"test": "Book", "row": 3, "kind": "changed",
+            "before": {"method": "SET", "name": "Type destination", "nameAuto": True, "locator": "//input", "value": "Italy",
+                       "expected": "", "enabled": True, "block": "Trip"},
+            "after": {"method": "SET", "name": "Type destination", "nameAuto": True, "locator": "//input", "value": "Japan",
+                      "expected": "", "enabled": True, "block": "Trip"}}]
+    ops = merge_ops(hits, {"Book:3": "theirs"})
+    assert ops[0]["set"]["name"] == ""
