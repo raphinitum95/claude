@@ -46,6 +46,7 @@ from ..signin import SignInError, SignInSession
 from ..workbook.model import Workbook
 from .build_api import register_build_routes
 from .presence import UiPresence
+from .results_api import register_results_routes
 from .run_batch import register_batch_routes
 
 STATIC = Path(__file__).parent / "static"
@@ -718,6 +719,7 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
     mgr = RunManager(cfg, config_path)
     register_build_routes(app, mgr)                       # /api/build/*: the Workbook Builder (web/build_api.py)
     register_batch_routes(app, mgr)                        # /api/batches/*: batch grouping and last-run estimates (web/run_batch.py)
+    register_results_routes(app, mgr)                       # /api/results/*: causes, trend, block map, compare (web/results_api.py)
     wb_cache: dict[tuple, Any] = {}
 
     # -- request guard -------------------------------------------------------------------------------

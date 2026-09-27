@@ -11,7 +11,19 @@ export const S = {
   view: null,                // the run being viewed (see actions.openRun)
   modal: null,               // { kind, ... }
   build: freshBuild(),       // the Workbook Builder (views/build/*)
+  results: freshResults(),   // the Results tab (views/results/*)
 };
+
+/** The Results tab's state: which screen (history/batch/test/compare) and what each has loaded. */
+export function freshResults() {
+  return {
+    screen: 'history',
+    history: { batches: null, loading: false, error: null, q: '', workbook: '', environment: '', status: '' },
+    batch: { id: null, data: null, loading: false, error: null },
+    test: { runId: null, testId: null, run: null, page: null, loading: false, error: null, showAllFails: false },
+    compare: { workbooks: [], n: 8, data: null, loading: false, error: null },
+  };
+}
 
 /** The Build tab's state: which workbook and screen, the model from the server, and the test editor's own UI state. */
 export function freshBuild() {

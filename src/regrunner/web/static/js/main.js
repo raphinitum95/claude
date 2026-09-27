@@ -10,13 +10,15 @@ import { liveView, batchView } from './views/live.js';
 import { resultsView } from './views/results.js';
 import { modalView } from './views/modals.js';
 import { buildHeader, buildView } from './views/build/index.js';
+import { resultsHeader, resultsTabView } from './views/results/index.js';
 import * as A from './actions.js';
 import * as AB from './views/build/actions.js';
+import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
-const acts = { ...A.acts, ...AB.acts };
+const acts = { ...A.acts, ...AB.acts, ...AR.acts };
 const changes = { ...A.changes, ...AB.changes };
-const inputs = { ...A.inputs, ...AB.inputs };
+const inputs = { ...A.inputs, ...AB.inputs, ...AR.inputs };
 
 const baseTitle = document.title;
 const appEl = () => document.getElementById('app');
@@ -55,6 +57,8 @@ ${S.online ? html`<div class="skel" style="height: 30px; width: 260px; margin-to
   if (S.route.name === 'new') A.ensureOrder();                                              // the run order follows what is selected, whatever changed it
   if (S.route.name === 'build') {
     morph(appEl(), html`${buildHeader(S)}${buildView(S)}`);
+  } else if (S.route.name === 'results') {
+    morph(appEl(), html`${resultsHeader()}${resultsTabView(S)}`);
   } else {
     const content = S.route.name === 'new' ? newRunView(S) : runScreen();
     morph(appEl(), html`${header(S)}<div class="app-body">${sidebar(S)}<main class="main"><div class="gridbg"></div>${content}</main></div>`);
@@ -90,6 +94,9 @@ function route() {
   const buildTest = location.hash.match(/^#\/build\/([^/]+)\/test\/([^/]+)$/);
   const buildVars = location.hash.match(/^#\/build\/([^/]+)\/variables$/);
   const buildWb = location.hash.match(/^#\/build\/([^/]+)$/);
+  const resultsBatch = location.hash.match(/^#\/results\/batch\/([A-Za-z0-9._-]+)$/);
+  const resultsTest = location.hash.match(/^#\/results\/test\/([A-Za-z0-9._-]+)\/([^/]+)$/);
+  const resultsCompare = location.hash === '#/results/compare';
   if (mRun) {
     S.route = { name: 'run', id: mRun[1] };
     A.openRun(mRun[1]);
@@ -103,6 +110,13 @@ function route() {
     else if (buildVars) AB.openBuild(decodeURIComponent(buildVars[1]), 'variables');
     else if (buildWb) AB.openBuild(decodeURIComponent(buildWb[1]), 'map');
     else { const name = AB.defaultBuildName(); if (name) AB.openBuild(name, 'map'); }
+  } else if (resultsBatch || resultsTest || resultsCompare || location.hash === '#/results') {
+    S.route = { name: 'results', id: null };
+    A.closeRun();
+    if (resultsBatch) AR.openResults('batch', decodeURIComponent(resultsBatch[1]));
+    else if (resultsTest) AR.openResults('test', decodeURIComponent(resultsTest[1]), decodeURIComponent(resultsTest[2]));
+    else if (resultsCompare) AR.openResults('compare');
+    else AR.openResults('history');
   } else {
     S.route = { name: 'new', id: null };
     A.closeRun();

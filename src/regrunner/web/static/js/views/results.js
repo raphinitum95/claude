@@ -41,7 +41,7 @@ export function paramsOf(meta, results) {
   };
 }
 
-function failedStepCard(S, runId, s) {
+export function failedStepCard(S, runId, s) {
   const cmp = s.comparison && (s.expected !== '' || s.actual !== '');
   const d = diffParts(s.expected, s.actual);
   const origin = s.fallback_used ? html`<span class="tag tag-warn">legacy XPath fallback</span>`

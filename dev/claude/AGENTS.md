@@ -107,7 +107,8 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Run plan: Order view (chains, arrows) or Timeline view (workers, estimated durations) | `web/static/js/views/newrun.js` (`orderGroup`/`runOrderView`, `planTimeline`/`timelineView`), `web/run_batch.py` (`last-durations`) | `test_web_run_order.py` |
 | Run-in-progress screen, banners, live state (yellow "waiting on purpose" banner, lane waitline) | `web/static/js/views/live.js`, `runstate.js` | `test_web_waiting_banner.py`, `test_web_paused_banner.py`, `test_web_variables.py`, `test_web_ask_user.py`, `test_web_ui.py -k "run_from_click"` |
 | Batches (a UI label over several runs: batch id/label, live batch view, `/api/batches`) | `src/regrunner/runmeta.py` (`new_batch_id`), `web/app.py` (`StartRun.batch_id/batch_label`, `RunManager._start`), `web/run_batch.py` (new), `web/static/js/views/live.js` (`batchView`), `runstate.js` (batch helpers), `actions.js` (`openBatch`), `main.js` (`#/batch/:id`) | `test_web_batches.py`, `test_web_multi_ui.py`, `test_web_multi_run.py` |
-| Results screen | `web/static/js/views/results.js` | `test_web_ui.py -k "failed_run or failed_step"` |
+| Results screen for one finished run (opened from Run, `#/run/:id`) | `web/static/js/views/results.js` (`failedStepCard`/`why` exported for the Results tab's test page to reuse) | `test_web_ui.py -k "failed_run or failed_step"` |
+| Results tab (history list, batch page: causes/trend/what-changed/re-run-failed, test page: block map/backups/history, compare) | `web/static/js/views/results/*.js` (new), `src/regrunner/web/results_api.py` (new), `history.py` (`last_n_statuses`, `trend_verdict`), `main.js` (`#/results...` routes), `state.js` (`freshResults`) | `test_web_results.py`, `test_history.py` |
 | Dialogs (delete workbook, lint/plan/audit, PROD confirm, sign-in) | `web/static/js/views/modals.js`, `actions.js` | `test_web_delete_workbook.py`, `test_web_ui.py -k "prod or lint or signing"` |
 | Styles / theme | `web/static/app.css`, `theme.js` | `test_web_ui.py -k theme` |
 | Measuring a run: time split per step/test, queue time, resource sampler, third-party hosts, site version | `engine/timing.py`, `engine/resources.py`, `engine/session.py` (`_watch_hosts`, `collect_lag`, spans), `engine/test_runner.py`, `engine/schedule.py` (`queued_s`), `config.py` (`MeasureCfg`) | `test_measure.py`; scaling benchmark (opt-in, slow, never in the default subset): `RR_BENCHMARK=1 .venv/bin/pytest -s tests/test_benchmark_scaling.py` |
@@ -156,7 +157,8 @@ src/regrunner/
   publish.py    243   shared copy (report.html + summary.txt) to publish.dir
   signin.py      87   one-time SSO sign-in → storage state
   runmeta.py     25   run.json;  priority.py 24 (nice)
-  history.py    378   `regrunner history`: all run folders as one record, what-changed markers, compare, CSV (never values typed/read)
+  history.py    378+  `regrunner history`: all run folders as one record, what-changed markers, compare, CSV (never values typed/read);
+                  `last_n_statuses`/`trend_verdict` (P06): one test's recent pass/fail trend, for the Results tab
   capture/review.py 88  console errors / failed requests collected for review
   engine/
     runner.py      823  orchestration: RunOptions, plan_run/open_run/announce_run, Engine (workers, retries, run_case), execute(_many)
@@ -184,9 +186,15 @@ src/regrunner/
     build_api.py  /api/build/* routes (register_build_routes: one line in create_app); later builder phases add their own modules
     run_batch.py  /api/batches/* routes (register_batch_routes: one line in create_app): groups runs that share a run.json batch_id, and
                   last-run-per-test durations for the Run plan's Timeline view. A batch is only a label - it never changes how a run executes.
+    results_api.py  /api/results/* routes (register_results_routes: one line in create_app): batch page (causes, trend, what changed,
+                  re-run-failed makes a new labelled batch), test page (block map read fresh from the workbook + backup locators + this
+                  test's history), compare. The heavy lifting (build_batch_page, rerun_plan, build_test_page, build_compare) takes plain
+                  paths/data, so it is unit-tested without a server (test_web_results.py).
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
     static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher)}.js
+    static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen),batch,test,compare,index (header+screen dispatcher)}.js;
+                  results.js stays the single finished-run page opened from Run (`#/run/:id`); `#/results...` is the separate browsable tab
 
 tests/
   conftest.py          `site` (session mock server URL), `make_cfg(**{"section.key": v})` (fast timeouts), resets totp state
@@ -292,6 +300,25 @@ join one ("Add tests to this batch"). Live batch view (`#/batch/<id>`) opens one
 `runstate.js` states client-side; nothing about how a run executes changed. Not built (out of scope for this phase, left for P06/reviewer
 judgement): a manual batch-label input, real drag-and-drop reordering in the Order view (kept the existing arrow buttons instead), and
 sidebar grouping of a batch's runs (shell.js is P04's; a run instead shows a "part of batch" chip that links to the batch view).
+P06 (Results tab) PR open: a new top-level tab (`#/results...`, own header + rail, wired the `tabs()` "Results" button that
+`views/build/actions.js` left unimplemented in P04) separate from Run's own `#/run/:id` finished-run page (`results.js`, untouched apart from exporting
+`failedStepCard`/`why` for reuse). History (`#/results`) lists every batch (`/api/batches`) and solo run (`/api/runs`) with a text/environment/
+failed-only filter, client-side (no new endpoint). Batch page (`#/results/batch/<id>`, `GET /api/results/batches/<id>`) adds: failures grouped
+by cause (`web/results_api.py`'s `cause_of`: CONTRACT's kinds via `history.test_error_kind`/`step_error_kind`, plus two of its own - a page-gate
+hard stop, and a step that read a variable nothing had set), "what changed since last time" (`history.markers` filtered to this batch's own
+runs), every test with a last-10 trend strip and a new/flaky/fixed/failing/stable verdict (`history.last_n_statuses`/`trend_verdict`, new
+helpers). "Re-run failed" (`POST .../rerun-failed`) starts one workbook-picks-only-what-failed run per workbook that had a failure, always
+under a **fresh** `batch_id` (even for one workbook, which `RunManager._start` would otherwise leave unbatched) labelled `re-run of batch
+<id>`; refuses on a still-running batch, nothing failed, or PROD (send that one to New run for its confirmation instead). Test page
+(`#/results/test/<runId>/<testId>`, `GET /api/results/runs/<runId>/tests/<testId>`) reads the block map **fresh from the workbook** with
+`workbook/builder.py`'s own `build_model` (not a stored copy: read-only, matches this run's step rows to blocks, colours them pass/fail/warn/
+pend) plus any `BACKUP_LOCATORS` a step defines (no suggestions yet - P07 has not built the engine side that probes them on a miss) and this
+test's own trend. Compare (`#/results/compare`, `GET /api/results/compare`) is a tests x last-N-runs grid per workbook with the same verdicts
+and "what changed" markers. The batch/test/compare builders (`build_batch_page`, `rerun_plan`, `build_test_page`, `build_compare`) take plain
+paths/data (no `RunManager`), so they are unit-tested directly (`test_web_results.py`, no server). Not built (left for a reviewer/later phase):
+a CSV export button on Compare (`history.export_csv` exists but isn't wired to a download route), a real "probe the backups" card (needs P07),
+grouping "skipped because a dependency failed" as its own cause distinct from "needs a value that was never set" (today's engine does not
+mark a dependency-skip differently from any other unset-variable failure).
 
 P07 (engine II) PR open: ASSERT_PAGE reads `_rr_fingerprints` (`{DOMAIN}` filled in; URL part AND landmark + text, within the step time, patient while the page loads); a failure sets `StepOut.stop` + `hard`, so Ignore_not_existing_object never swallows it and the test stops (`TestRunner._hard_stop`). SIDE_EFFECTS=Y: blocked on any production environment (the table's `#PRODUCTION` row, or a name PROD/PRODUCTION) and the test stops; `TestRunner(side_effects="ask")` (for P08's build replays; runs never set it) asks through `engine/ask.py` first. A step that compares for itself (CHECK_*, WAIT_UNTIL TEXT) sets `StepOut.check`: Exact_Match/Contains are then not applied, a mismatch is "Comparison Failed" with the reason in the notes. BACKUP_LOCATORS are only probed after a non-optional element miss: result in `detail`, `diagnosis.backup` + first summary line, a clipped screenshot `screenshots/<seq>_r<row>_backup.jpg`, and a `backup_locator_suggestion` event. New events (`page_gate`, `popup_dismissed`, `side_effect_*`, `backup_locator_suggestion`) are documented in `events.py`; like P03's, `runstate.js`/`from_events.py` do not reduce them yet (the step's notes carry the same facts). PICK_DATE / CHOOSE_SUGGESTION are heuristics (data-date / aria-label day cells, "Next month" buttons, role=option lists): unverified on the real sites' widgets.
 

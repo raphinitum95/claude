@@ -360,6 +360,40 @@ PART_LABELS = {"site": "the site", "wait": "deliberate waits", "runner": "the ru
                "other": "browser / actions"}
 
 
+# -- one test, across runs (Results tab: batch/test page trend strips, P06) ------------------------------------------
+def last_n_statuses(runs: list[Run], test_id: str, n: int = 10) -> list[dict[str, Any]]:
+    """This test's last ``n`` results across ``runs`` (already one workbook's runs, oldest first): ``{run_id, started_at,
+    status, error_kind}`` per run it appeared in.  A test that never ran under this id gives ``[]``."""
+    out = []
+    for run in runs:
+        for test in run.data.get("tests", []):
+            if test.get("id") == test_id:
+                out.append({"run_id": run.run_id, "started_at": test.get("started_at") or run.started,
+                           "status": test.get("status", ""), "error_kind": test_error_kind(test)})
+    return out[-n:]
+
+
+def trend_verdict(history_seq: list[dict[str, Any]]) -> str:
+    """One word for a test's recent trend (oldest-first ``last_n_statuses``): ``no_history`` | ``stable`` | ``fixed`` |
+    ``new`` (its first failure in the window) | ``failing`` (failing right now, and the run(s) before it too) |
+    ``flaky`` (several failures in the window, not all at the end)."""
+    if not history_seq:
+        return "no_history"
+    bad = {"FAILED", "ERROR"}
+    statuses = [h["status"] for h in history_seq]
+    fails = sum(1 for s in statuses if s in bad)
+    if statuses[-1] not in bad:
+        return "fixed" if fails else "stable"
+    if fails == 1:
+        return "new"
+    trailing = 0
+    for s in reversed(statuses):
+        if s not in bad:
+            break
+        trailing += 1
+    return "failing" if trailing == fails else "flaky"
+
+
 def third_party_hosts(runs: list[Run]) -> list[dict[str, Any]]:
     """Every third-party host the pages loaded, over all runs: requests, bytes, how many tests and runs loaded it (most requested first)."""
     hosts: dict[str, dict[str, Any]] = {}
