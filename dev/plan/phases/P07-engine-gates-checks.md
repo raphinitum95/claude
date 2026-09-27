@@ -27,3 +27,4 @@ The rest of the new keywords and safety rules.
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
 - 2026-09-27 · checks/gates/backups logic + all P07 handlers + test_runner hooks (hard stop, side_effects mode, backup in diagnosis) + tests (test_checks.py, test_engine_gates.py) · next: run the listed suites, AGENTS.md, PR
+- 2026-09-27 · done: listed suites + no-browser subset green, AGENTS.md updated, PR raphinitum95/claude#7 opened · next: review session
