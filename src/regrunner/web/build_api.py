@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from ..build.session import BuildSession, SessionStore
+from .build_apitest import register_api_test_routes
 from .record_api import register_record_routes
 from ..workbook.builder import BuildDocument, BuildError, BuildStore, keyword_catalogue, new_workbook
 from ..workbook.writer import WriterError
@@ -179,6 +180,7 @@ def register_build_routes(app: FastAPI, mgr: Any) -> BuildStore:
         return await run(grid)
 
     register_session_routes(app, mgr, doc, run)
+    register_api_test_routes(app, mgr, doc, run, BuildApiError)             # /api/build/api/*: the API / XML test editor (web/build_apitest.py, P10)
     return store
 
 

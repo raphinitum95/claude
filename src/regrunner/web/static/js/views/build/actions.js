@@ -379,14 +379,15 @@ async function createWorkbook() {
   } catch (e) { m.busy = false; m.error = e.message; rerender(); }
 }
 
-function openNewTest() { S.modal = { kind: 'build-new-test', name: '', busy: false, error: '' }; rerender(); }
+function openNewTest() { S.modal = { kind: 'build-new-test', name: '', testKind: 'web', busy: false, error: '' }; rerender(); }
 async function createTest() {
   const m = S.modal;
   const name = m.name.trim();
   if (!name) { m.error = 'Give the test a name.'; rerender(); return; }
   m.busy = true; m.error = ''; rerender();
   const before = bm().tests.map((t) => t.id);
-  const applied = await applyOps([{ op: 'add_test', name, kind: 'web' }]);
+  const k = m.testKind || 'web';
+  const applied = await applyOps([k === 'web' ? { op: 'add_test', name, kind: 'web' } : { op: 'api_add_test', name, format: k === 'xml' ? 'xml' : 'json' }]);
   if (!applied) { m.busy = false; rerender(); return; }
   S.modal = null;
   const added = bm().tests.map((t) => t.id).find((id) => !before.includes(id));
@@ -454,6 +455,7 @@ export const acts = {
   'build-toggle-problems': toggleProblems,
   'build-new-workbook': openNewWorkbook,
   'build-new-test': openNewTest,
+  'build-nt-kind'(el) { if (S.modal) { S.modal.testKind = el.dataset.val; rerender(); } },
   'build-nw-create': createWorkbook,
   'build-nw-add-env'(el) { const m = S.modal; m.envs.push({ name: '', domain: '', production: false }); rerender(); },
   'build-nw-remove-env'(el) { const m = S.modal; m.envs.splice(Number(el.dataset.i), 1); rerender(); },

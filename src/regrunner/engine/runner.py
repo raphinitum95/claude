@@ -534,7 +534,8 @@ class Engine:
                         return res
                 if case.kind == "api":
                     runner = ApiTestRunner(workbook=ctx.workbook, case=case, pw=self.pw, cfg=cfg, bus=bus, run_dir=ctx.run_dir, cancel=ctx.cancel,
-                                           planned=len(ctx.plans[case.id]), shared=ctx.shared, worker=n, attempt=attempt, throttle=throttle, asker=ctx.asker)
+                                           planned=len(ctx.plans[case.id]), shared=ctx.shared, worker=n, attempt=attempt, throttle=throttle, asker=ctx.asker,
+                                           pool=ctx.pool)
                 else:
                     runner = TestRunner(workbook=ctx.workbook, case=case, browser_getter=self.get_window if at_window else get_browser, cfg=cfg, bus=bus,
                                         run_dir=ctx.run_dir, selector_map=ctx.selector_map, cancel=ctx.cancel,

@@ -52,6 +52,7 @@ class Flow:
                     info["cells"] = referenced_cells(raw.formula, runtime.book)
         elif runtime is not None:                                        # an API row reads cells of other sheets (=AgentPortal_Params!R3)
             flow.writes = runtime.output_cells()
+            flow.needs, flow.provides = set(runtime.pool_reads()), set(runtime.pool_sets())     # {NAME}s (Workbook Builder rows, P10)
             for item in runtime.cell_reads():
                 flow.reads[f"{item['param'].upper()}@{item['key'][0]}!{item['key'][1]}"] = {
                     "param": item["param"], "rows": [], "blank": item["blank"], "source": item["source"], "key": item["key"]}

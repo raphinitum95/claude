@@ -118,6 +118,24 @@ Sheet names starting `_rr_` are never tests, Params or anything the legacy runne
 - The first block op on a test (rename, split, merge, move to block) **materialises** blocks: the `BLOCK` column is written for every step, so
   from then on the column is the truth. Section rows stay where they are.
 
+### 1.6 API / XML tests (P10)
+
+An API test stays one data row of an API sheet (`blnExecute` + `WEBSERVICE_URL` or `ENVIRONMENT_PARAMETER`) plus the shared `InputOutput`
+sheet (`Function | Parameter | Value`), as `workbook/api.py` reads it. The builder (`build/api_builder.py`) writes only that, plus:
+- `REQUEST_BODY` column (data row): the body typed in the form. Non-empty = it is the body (a template file named in the row is then unused).
+- `{NAME}` / `{SECRET:NAME}` in `WEBSERVICE_URL`, header cells, `REQUEST_BODY`, expected-value cells and output paths. Lookup: a non-empty
+  column of the row -> the run's pool -> the environment table (1.4). Values are URL-encoded in the URL, JSON/XML-escaped in the body.
+  An unknown name in the URL/body = the request is not sent and says which. A secret header's cell holds `{SECRET:NAME}`, never the value.
+- `InputOutput` functions the new runner adds (the legacy runner skipped unknown functions): `greater_than`, `less_than`, `between`
+  (expected `low;high`), `matches` (regex search). Output paths may be a JSONPath (`$.a.b[0]`, `$['k']`, `[*]`,
+  `[?(@.field.sub=='value')]`, first match; for `output_json`) or an XPath (`/a/b[2]/@id`, `//x[Code='Max']/text()`, namespace prefixes
+  ignored; for `Output`). Legacy dotted / element paths are read exactly as before (`workbook/api_paths.py`).
+- Rows are shared by every API sheet (a row applies to a sheet that has its columns) and keyed by path / header / placeholder, so the builder
+  reuses the column of an existing row for the same path / header / placeholder rather than adding a second one.
+- A column an `output_json` / `Output` row fills, that the sheet has, also goes into the run's pool (`{COLUMN}` in later tests: the API
+  test Provides it); `{NAME}`s only the pool can give are its Needs. Column names the builder makes: `H_<header>`, `<name>_OUT` / `<name>_EXP`,
+  a save's own variable name, `RES_STATUS_CD_EXP` / `ELAPSEDTIME_EXP` for the status / time checks.
+
 ---
 
 ## 2. Builder model (JSON the server sends the Build UI)
@@ -150,7 +168,7 @@ number within the test (section rows and empty rows are not steps). Rows are the
   columns: ["blnExecute", ...],                                   // row-1 headers as written, for the grid view
   lastRun: { runId, status, when } | null }
 ```
-API/XML tests have `steps: []` and `blocks: []` in P02 (their editor is P10); `dataRows` lists their data rows.
+API/XML tests have `steps: []` and `blocks: []` (their editor reads `GET /api/build/api/{name}/tests/{test}` instead, 1.6 / 3); `dataRows` lists their data rows.
 
 ### 2.3 `Step`
 ```
@@ -282,7 +300,18 @@ per workbook. Every route below 409s `closed` (`{error, kind: "closed"}`) when t
 `/pick {mode}` also takes `check`, `save`, `wait` (P09). The overlay's own calls carry the session's key; without it the page can only say hello,
 switch a mode and report a pick (never record or add a step).
 
-Reserved for later phases (they add them in their own modules, same prefix): templates `/api/build/templates*` (P11); API send `/api/build/api/send` (P10);
+API / XML editor (P10, `web/build_apitest.py`; edits are `api_*` ops through `/edit`, 3.1):
+
+| Route | Body / query | Answer |
+|---|---|---|
+| `GET /api/build/api/{name}/tests/{test}?row=&env=` | | `ApiTest`: `{test, row, dataRows, format: json\|xml, method, url, urlFormula, headers: [{name, column, value, secret, ioRow}], body: {kind: typed\|template\|none, text, template: {location, file, replace, updates}}, checks: [{ioRow, kind, label, expected, expectedValue, actual, path, what, outputRow}], saves: [{ioRow, function, path, column}], steps, columns, rowValues, needs, provides, environment, environmentVariables, production}` (a key typed in the sheet shows as `••••••`) |
+| `POST /api/build/api/send` | `{workbook, test, row?, env?, values?: {NAME: v}, confirmProd?}` | `{request, response: {status, ms, format, headers, text, tree, treeCut}, outputs, checks: [{expected, actual, kind, expectedValue, actualValue, passed}], notes, missing}`; the **draft** is sent, nothing is written; `missing` (no `response`) = `{NAME}`s only a run would give (send again with `values`); production 400s `prod_confirm` without `confirmProd: "PROD"`. Tree node: `{id, depth, key, type, path, value?, text?, count?, array?: {path, index, count, thisItem, rest, where: [{field, value, unique, path, variable?, variablePath?}]}}` |
+| `POST /api/build/api/curl` | `{workbook, text, test?, row?, env?}` | `{request: {method, url, headers, body, format}, found: [{kind: domain\|secret\|values, text}]}` (not applied) |
+| `POST /api/build/api/postman` | `{workbook, collection, env?}` | `{requests: [{name, folder, request, found}]}` (not applied) |
+| `GET /api/build/api/{name}/templates?location=` | | `{templates: [{file, folder, format}], folders}` |
+| `GET /api/build/api/{name}/templates/fields?folder=&file=&test=&row=` | | `{file, folder, format, preview, fields: [{placeholder, count, column, mapped, value}]}`; 400 outside the template folders |
+
+Reserved for later phases (they add them in their own modules, same prefix): templates `/api/build/templates*` (P11);
 scenarios `/api/build/workbooks/{name}/scenarios*` (P12). Runs and batches stay under `/api/runs`, `/api/batches` (P05/P06).
 One build document per workbook per server (`BuildStore`); a run of the same workbook uses its own copy of the file, so they coexist.
 
@@ -309,6 +338,19 @@ Each op is `{op: "...", ...}`; `test` is the sheet name; rows are current sheet 
 | `delete_fingerprint` | `name` | |
 | `set_test` | `test, enabled?, paramSheet?, tags?, comment?` | DataSheets row (added when the sheet is not listed) |
 | `add_test` | `name, kind: "web", paramSheet?` | new keyword sheet with the 26 standard columns + DataSheets row (+ Params sheet with `blnExecute` and one `Y` row when named and missing) |
+
+API / XML ops (P10, `build/api_builder.OPS`, added through `builder.EXTRA_OPS`; `row` = the data row, default the first enabled one):
+
+| op | fields | effect |
+|---|---|---|
+| `api_add_test` | `name, format?: json\|xml, method?, url?, headers?: [[name, value]], body?, comment?` | new API sheet (`blnExecute TCID TC_Name WEBSERVICE_METHOD WEBSERVICE_URL JSON_FORMAT REQUEST_BODY`), data row 2, DataSheets row |
+| `api_set_request` | `test, row, method?, url?, format?, body?` | the row's request cells (`url` cannot be a formula: the grid edits those) |
+| `api_set_header` / `api_remove_header` | `test, row, name, value?, previous?` | `addHeader` row (reused, else `H_<name>`) + the cell; remove = delete the row when no other API sheet has the column, else `[BLANK]` |
+| `api_add_check` | `test, row, path \| "status" \| "time", function?, kind, expected, name?` | output row (reused for the same path) + `<name>_EXP` column holding `expected` + the check row; answers `{actual, expected, reused}` |
+| `api_add_save` | `test, row, path, function?, variable` | output row into a column named `variable` (or the column that path already has: `reused`) |
+| `api_update_io` / `api_delete_io` | `ioRow, function?, parameter?, value?` / `ioRows` | edit / delete `InputOutput` rows (the path stays editable) |
+| `api_set_value` | `test, row, column, value` | one cell of the row (column added when missing) |
+| `api_use_template` | `test, row, location, file, format?, mappings: [{placeholder, column? \| value?}]` | template cells + `Replace` rows; a placeholder another sheet already maps keeps its row, and this row's cell for that column becomes `=<column><row>` or the value |
 
 ---
 

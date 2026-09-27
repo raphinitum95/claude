@@ -1491,6 +1491,7 @@ def _int(value: Any, what: str) -> int:
 OPS = ("insert_step", "update_step", "delete_steps", "move_steps", "bulk_edit", "rename_block", "split_block", "merge_blocks",
        "rename_variable", "set_variable", "add_variable", "set_cell", "set_environments", "set_fingerprint", "delete_fingerprint",
        "set_test", "add_test")
+EXTRA_OPS: dict[str, Any] = {}      # ops a later phase adds in its own module, ``name -> fn(editor, op) -> applied`` (P10: build/api_builder.py, api_*)
 
 
 def apply_ops(editor: WorkbookEditor, ops: list[dict]) -> list[dict]:
@@ -1499,10 +1500,10 @@ def apply_ops(editor: WorkbookEditor, ops: list[dict]) -> list[dict]:
     applied = []
     for i, op in enumerate(ops):
         kind = str((op or {}).get("op") or "")
-        if kind not in OPS:
+        if kind not in OPS and kind not in EXTRA_OPS:
             raise BuildError(f"Unknown op {kind!r}.", "op", 422, index=i)
         try:
-            applied.append(getattr(runner, kind)(op))
+            applied.append(getattr(runner, kind)(op) if kind in OPS else EXTRA_OPS[kind](editor, op))
         except BuildError as err:
             err.extra.setdefault("index", i)
             raise
