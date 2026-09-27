@@ -64,7 +64,7 @@ class Handler(SimpleHTTPRequestHandler):
                        {"Via": "1.1 abc.cloudfront.net (CloudFront)", "X-Amz-Cf-Id": "xyz", "x-amzn-ErrorType": "IncompleteSignatureException"})
         elif self.path.startswith("/cloudfront"):
             self._json(403, {"message": "Request blocked."}, {"Server": "CloudFront", "X-Cache": "Error from cloudfront", "X-Amz-Cf-Id": "abc"})
-        elif method == "POST" and self.path == "/policy/purchase/v2":       # the purchase API: the key only; answers with the last name it was sent
+        elif method == "POST" and self.path.split("?")[0] == "/policy/purchase/v2":     # the purchase API: the key only; answers with the last name it was sent
             if self.headers.get("apiKey") != "KEY-123":
                 self._json(401, {"message": "Unauthorized"})
             else:
