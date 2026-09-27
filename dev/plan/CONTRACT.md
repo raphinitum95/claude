@@ -256,8 +256,27 @@ Same security as every route: localhost Host; POST/PUT/DELETE need header `X-Req
 | `GET /api/build/workbooks/{name}/fingerprints` | | `[Fingerprint]` |
 | `GET /api/build/workbooks/{name}/sheets/{sheet}` | | `{name, headers, rows}` raw cells as written (formulas `"=..."`) for the Excel-grid view |
 
+**Build session** (`register_session_routes`, P08; `build/session.py`'s `BuildSession`/`SessionStore`): the Build tab's own headed browser, one
+per workbook. Every route below 409s `closed` (`{error, kind: "closed"}`) when the window is not open, except `start`, which opens it.
+
+| Method + path | Body | Answer |
+|---|---|---|
+| `GET /api/build/session/{name}?since=0` | | `{open, workbook, test, dataRow, environment, status, mode, pick, which, question, replay, cursor, next, stale, version, log, seq, ...}` (`BuildSession.state`); `{open: false, workbook, error}` when never opened |
+| `POST /api/build/session/{name}/start` | `{test, dataRow?, env?, confirmProd?}` | the state above (opens the window; a production environment 400s `prod_confirm` unless `confirmProd: "PROD"`; switches test/row/environment in place if already open) |
+| `POST /api/build/session/{name}/pick` | `{mode: "pick"\|"browse", row?}` | state: arms/disarms picking, `row` = the step a pick is for |
+| `POST /api/build/session/{name}/which` | `{text, kind?, row?}` | state: numbers every element matching `text` on the live page (Q10) |
+| `POST /api/build/session/{name}/choose` | `{i}` | state: picks match `i` of the last `which` |
+| `POST /api/build/session/{name}/variable` | `{role: "name"\|"context", token}` | state: rebuilds the pick's locator with `{token}` in place of that word, checked live against every data row (Q11) |
+| `POST /api/build/session/{name}/use` | `{row?}` | `{applied, model, session}`: an `update_step` op puts the pick's locator + backups on `row` (default: the step it was picked for) |
+| `POST /api/build/session/{name}/run-to-here` | `{row}` | state: replays steps 1..`row` from the start |
+| `POST /api/build/session/{name}/run-step` | `{row}` | state: runs only `row` (the session must already be positioned there) |
+| `POST /api/build/session/{name}/run-next` | `{count?}` | state: carries on from where the last replay stopped (default `count` 5) |
+| `POST /api/build/session/{name}/stop` | | state: cancels a replay in progress |
+| `POST /api/build/session/{name}/answer` | `{id, answer}` | `{ok}`: answers the question named in `state.question` (`ASK_USER`, a blank parameter, the side-effect pause) |
+| `POST /api/build/session/{name}/close` | | `{open: false, workbook}`: closes the browser |
+
 Reserved for later phases (they add them in their own modules, same prefix): templates `/api/build/templates*` (P11); build session
-`/api/build/session/{name}/start|record|pick|check|save|run-to-here|run-step|run-next|close` (P08/P09); API send `/api/build/api/send` (P10);
+`/api/build/session/{name}/record|check|save` (P09: recorder, check/save this); API send `/api/build/api/send` (P10);
 scenarios `/api/build/workbooks/{name}/scenarios*` (P12). Runs and batches stay under `/api/runs`, `/api/batches` (P05/P06).
 One build document per workbook per server (`BuildStore`); a run of the same workbook uses its own copy of the file, so they coexist.
 
