@@ -9,6 +9,10 @@ Rules (verified against the legacy source):
 * ``Contains=Y``: case-insensitive, trimmed substring test.
 * With neither flag, expected/actual are NOT compared - the step only captures the value.
 * An Exact_Match / Contains mismatch fails the step even when errors are ignored.
+
+Added for the new check steps (CONTRACT.md 1.3, P07): a step that compares for itself (``CHECK_REGEX``, ``CHECK_COMPARE``...) says so in
+``StepOut.check``; its own result replaces Exact_Match / Contains, and a mismatch is a "Comparison Failed" like theirs (never swallowed).  A step
+whose failure must end the test (``ASSERT_PAGE``, a blocked side-effect step) sets ``StepOut.stop``; such a failure is always ``hard``.
 """
 from __future__ import annotations
 
@@ -37,6 +41,10 @@ class StepOut:
     detail: str = ""                   # the browser's whole error when ``error`` keeps only its first line (Playwright's call log says *why* a click could not happen)
     secret: bool = False               # the output is something a person typed in for the run (a password / code): never shown in reports or events
     hard: bool = False                 # the error is not about a missing element (an empty parameter...): Ignore_not_existing_object does not swallow it
+    check: str = ""                    # the step compared for itself (regex, compare, count, enabled...): Exact_Match / Contains are not applied
+    check_failed: str = ""             # ...and what did not hold ("" = it held); a mismatch is a comparison failure, never swallowed
+    stop: str = ""                     # when the step fails, the test stops here, for this reason (a failed page gate, a blocked side-effect step)
+    backup: dict | None = None         # the element was not found, but a backup locator was: {locator, matches, screenshot, tried} (never used by the step)
 
 
 @dataclass
@@ -77,7 +85,10 @@ def evaluate(step: PreparedStep, out: StepOut, *, element_action: bool, actual: 
         else:
             status = FAILED
             error = f"{error}-Object was not found" if error else "Object was not found"
-    ok, mode = compare_ok(step, actual)
+    if out.check:
+        ok, mode = not out.check_failed, out.check
+    else:
+        ok, mode = compare_ok(step, actual)
     if not ok:
         status, error = FAILED, "Comparison Failed"
     return Verdict(status, error, ignored, mode)

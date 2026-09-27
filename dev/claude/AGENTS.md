@@ -29,7 +29,7 @@ Short doesn't mean incomplete: always include failures, risks, required actions 
    Reports are shared with a QA team (`publish.dir`).
 5. **Python 3.9 must keep working** (`requires-python >= 3.9`; the work computer uses 3.9). Create `asyncio.Event/Lock/Queue`
    inside coroutines only (guarded by `tests/test_py39_compat.py`). Annotations use `from __future__ import annotations`.
-6. **Run only the tests your change touches** (section 5). The full suite is 668 tests / ~40 min: only when the user asks.
+6. **Run only the tests your change touches** (section 5). The full suite is 808 tests / 40+ min: only when the user asks.
    Always tell the user which tests you ran.
 7. **Do not edit the user's workbooks** (`workbooks/*.xlsx`). If a cell is wrong, tell the user which cell and why.
 8. **Changes to server code** (`src/regrunner/web/app.py` or anything it imports at server start) **need the user to restart the UI**.
@@ -80,6 +80,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Pass/fail rules (Ignore_not_existing_object etc.) | `engine/outcome.py` (port of legacy `validateresults`) | `test_outcome.py` (fast) |
 | Flow keywords (SET_VARIABLE, IF/ELSE/END_IF, ITERATION_START/END, CALL_TEST, JSON_READ), `{NAME}` / `{SECRET:NAME}` in cells, the run's variable pool, `_rr_environments` (required vars refuse the run) | `workbook/variables.py`, `workbook/model.py` (`prepare_row`, `value_of`, `record`, `plan`), `engine/test_runner.py` (`FlowControl`, row loop jumps, `run_called`, masking), `engine/actions.py` (handlers), `engine/order.py` (Needs/Provides), `preflight.py` (`environment_problem`) | `test_flow_variables.py` (fast), `test_flow_keywords.py` (mock site + one web API check) |
 | One test's step loop: stop rules, captcha stop, blank params, skipped rows hint | `engine/test_runner.py` | `test_stop_after_failures.py`, `test_skipped_rows_hint.py`, `test_blank_params.py`, `test_captcha.py` |
+| P07 keywords: ASSERT_PAGE (page gate = hard stop), WAIT_UNTIL, DISMISS_IF_SHOWN, PICK_DATE, CHOOSE_SUGGESTION, CHECK_*; SIDE_EFFECTS steps (blocked on production, `TestRunner(side_effects="ask")` for build replays); BACKUP_LOCATORS (reported, never used) | `engine/actions.py` (handlers after "Safety steps", `side_effect_gate`, `probe_backup_locators`), `engine/checks.py`, `engine/gates.py`, `engine/outcome.py` (`StepOut.check/check_failed/stop/backup`), `selectors/spec.py` (`parse_backup_locators`), `engine/test_runner.py` (`_hard_stop`) | `test_checks.py` (fast), `test_engine_gates.py` (mock site `widgets.html`), `test_outcome.py` |
 | Failed-step evidence (detail, diagnosis, full-page screenshot, saved HTML) | `engine/failure_capture.py` | `test_failure_capture.py`, `test_full_page_screenshot.py` |
 | Excel formula / function (`VLOOKUP`, `TEXT`, `NUMBERVALUE`...) | `workbook/formula.py` (`@function("NAME")`), `workbook/textfmt.py` | `test_formula.py`, `test_lookup_totp.py` (fast) |
 | Workbook reading, token substitution, blnExecute, write-back, Params rows | `workbook/model.py`, `workbook/sheet.py` | `test_model.py` (fast), `test_blank_params.py`, `test_variables_set.py`, `test_real_workbook.py` (fast, skips without the file) |
@@ -162,12 +163,14 @@ src/regrunner/
   engine/
     runner.py      823  orchestration: RunOptions, plan_run/open_run/announce_run, Engine (workers, retries, run_case), execute(_many)
     test_runner.py 460  TestRunner: one test row by row; masking; captcha gate; blank params; stop rules
-    actions.py    1159  every Method → Playwright (42 @action handlers); JS snippets (VISIBLE_TEXT_JS, CLICKABLE_JS, CURRENT_VALUE_JS...)
+    actions.py    2048  every Method → Playwright (61 @action handlers, P07's gates/waits/widgets/checks included); JS snippets (VISIBLE_TEXT_JS, CURRENT_VALUE_JS...)
+    checks.py      237  plain logic of the P07 steps: numbers on a page, GT/GE/.../BETWEEN, date formats (dd/mm/yyyy), PICK_DATE dates, calendar headings
+    gates.py        61  `_rr_fingerprints` reader (ASSERT_PAGE), is_production, SIDE_EFFECTS flag
     session.py     870  BrowserSession: context, pages, frames, ensure_ready, navigation/call watches, WAF block detection
     patience.py    180  waits that end on evidence, not a clock (Patience) + WaitNotice (worker_waiting / worker_resumed events)
     timing.py      216  where a step's time went (site / wait / runner / computer / other; SiteClock, spans), run summary, site-version fingerprint
     resources.py   402  resources.jsonl sampler (CPU, free memory, swap, browsers' memory, loop lag; stdlib, psutil if present), machine_info, runner_version
-    settle.py 61 · enabled.py 97 · keys.py 87 · outcome.py 83 · order.py 243 · schedule.py 72 · pool.py 100
+    settle.py 61 · enabled.py 97 · keys.py 87 · outcome.py 94 · order.py 243 · schedule.py 72 · pool.py 100
     inbox.py 115 · throttle.py 71 · captcha.py 65 · ask.py 118 · failure_capture.py 449 · api_runner.py 343 · diagnostics.py 17
   workbook/
     model.py 812 (Workbook, TestCase, TestRuntime, prepare_row, value_of, plan) · sheet.py 262 · formula.py 755 · textfmt.py 156
@@ -201,7 +204,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            66 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            68 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -215,8 +218,8 @@ Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv`
 |---|---|---|
 | One file | `.venv/bin/pytest -q tests/test_page_ready.py` | seconds to ~1 min |
 | One test | `.venv/bin/pytest -q tests/test_web_ui.py -k theme` | |
-| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 397 tests, ~4 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
-| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 668 tests, ~40 min |
+| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 510 tests, ~4 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
+| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 808 tests, 40+ min |
 
 - Marker `browser` = needs Playwright (module-level `pytestmark` or per test); `realworkbook` = needs `workbooks/UAT_AEM_Travelex Regression_v9.1.xlsx` (skips otherwise).
 - Pure-logic files (all fast): `test_workbook_roundtrip -k "not real"`, `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
@@ -317,6 +320,8 @@ a CSV export button on Compare (`history.export_csv` exists but isn't wired to a
 grouping "skipped because a dependency failed" as its own cause distinct from "needs a value that was never set" (today's engine does not
 mark a dependency-skip differently from any other unset-variable failure).
 
+P07 (engine II) PR open: ASSERT_PAGE reads `_rr_fingerprints` (`{DOMAIN}` filled in; URL part AND landmark + text, within the step time, patient while the page loads); a failure sets `StepOut.stop` + `hard`, so Ignore_not_existing_object never swallows it and the test stops (`TestRunner._hard_stop`). SIDE_EFFECTS=Y: blocked on any production environment (the table's `#PRODUCTION` row, or a name PROD/PRODUCTION) and the test stops; `TestRunner(side_effects="ask")` (for P08's build replays; runs never set it) asks through `engine/ask.py` first. A step that compares for itself (CHECK_*, WAIT_UNTIL TEXT) sets `StepOut.check`: Exact_Match/Contains are then not applied, a mismatch is "Comparison Failed" with the reason in the notes. BACKUP_LOCATORS are only probed after a non-optional element miss: result in `detail`, `diagnosis.backup` + first summary line, a clipped screenshot `screenshots/<seq>_r<row>_backup.jpg`, and a `backup_locator_suggestion` event. New events (`page_gate`, `popup_dismissed`, `side_effect_*`, `backup_locator_suggestion`) are documented in `events.py`; like P03's, `runstate.js`/`from_events.py` do not reduce them yet (the step's notes carry the same facts). PICK_DATE / CHOOSE_SUGGESTION are heuristics (data-date / aria-label day cells, "Next month" buttons, role=option lists): unverified on the real sites' widgets.
+
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
@@ -343,6 +348,9 @@ Gotchas:
   worker cards.
 - `tests/test_web_workbook_search.py::test_enter_picks_the_best_match...` can flake under load: Playwright's `.uncheck(force=True)` races a
   checkbox whose row is removed (filtered out) the instant it unchecks. Confirmed pre-existing (identical on the pre-P04 tree); a solo re-run passes.
+- Mock pages: an element's `id` is also a `window` global (`id="paid"` makes `window.paid` the element), so name JS counters differently.
+- `runner.allow_prod` / `--allow-prod` only guards an environment literally named PROD; one the workbook's `_rr_environments` marks production
+  (`#PRODUCTION` row) is not guarded there, but its SIDE_EFFECTS steps are still blocked by the engine (`engine/gates.py`).
 - `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
   narrow window clips it instead of pushing the header wider than the viewport (see the `Run` tab's version tag vs. the `Build` tab's breadcrumb).
 

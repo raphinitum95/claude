@@ -5,7 +5,7 @@ from pathlib import Path
 
 import openpyxl
 
-from tests.workbook_factory import Sheet
+from tests.workbook_factory import COLUMNS, Sheet
 
 Row = tuple  # (method, step name, {column: value}) or (method, step name, {column: value}, blnExecute)
 
@@ -30,7 +30,8 @@ def book(path: Path, tests: dict[str, list[Row]], *, params: dict[str, list[dict
     for name, rows in tests.items():
         own = params.get(name)
         ds.append([name, "Y" if name in enabled else "N", f"{name}_Params" if own else "", ""])
-        sheet = Sheet(wb.create_sheet(name), "Y")
+        extra = list(dict.fromkeys(k for _m, _s, cols, *_f in rows for k in cols if k not in COLUMNS))     # SIDE_EFFECTS, BACKUP_LOCATORS...
+        sheet = Sheet(wb.create_sheet(name), "Y", extra)
         for method, step, cols, *flag in rows:
             sheet.add(method, step, gate=flag[0] if flag else None, **cols)
         if own:

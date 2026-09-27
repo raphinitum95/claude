@@ -22,6 +22,12 @@ Event types (all carry ``type``, ``ts`` and ``run_id``):
     call_started   test, step, row, called, status ("RUNNING")      CALL_TEST starts another test; its steps follow as steps of this test
     call_finished  test, step, row, called, status                  ...and it ended (status of the called test)
     env_missing    environment, variables:[..], message             a required environment variable has no value: the run did not start
+    page_gate      test, step, row, fingerprint, passed, url, landmark_found   an ASSERT_PAGE gate was checked (url: path only; failed = the test stopped)
+    popup_dismissed  test, step, row, appeared (bool)               a DISMISS_IF_SHOWN step: the popup appeared (and was clicked away) or did not
+    side_effect_blocked  test, step, row, name, environment         a SIDE_EFFECTS=Y step on a production environment: not run, the test stopped
+    side_effect_paused   test, step, row, name, environment         ...in a build-mode replay: a person is asked before it runs (user_input_needed follows)
+    backup_locator_suggestion  test, step, row, locator, matches, screenshot   the step's element was not found but a BACKUP_LOCATORS entry was
+                   (the step still failed; nothing was done with the backup; screenshot = a picture of what it found, relative to the run folder)
     screenshot_saved  test, step, path, kind
     console_error  test, step, kind, message, url          (kind: console|pageerror)
     network_error  test, step, kind, url, status, method, message   (kind: requestfailed|http_error)
