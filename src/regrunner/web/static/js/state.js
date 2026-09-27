@@ -36,6 +36,7 @@ export function freshBuild() {
     env: '',                  // '' = the workbook's own default (Global!Environment)
     pendingSel: null,         // a step row to select once its test finishes loading (variable map "jump to step")
     busy: false,              // an edit/undo/redo/save round-trip is in flight
+    clip: null,               // { steps: [Step field dicts] } copied from a test's cards, for paste (P11)
     ed: freshEditor(),
   };
 }

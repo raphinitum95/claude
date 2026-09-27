@@ -275,10 +275,36 @@ per workbook. Every route below 409s `closed` (`{error, kind: "closed"}`) when t
 | `POST /api/build/session/{name}/answer` | `{id, answer}` | `{ok}`: answers the question named in `state.question` (`ASK_USER`, a blank parameter, the side-effect pause) |
 | `POST /api/build/session/{name}/close` | | `{open: false, workbook}`: closes the browser |
 
-Reserved for later phases (they add them in their own modules, same prefix): templates `/api/build/templates*` (P11); build session
+**Templates** (P11, `web/templates_api.py`'s `register_templates_routes`; `workbook/templates.py`). The library is `templates.xlsx`
+next to the workbooks, one sheet per template (the same 26 step columns; every Params reference is a `{TOKEN}`, never a bare
+whole-cell token, since a template is not tied to any one workbook's Params layout).
+
+| Method + path | Body | Answer |
+|---|---|---|
+| `GET /api/build/templates` | | `{templates: [{name, description, count, variables: [tokens], steps: [Step]}]}` |
+| `POST /api/build/templates` | `{workbook, test, fromRow, toRow, name, description?}` | `{name, count}` (201). Extracts that row range of `test` (read from `workbook`'s current model) |
+| `DELETE /api/build/templates/{name}` | | 400 `unsupported`: no way yet to remove a sheet from an `.xlsx` (P01 gap) |
+| `GET /api/build/templates/{name}/mapping?workbook=<name>` | | `{template: {name, description, count}, mapping: [{templateVar, label, mine, how}]}` (`workbook/templates.match_variables`) |
+| `POST /api/build/workbooks/{name}/templates/insert` | `{template, test, mapping: {TVAR: token\|null}, after?\|before?, version}` | `{model, applied}`, same shape as `/edit`. `mapping[TVAR] = null` creates a new Params column when the test has one; a token left unmapped with nowhere to create a column becomes `{?TVAR}` (1.2's `unmapped_template_variable`) |
+
+**Duplicate / find & replace / merge** (P11, `web/refactor_api.py`'s `register_refactor_routes`; `workbook/refactor.py`). Not
+reserved above because none of it is a new op kind: "what changes?" and find/replace both resolve to `set_cell` ops the client
+sends to the existing `/edit`; the merge endpoint re-diffs against disk itself and sends `update_step` ops.
+
+| Method + path | Body | Answer |
+|---|---|---|
+| `POST /api/build/workbooks/{name}/find` | `{pairs: [{find, replace, whole}]}` | `{hits: [{pair, sheet, row, column, header, before, after}]}`. Every sheet including `_rr_*`, never row 1 (headers), never a formula or a result column |
+| `POST /api/build/workbooks/{name}/find/apply` | `{hits, version}` | `{model, applied}`: `hits` (typically a subset the person kept ticked) become `set_cell` ops |
+| `GET /api/build/workbooks/{name}/duplicate-candidates?newName=<name>` | | `{rows: [{kind: name\|domain\|text, label, find, replace, whole}]}`: seed rows for "What changes?" (Q26) - `replace` is left `""` for the person to fill in except `name` |
+| `POST /api/build/workbooks/{name}/merge` | `{picks: {"<test>:<row>": "theirs"\|"mine"}, version}` | `{model, applied}`. Re-runs `diff("disk")` itself; only `kind: "changed"` hits picked `"theirs"` become `update_step` ops (an added/removed row needs reload or save-anyway instead) |
+
+Reserved for later phases (they add them in their own modules, same prefix): build session
 `/api/build/session/{name}/record|check|save` (P09: recorder, check/save this); API send `/api/build/api/send` (P10);
 scenarios `/api/build/workbooks/{name}/scenarios*` (P12). Runs and batches stay under `/api/runs`, `/api/batches` (P05/P06).
 One build document per workbook per server (`BuildStore`); a run of the same workbook uses its own copy of the file, so they coexist.
+`create_app` captures `register_build_routes`'s returned `BuildStore` and passes it to `register_templates_routes` /
+`register_refactor_routes`, so a template insert, a find/replace or a merge goes through the very same `BuildDocument`
+(undo, autosaved draft) as every other edit of that workbook.
 
 ### 3.1 Ops (`builder.apply_ops`)
 

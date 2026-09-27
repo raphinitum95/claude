@@ -37,7 +37,11 @@ export function workbookMap(S) {
 <div style="display: flex; align-items: center; gap: 10px"><h1 class="ttl" style="font-size: 20px">Tests</h1>
 <span class="chip mono">${m.tests.length} tests</span>
 ${m.problemCounts.error ? html`<span class="chip chip-warn">${icon('warn', 13)} ${m.problemCounts.error} problem${m.problemCounts.error === 1 ? '' : 's'}</span>` : ''}
-<span style="flex: 1"></span><button class="btn btn-sm" data-act="build-new-test">${icon('plus', 13)} New test</button></div>
+<span style="flex: 1"></span>
+<button class="btn btn-ghost btn-sm" data-act="build-open-templates">${icon('layers', 13)} Templates</button>
+<button class="btn btn-ghost btn-sm" data-act="build-open-find-replace">${icon('search', 13)} Find & replace</button>
+<button class="btn btn-ghost btn-sm" data-act="build-open-duplicate">${icon('copy', 13)} Duplicate</button>
+<button class="btn btn-sm" data-act="build-new-test">${icon('plus', 13)} New test</button></div>
 ${m.tests.length === 0 ? html`<div style="border: 1.5px dashed var(--line2); border-radius: 13px; padding: 30px; text-align: center">
 <div style="color: var(--tx3); display: inline-flex">${icon('grid', 26)}</div><div style="font-weight: 650; margin-top: 8px">No tests yet</div>
 <div style="font-size: 12.5px; color: var(--tx2); margin-top: 2px">Add one to start building.</div></div>` : ''}

@@ -25,3 +25,17 @@ The productivity features around editing.
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+- 2026-09-27 · Done: shared template library (`workbook/templates.py`, `templates.xlsx`: save a row range as a template, `match_variables`
+  exact/close/no-match, `insert_template_ops` - unmapped tokens become `{?TOKEN}` per CONTRACT 1.2); duplicate/find-replace/merge
+  (`workbook/refactor.py`: `find_replace_preview`, `duplicate_candidates` for the "What changes?" panel, `merge_ops` for a per-step pick
+  against `diff("disk")` - none of this needed a new op kind, everything resolves to the existing `insert_step`/`add_variable`/`set_cell`/
+  `update_step`); two new routes modules (`web/templates_api.py`, `web/refactor_api.py`, both sharing `build_api.py`'s `BuildStore` via a
+  one-line change to `create_app`'s capture of `register_build_routes`'s return value); two new formula functions (`CHOOSE`, `TEXTJOIN`)
+  for the value builder; Build tab UI (`dialogs.js`: templates library/save/insert-with-mapping, duplicate "what changes?", find & replace,
+  value builder, a real per-step merge added to the existing file-changed dialog; small, named touches to `actions.js`/`editor.js`/
+  `workbook.js`/`icons.js`/`state.js` to wire buttons and a copy/paste clipboard - copy/paste itself needed no Python, a `Step`'s fields
+  already match `insert_step`'s). Not built: deleting a template (`WorkbookEditor` has no way to remove a sheet - a real P01 gap, documented
+  as `unsupported` 400 rather than faked) and copy/paste of a whole test or workbook-level "computed value" cross-checking beyond what the
+  value builder's own preview shows. Tests: `test_formula.py` (+2), `test_templates.py`, `test_refactor.py`, `test_templates_api.py`,
+  `test_refactor_api.py` (all fast/no-browser), `test_web_build_p11.py` (browser: save-as-template + insert with mapping, duplicate, find &
+  replace, value builder, merge-from-disk). `pytest -m "not browser"` 552 passed (was 531 before this phase); `builder.py` untouched.

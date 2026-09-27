@@ -490,6 +490,21 @@ def _randbetween_placeholder(a, b):
     raise AssertionError
 
 
+@function("CHOOSE")
+def _choose(index, *values):
+    i = int(to_number(index))
+    if not values or not 1 <= i <= len(values):
+        raise ExcelError("#VALUE!", "CHOOSE: index_num is out of range")
+    return values[i - 1]
+
+
+@function("TEXTJOIN")
+def _textjoin(delimiter, ignore_empty, *args):
+    delim = to_text(delimiter)
+    skip = to_bool(ignore_empty)
+    return delim.join(to_text(v) for v in _scalars(args) if not (skip and (v is None or v == "")))
+
+
 @function("COUNTA")
 def _counta(*args):
     return sum(1 for v in _scalars(args) if v is not None and v != "")

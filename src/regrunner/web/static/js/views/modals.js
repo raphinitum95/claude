@@ -7,6 +7,7 @@ import { allChosen, envList, shortName } from './newrun.js';
 import {
   newWorkbookDialog, newTestDialog, environmentsDialog, fingerprintsListDialog, fingerprintDialog,
   fileChangedDialog, historyDialog, gridDialog, lockedDialog,
+  templatesLibraryDialog, saveTemplateDialog, insertTemplateDialog, duplicateWorkbookDialog, findReplaceDialog, valueBuilderDialog,
 } from './build/dialogs.js';
 import { sessionQuestionDialog } from './build/session.js';
 
@@ -190,6 +191,12 @@ export function modalView(S) {
     case 'build-history': return historyDialog(m);
     case 'build-grid': return gridDialog(m);
     case 'build-locked': return lockedDialog(m);
+    case 'build-templates': return templatesLibraryDialog(m);
+    case 'build-save-template': return saveTemplateDialog(m);
+    case 'build-insert-template': return insertTemplateDialog(m);
+    case 'build-duplicate': return duplicateWorkbookDialog(m);
+    case 'build-find-replace': return findReplaceDialog(m);
+    case 'build-value-builder': return valueBuilderDialog(m);
     case 'build-session-question': return sessionQuestionDialog(m);
     default: return '';
   }
