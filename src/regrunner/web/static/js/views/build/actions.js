@@ -325,7 +325,7 @@ export async function restoreHistory(id) {
 }
 export function openFileChanged() {
   const b = S.build;
-  S.modal = { kind: 'build-file-changed', loading: true, changes: [], error: '', busy: false };
+  S.modal = { kind: 'build-file-changed', loading: true, changes: [], picks: {}, error: '', busy: false };
   rerender();
   buildApi.diff(b.name, 'disk').then((d) => { if (S.modal && S.modal.kind === 'build-file-changed') { S.modal.changes = d.changes; S.modal.loading = false; rerender(); } })
     .catch((e) => { if (S.modal && S.modal.kind === 'build-file-changed') { S.modal.error = e.message; S.modal.loading = false; rerender(); } });
@@ -348,6 +348,224 @@ export async function reloadFromDisk() {
     toast('Reloaded from disk. Your draft is gone.');
   } catch (e) { m.busy = false; m.error = e.message; }
   rerender();
+}
+
+export async function mergeFromDisk() {
+  const m = S.modal;
+  if (!m || m.kind !== 'build-file-changed') return;
+  const picks = Object.fromEntries(Object.entries(m.picks).filter(([, v]) => v === 'theirs'));
+  if (!Object.keys(picks).length) return;
+  m.busy = true; m.error = ''; rerender();
+  try {
+    const r = await buildApi.merge(S.build.name, picks, bm().version, S.build.env || undefined);
+    S.build.model = r.model;
+    ensureSelection();
+    S.modal = null;
+    toast(`Merged ${r.applied.length} step${r.applied.length === 1 ? '' : 's'} from Excel.`);
+  } catch (e) { m.busy = false; m.error = e.message; rerender(); }
+}
+
+// ---- copy / paste steps (client-side clipboard; P11) ---------------------------------------------------------------
+function stepToClipboard(s) {
+  const f = { method: s.method, page: s.page, findBy: s.locator.findBy, locator: s.locator.value, locatorName: s.locator.name,
+    value: s.value, expected: s.expected, match: s.match, output: s.output, outputProperty: s.outputProperty,
+    onFail: s.onFail, timeout: s.timeout, enabled: s.enabled !== false, sideEffects: s.sideEffects,
+    backups: (s.locator.backups || []).slice(), notes: s.notes };
+  if (s.locator.index) f.index = s.locator.index;
+  if (!s.nameAuto && s.name) f.name = s.name; else f.nameAuto = true;
+  return f;
+}
+export function copySelected() {
+  const t = currentTest();
+  const ed = S.build.ed;
+  const rows = ed.multi.length ? ed.multi.slice() : (ed.sel != null ? [ed.sel] : []);
+  if (!t || !rows.length) return;
+  const steps = t.steps.filter((s) => rows.includes(s.row)).sort((a, b) => a.n - b.n).filter((s) => !s.legacy);
+  if (!steps.length) { toast('Legacy rows cannot be copied.', 5000); return; }
+  S.build.clip = { steps: steps.map(stepToClipboard) };
+  toast(`Copied ${steps.length} step${steps.length === 1 ? '' : 's'}.`);
+}
+export function pasteClipboard() {
+  const clip = S.build.clip;
+  const t = currentTest();
+  const ed = S.build.ed;
+  if (!clip || !t) return;
+  const anchor = ed.sel != null ? ed.sel : (t.steps.length ? t.steps[t.steps.length - 1].row : 1);
+  applyOps(clip.steps.map((step, i) => ({ op: 'insert_step', test: t.id, after: anchor + i, step: { ...step } })));
+}
+
+// ---- templates: browse, save a selection, insert with mapping (Q15-17) ---------------------------------------------
+export function openTemplatesLibrary() {
+  S.modal = { kind: 'build-templates', loading: true, items: [], error: '' };
+  rerender();
+  buildApi.templates().then((r) => { if (S.modal && S.modal.kind === 'build-templates') { S.modal.items = r.templates; S.modal.loading = false; rerender(); } })
+    .catch((e) => { if (S.modal && S.modal.kind === 'build-templates') { S.modal.error = e.message; S.modal.loading = false; rerender(); } });
+}
+
+export function openSaveTemplate() {
+  const t = currentTest();
+  const ed = S.build.ed;
+  const rows = ed.multi.length ? ed.multi.slice() : (ed.sel != null ? [ed.sel] : []);
+  if (!t || !rows.length) return;
+  const sorted = rows.slice().sort((a, b) => a - b);
+  S.modal = { kind: 'build-save-template', name: '', description: '', fromRow: sorted[0], toRow: sorted[sorted.length - 1],
+    count: t.steps.filter((s) => s.row >= sorted[0] && s.row <= sorted[sorted.length - 1]).length, busy: false, error: '' };
+  rerender();
+}
+async function saveTemplateNow() {
+  const m = S.modal;
+  const name = m.name.trim();
+  if (!name) { m.error = 'Give the template a name.'; rerender(); return; }
+  m.busy = true; m.error = ''; rerender();
+  const t = currentTest();
+  try {
+    await buildApi.saveTemplate({ workbook: S.build.name, test: t.id, fromRow: m.fromRow, toRow: m.toRow, name, description: m.description.trim() });
+    S.modal = null;
+    toast(`Saved "${name}" to the template library.`);
+  } catch (e) { m.busy = false; m.error = e.message; rerender(); }
+}
+
+export function openInsertTemplate() {
+  if (!currentTest()) return;
+  S.build.ed.menu = false;
+  S.modal = { kind: 'build-insert-template', step: 'pick', loading: true, items: [], error: '', busy: false };
+  rerender();
+  buildApi.templates().then((r) => { if (S.modal && S.modal.kind === 'build-insert-template' && S.modal.step === 'pick') { S.modal.items = r.templates; S.modal.loading = false; rerender(); } })
+    .catch((e) => { if (S.modal && S.modal.kind === 'build-insert-template') { S.modal.error = e.message; S.modal.loading = false; rerender(); } });
+}
+async function chooseTemplateToInsert(name) {
+  const m = S.modal;
+  if (!m) return;
+  const t = currentTest();
+  const ed = S.build.ed;
+  const after = ed.sel != null ? ed.sel : (t.steps.length ? t.steps[t.steps.length - 1].row : null);
+  const afterN = after != null ? (t.steps.find((s) => s.row === after) || {}).n || 0 : 0;
+  Object.assign(m, { step: 'map', busy: false, error: '', after, afterN, template: null, mapping: [] });
+  rerender();
+  try {
+    const r = await buildApi.templateMapping(name, S.build.name);
+    if (S.modal !== m) return;
+    m.template = r.template; m.mapping = r.mapping;
+  } catch (e) { m.error = e.message; }
+  rerender();
+}
+async function insertTemplateNow() {
+  const m = S.modal;
+  const t = currentTest();
+  m.busy = true; m.error = ''; rerender();
+  const mapping = {};
+  m.mapping.forEach((r) => { mapping[r.templateVar] = r.mine; });
+  try {
+    const res = await buildApi.insertTemplate(S.build.name, { template: m.template.name, test: t.id, after: m.after, mapping,
+      version: bm().version }, S.build.env || undefined);
+    S.build.model = res.model; ensureSelection(); S.modal = null;
+    toast(`Inserted ${m.template.count} step${m.template.count === 1 ? '' : 's'}.`);
+  } catch (e) { m.busy = false; m.error = e.message; rerender(); }
+}
+
+// ---- duplicate workbook: "what changes?" + find and replace (Q26) --------------------------------------------------
+export function openDuplicateWorkbook() {
+  const b = S.build;
+  if (!b.name) return;
+  S.modal = { kind: 'build-duplicate', source: b.name, name: '', loading: true, rows: [], find: '', replace: '', busy: false, error: '' };
+  rerender();
+  buildApi.duplicateCandidates(b.name, '').then((r) => {
+    if (!S.modal || S.modal.kind !== 'build-duplicate') return;
+    S.modal.rows = r.rows.map((x) => ({ ...x, on: x.kind !== 'text' }));
+    S.modal.loading = false; rerender();
+  }).catch((e) => { if (S.modal && S.modal.kind === 'build-duplicate') { S.modal.error = e.message; S.modal.loading = false; rerender(); } });
+}
+function dupAddPair() {
+  const m = S.modal;
+  if (!m.find.trim()) return;
+  m.rows.push({ kind: 'custom', label: `“${m.find.trim()}”`, find: m.find.trim(), replace: m.replace.trim(), whole: true, on: true });
+  m.find = ''; m.replace = ''; rerender();
+}
+async function runDuplicate() {
+  const m = S.modal;
+  const name = m.name.trim();
+  if (!name) { m.error = 'Give the new workbook a name.'; rerender(); return; }
+  m.busy = true; m.error = ''; rerender();
+  try {
+    const created = await buildApi.newWorkbook({ name, from: m.source });
+    const pairs = m.rows.filter((r) => r.on && r.replace.trim()).map((r) => ({ find: r.find, replace: r.replace.trim(), whole: r.whole !== false }));
+    if (pairs.length) {
+      const preview = await buildApi.findPreview(created.name, pairs);
+      if (preview.hits.length) await buildApi.findApply(created.name, preview.hits, created.model.version);
+    }
+    S.modal = null;
+    loadWorkbooks().catch(() => {});
+    location.hash = buildUrl(created.name, 'map');
+    toast(`Duplicated as ${created.name}.`);
+  } catch (e) { m.busy = false; m.error = e.message; rerender(); }
+}
+
+// ---- find & replace across the whole workbook ----------------------------------------------------------------------
+export function openFindReplace() {
+  if (!S.build.name) return;
+  S.modal = { kind: 'build-find-replace', find: '', replace: '', whole: true, hits: [], searched: false, loading: false, busy: false, error: '' };
+  rerender();
+}
+async function findPreviewNow() {
+  const m = S.modal;
+  if (!m.find.trim()) { m.error = 'Say what to find.'; rerender(); return; }
+  m.loading = true; m.error = ''; rerender();
+  try {
+    const r = await buildApi.findPreview(S.build.name, [{ find: m.find.trim(), replace: m.replace, whole: m.whole }]);
+    m.hits = r.hits.map((h) => ({ ...h, on: true })); m.searched = true;
+  } catch (e) { m.error = e.message; }
+  m.loading = false; rerender();
+}
+async function findApplyNow() {
+  const m = S.modal;
+  const chosen = m.hits.filter((h) => h.on);
+  if (!chosen.length) return;
+  m.busy = true; m.error = ''; rerender();
+  try {
+    const r = await buildApi.findApply(S.build.name, chosen, bm().version, S.build.env || undefined);
+    S.build.model = r.model; ensureSelection();
+    toast(`Replaced ${chosen.length}.`);
+    S.modal = null;
+  } catch (e) { m.busy = false; m.error = e.message; rerender(); }
+}
+
+// ---- value builder: writes a real Excel formula (Q23) ----------------------------------------------------------------
+function quoteText(text) { return `"${String(text).trim().replace(/"/g, '""')}"`; }
+function mathOperand(text) {
+  const t = String(text).trim();
+  return /^\{[?A-Za-z_][A-Za-z0-9_:]*\}$/.test(t) || /^-?\d+(\.\d+)?$/.test(t) ? t : quoteText(t);
+}
+function refreshValueBuilderFormula() {
+  const m = S.modal;
+  if (!m || m.kind !== 'build-value-builder') return;
+  if (m.tab === 'date') {
+    const off = Number(m.offset) || 0;
+    const expr = off ? `TODAY()${off > 0 ? '+' : ''}${off}` : 'TODAY()';
+    m.formula = `=TEXT(${expr},"${(m.fmt || 'mm/dd/yyyy').replace(/"/g, '')}")`;
+  } else if (m.tab === 'unique') {
+    m.formula = m.suffix.trim() ? `=CONCAT(${quoteText(m.prefix)},RANDBETWEEN(100000,999999),${quoteText(m.suffix)})`
+      : `=CONCAT(${quoteText(m.prefix)},TEXT(NOW(),"yyyymmddhhmmss"),"-",RANDBETWEEN(1,999))`;
+  } else if (m.tab === 'pick') {
+    const items = m.list.split('\n').map((x) => x.trim()).filter(Boolean);
+    m.formula = items.length ? `=CHOOSE(RANDBETWEEN(1,${items.length}),${items.map(quoteText).join(',')})` : '';
+  } else if (m.tab === 'math') {
+    m.formula = m.a.trim() && m.b.trim() ? `=${mathOperand(m.a)}${m.op}${mathOperand(m.b)}` : '';
+  } else {
+    const parts = m.parts.split('\n').map((x) => x.trim()).filter(Boolean);
+    m.formula = parts.length ? `=TEXTJOIN(${quoteText(m.delim || '')},TRUE,${parts.map(quoteText).join(',')})` : '';
+  }
+}
+export function openValueBuilder(row) {
+  S.modal = { kind: 'build-value-builder', row, tab: 'date', offset: 0, fmt: 'mm/dd/yyyy', prefix: 'qa+', suffix: '@example.com',
+    list: 'Basic\nPlus\nMax', a: '', op: '+', b: '', parts: '', delim: ' ', formula: '', error: '' };
+  refreshValueBuilderFormula();
+  rerender();
+}
+function useValueBuilder() {
+  const m = S.modal;
+  if (!m.formula) { m.error = 'Fill in the value builder first.'; rerender(); return; }
+  updateStep(m.row, { value: m.formula });
+  S.modal = null; rerender();
 }
 
 // ---- keyboard shortcuts (⌘ on Mac, Ctrl elsewhere) ----------------------------------------------------------------
@@ -517,6 +735,29 @@ export const acts = {
   'build-toggle-test'(el) { applyOps([{ op: 'set_test', test: el.dataset.test, enabled: el.dataset.val === '1' }]); },
   'build-select-variable'(el) { selectVariable(el.dataset.field); },
   'build-jump-step'(el) { jumpToStep(S.build.name, el.dataset.test, Number(el.dataset.row)); },
+  // ---- templates / copy-paste / duplicate / find-replace / merge / value builder (P11) ----------------------------
+  'build-open-templates': openTemplatesLibrary,
+  'build-save-template': openSaveTemplate,
+  'build-tpl-save': saveTemplateNow,
+  'build-open-insert-template': openInsertTemplate,
+  'build-tpl-choose'(el) { chooseTemplateToInsert(el.dataset.name); },
+  'build-tpl-back'() { S.modal.step = 'pick'; rerender(); },
+  'build-tpl-insert': insertTemplateNow,
+  'build-copy-steps': copySelected,
+  'build-paste-steps': pasteClipboard,
+  'build-open-duplicate': openDuplicateWorkbook,
+  'build-dup-add': dupAddPair,
+  'build-dup-run': runDuplicate,
+  'build-open-find-replace': openFindReplace,
+  'build-fr-preview': findPreviewNow,
+  'build-fr-apply': findApplyNow,
+  'build-fr-whole'(el) { S.modal.whole = el.dataset.val === '1'; rerender(); },
+  'build-fc-pick'(el) { const m = S.modal; m.picks[el.dataset.key] = el.dataset.val === 'theirs' ? 'theirs' : 'mine'; rerender(); },
+  'build-fc-merge': mergeFromDisk,
+  'build-open-value-builder'(el) { openValueBuilder(Number(el.dataset.row)); },
+  'build-vb-tab'(el) { S.modal.tab = el.dataset.val; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-op'(el) { S.modal.op = el.dataset.val; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-use': useValueBuilder,
 };
 
 export const changes = {
@@ -526,6 +767,8 @@ export const changes = {
   'build-env-secret'(el) { S.modal.rows[Number(el.dataset.i)].secret = el.checked; rerender(); },
   'build-step-onfail'(el) { updateStep(Number(el.dataset.row), { onFail: el.value }); },
   'build-step-match'(el) { updateStep(Number(el.dataset.row), { match: el.value }); },
+  'build-dup-toggle'(el) { S.modal.rows[Number(el.dataset.i)].on = el.checked; rerender(); },
+  'build-fr-toggle'(el) { S.modal.hits[Number(el.dataset.i)].on = el.checked; rerender(); },
 };
 
 export const inputs = {
@@ -548,4 +791,21 @@ export const inputs = {
   'build-step-notes'(el) { updateStepDebounced(Number(el.dataset.row), { notes: el.value }); },
   'build-menu-query'(el) { S.build.ed.menuQuery = el.value; rerender(); },
   'build-drow-cell'(el) { setDataCellDebounced(Number(el.dataset.row), el.dataset.col, el.value); },
+  'build-tpl-name'(el) { S.modal.name = el.value; },
+  'build-tpl-desc'(el) { S.modal.description = el.value; },
+  'build-dup-name'(el) { S.modal.name = el.value; },
+  'build-dup-replace'(el) { S.modal.rows[Number(el.dataset.i)].replace = el.value; rerender(); },
+  'build-dup-find'(el) { S.modal.find = el.value; },
+  'build-dup-repl'(el) { S.modal.replace = el.value; },
+  'build-fr-find'(el) { S.modal.find = el.value; },
+  'build-fr-repl'(el) { S.modal.replace = el.value; },
+  'build-vb-offset'(el) { S.modal.offset = el.value; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-fmt'(el) { S.modal.fmt = el.value; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-prefix'(el) { S.modal.prefix = el.value; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-suffix'(el) { S.modal.suffix = el.value; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-list'(el) { S.modal.list = el.value; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-a'(el) { S.modal.a = el.value; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-b'(el) { S.modal.b = el.value; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-parts'(el) { S.modal.parts = el.value; refreshValueBuilderFormula(); rerender(); },
+  'build-vb-delim'(el) { S.modal.delim = el.value; refreshValueBuilderFormula(); rerender(); },
 };

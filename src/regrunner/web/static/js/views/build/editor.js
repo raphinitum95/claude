@@ -127,12 +127,19 @@ function gridView(S, t) {
 // ---- bulk bar + add-step menu ---------------------------------------------------------------------------------
 function bulkBar(S) {
   const ed = S.build.ed;
-  if (!ed.multi.length) return '';
+  const clip = S.build.clip;
+  if (!ed.multi.length) {
+    if (!clip) return '';
+    return html`<div style="position: absolute; left: 50%; bottom: ${ed.drawer ? 260 : 16}px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 13px; background: var(--surface3); border: 1px solid var(--line2); box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)); z-index: 5">
+<button class="btn btn-sm btn-ghost" data-act="build-paste-steps">${icon('copy', 13)} Paste ${clip.steps.length} step${clip.steps.length === 1 ? '' : 's'}</button></div>`;
+  }
   return html`<div style="position: absolute; left: 50%; bottom: ${ed.drawer ? 260 : 16}px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 14px; border-radius: 13px; background: var(--surface3); border: 1px solid var(--line2); box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)); z-index: 5">
 <b style="font-size: 13px">${ed.multi.length} selected</b><span style="width: 1px; height: 20px; background: var(--line2)"></span>
 <button class="btn btn-sm btn-ghost" data-act="build-bulk-enable">On</button><button class="btn btn-sm btn-ghost" data-act="build-bulk-disable">Off</button>
 <button class="btn btn-sm btn-ghost" data-act="build-bulk-stop">Stop on fail</button><button class="btn btn-sm btn-ghost" data-act="build-bulk-continue">Keep going</button>
 <button class="btn btn-sm btn-ghost" data-act="build-move-block">Move to block…</button>
+<button class="btn btn-sm btn-ghost" data-act="build-copy-steps">${icon('copy', 13)} Copy</button>
+<button class="btn btn-sm btn-ghost" data-act="build-save-template">${icon('layers', 13)} Save as template</button>
 <button class="btn btn-sm btn-ghost" style="color: var(--fail)" data-act="build-delete-selected">${icon('trash', 13)} Delete</button>
 <button class="icon-btn" style="width: 26px; height: 26px" data-act="build-clear-multi" aria-label="Clear selection">${icon('x', 12)}</button></div>`;
 }
@@ -144,6 +151,7 @@ function addStepMenu(S) {
   const groups = (S.build.keywords && S.build.keywords.groups) || [];
   return html`<div class="menu" style="position: absolute; right: 16px; top: 8px; width: 320px; padding: 6px; z-index: 6" role="menu">
 <div class="field" style="margin-bottom: 6px">${icon('search', 14)}<input class="fld" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Search actions…" value="${ed.menuQuery || ''}" data-input="build-menu-query" autocomplete="off"></div>
+<button class="mitem" data-act="build-open-insert-template">${icon('layers', 14)}<span style="flex: 1">Insert a template</span></button>
 ${sessionOpen() ? html`<button class="mitem" data-act="build-rec-here">${icon('rec', 14)}<span style="flex: 1">Record from here in the browser</span></button>`
   : html`<button class="mitem" disabled style="opacity: .5; cursor: default" title="Open the site first (the button under the test's header)">${icon('rec', 14)}<span style="flex: 1">Record from here in the browser</span></button>`}
 ${sessionOpen() ? html`<button class="mitem" data-act="build-sess-pick">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>`
@@ -217,7 +225,8 @@ ${(s.locator.plainWords || []).length ? html`<div style="display: flex; flex-wra
     ? (w.variable ? html`<span class="var">${icon('braces', 11)} ${w.variable}</span>` : html`<b style="font-size: 12.5px">“${w.text}”</b>`) : html`<span class="tag">${w.text}</span>`)}</div>` : ''}
 <div class="field mono" style="align-items: flex-start; font-size: 11.5px; color: var(--tx2)"><span class="tag">${s.locator.findBy || '–'}</span><span style="word-break: break-all">${s.locator.value || '–'}</span></div>
 ${(s.locator.backups || []).length ? html`<span style="font-size: 12px; color: var(--tx3)">${s.locator.backups.length} backup locator${s.locator.backups.length === 1 ? '' : 's'} stored.</span>` : ''}</div>` : ''}
-${!s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Value</span>
+${!s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><div style="display: flex; align-items: center; gap: 8px"><span class="lbl">Value</span><span style="flex: 1"></span>
+<button class="btn btn-ghost btn-sm" style="height: 22px; font-size: 11px; padding: 0 6px" data-act="build-open-value-builder" data-row="${s.row}" title="Value builder: writes a formula">ƒ Value builder</button></div>
 <div class="field">${s.value ? html`<span style="flex-wrap: wrap; display: flex; gap: 3px">${tokenHtml(s.value)}</span>` : html`<span class="mono" style="font-size: 12px; color: var(--tx3)">(empty)</span>`}</div>
 <input class="fld mono" style="font-size: 12px" value="${s.value}" data-input="build-step-value" data-row="${s.row}"></div>
 <div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Expected</span>

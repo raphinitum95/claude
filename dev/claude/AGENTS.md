@@ -29,7 +29,7 @@ Short doesn't mean incomplete: always include failures, risks, required actions 
    Reports are shared with a QA team (`publish.dir`).
 5. **Python 3.9 must keep working** (`requires-python >= 3.9`; the work computer uses 3.9). Create `asyncio.Event/Lock/Queue`
    inside coroutines only (guarded by `tests/test_py39_compat.py`). Annotations use `from __future__ import annotations`.
-6. **Run only the tests your change touches** (section 5). The full suite is 888 tests / 40+ min: only when the user asks.
+6. **Run only the tests your change touches** (section 5). The full suite is 953 tests / 40+ min: only when the user asks.
    Always tell the user which tests you ran.
 7. **Do not edit the user's workbooks** (`workbooks/*.xlsx`). If a cell is wrong, tell the user which cell and why.
 8. **Changes to server code** (`src/regrunner/web/app.py` or anything it imports at server start) **need the user to restart the UI**.
@@ -89,6 +89,9 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Build tab UI (Run · Build · Results tabs, workbook map, variable map, test editor: block map/cards/inspector/grid/drawer/problems/add-step menu, new-workbook/environments/fingerprint/history/file-changed dialogs) | `web/static/js/views/build/*.js` (state in `state.js`'s `freshBuild`/`freshEditor`), `views/shell.js` (`tabs`, `headerShell`), `views/modals.js` (routes `build-*` modal kinds to `build/dialogs.js`), `main.js` (`#/build...` routes, merges `build/actions.js` into the action tables), `icons.js`, `app.css` ("Build tab" section) | `test_web_build.py`, `test_web_ui.py -k theme`. JS only: reload the page, no UI restart |
 | Recording + Check/Save/Wait until in the build window (Rec toggle, steps at the cursor, typed text → variable, password → secret in secrets.env, switch window/frame/Back steps, calendar → PICK_DATE, suggestion → CHOOSE_SUGGESTION, fingerprint + gate proposal, check card with every kind prefilled) | `build/recorder.py` (`Recorder`; pure helpers `check_kinds`/`check_step`/`token_for`/`store_secret` at the top), `build/overlay.js` (recording listeners, page-side locator counts, pill, cards, prompts), `build/session.py` (`_on_call` routing, modes), `web/record_api.py`, `web/static/js/views/build/record.js` | `test_build_recorder.py` (fast), `test_build_recording.py` (mock site `build_record*.html`, `widgets.html`), `test_web_build_record.py`. **Restart UI** for recorder/session/record_api; overlay.js is read at server start |
 | Build window (Build tab's live browser: overlay pill/pick/which-one, locator + backups + plain words, word → variable, run up to here / this step / next N, side-effect pause, "earlier steps changed") | `build/session.py` (`BuildSession`, `SessionStore`, `BuildAsker`), `build/locators.py` (pure), `build/overlay.js`, `web/build_api.py` (`register_session_routes`), `web/static/js/views/build/session.js`, `engine/test_runner.py` (`prepare_runtime`/`open_session`) | `test_build_locators.py` (fast), `test_build_session.py` (mock site `build_pick.html`), `test_web_build_session.py`. **Restart UI** for session.py/build_api changes; overlay.js is read at server start too |
+| Templates: save a section as a template, insert one with variable mapping (Q15-17) | `workbook/templates.py` (new), `web/templates_api.py` (new, `register_templates_routes`; needs `web/app.py`'s `register_build_routes` return value, the shared `BuildStore`), `web/static/js/views/build/dialogs.js` (`templatesLibraryDialog`/`saveTemplateDialog`/`insertTemplateDialog`), `views/build/actions.js` (`openSaveTemplate`/`openInsertTemplate`/...), `formula.py`'s `{?TOKEN}` marker for anything left unmapped | `test_templates.py` (fast), `test_templates_api.py`, `test_web_build_p11.py` |
+| Copy/paste a step or block, duplicate a workbook ("what changes?"), workbook-wide find & replace, per-step merge of a change made outside the builder (Q26, Q29) | `workbook/refactor.py` (new: `find_replace_preview`, `duplicate_candidates`, `merge_ops` - all return existing op kinds, never a new one), `web/refactor_api.py` (new, `register_refactor_routes`), `web/static/js/views/build/dialogs.js` (`duplicateWorkbookDialog`/`findReplaceDialog`, the merge picks in `fileChangedDialog`), `views/build/actions.js` (`copySelected`/`pasteClipboard` are pure client-side ops composition, no Python) | `test_refactor.py` (fast), `test_refactor_api.py`, `test_web_build_p11.py` |
+| Value builder (computed values: date ± N, unique, pick from list, math, text join - Q23), a new Excel function | `workbook/formula.py` (`@function`), `web/static/js/views/build/dialogs.js` (`valueBuilderDialog`), `views/build/actions.js` (`refreshValueBuilderFormula` builds the formula string; it is written via the existing `update_step`/`set_cell` ops, no new backend) | `test_formula.py` (fast) |
 | API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates; `{NAME}` / `REQUEST_BODY` / JSONPath + XPath paths / XML (SOAP) templates / greater_than-between-matches checks | `workbook/api.py`, `workbook/api_template.py`, `workbook/api_paths.py`, `engine/api_runner.py` (`prepare_body`, `fetch`, `read_response`) | `test_api_tests.py`, `test_api_purchase_flavour.py`, `test_api_paths_and_xml.py` |
 | Build tab API / XML editor (form, Send now, response tree with "this item" / "item where", cURL, Postman, templates; `api_*` ops) | `build/api_builder.py`, `web/build_apitest.py` (`/api/build/api/*`), `web/static/js/views/build/api_editor.js`; CONTRACT.md 1.6 | `test_api_builder.py` (Send now hits the mock APIs), `test_web_api_builder.py`. **Restart UI** for api_builder/build_apitest changes |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
@@ -176,11 +179,14 @@ src/regrunner/
     settle.py 61 · enabled.py 97 · keys.py 87 · outcome.py 94 · order.py 243 · schedule.py 72 · pool.py 100
     inbox.py 115 · throttle.py 71 · captcha.py 65 · ask.py 118 · failure_capture.py 449 · api_runner.py 343 · diagnostics.py 17
   workbook/
-    model.py 812 (Workbook, TestCase, TestRuntime, prepare_row, value_of, plan) · sheet.py 262 · formula.py 755 · textfmt.py 156
+    model.py 812 (Workbook, TestCase, TestRuntime, prepare_row, value_of, plan) · sheet.py 262 · formula.py 770 · textfmt.py 156
     variables.py 339 (VariablePool, environment table, secret_value, {NAME} substitute, IF conditions, flow_map of IF/loops)
     writer.py 1400 (WorkbookEditor: patches only the XML an edit touches; row insert/delete/move rewrite every reference)
     builder.py 1850 (Workbook Builder model: build_model, apply_ops, BuildDocument undo/draft/save/history/diff, BuildStore; CONTRACT.md)
     api.py 617 · api_template.py 113 · api_paths.py 236 (JSONPath with [?(@.k=='v')] filters, stdlib XPath + /@attr, text(), prefixes; paths the builder writes)
+    templates.py 274 (P11: the shared template library, templates.xlsx; save_as_template, match_variables, insert_template_ops - all
+                  compose existing ops, no new op kind) · refactor.py 151 (P11: find_replace_preview, duplicate_candidates, merge_ops -
+                  same: hits/candidates the caller turns into set_cell/update_step ops, never writes a workbook itself)
   build/        the Build tab's live browser window (P08; the UI server runs it, never a run): session.py (BuildSession: headed browser + overlay
                 on every context, pick -> locator checked with the engine's selectors, word -> {VARIABLE}, replays with TestRunner's own steps,
                 BuildAsker for the side-effect pause, stale check; SessionStore: one per workbook, 3 max), api_builder.py (P10: API/XML
@@ -204,6 +210,11 @@ src/regrunner/
                   re-run-failed makes a new labelled batch), test page (block map read fresh from the workbook + backup locators + this
                   test's history), compare. The heavy lifting (build_batch_page, rerun_plan, build_test_page, build_compare) takes plain
                   paths/data, so it is unit-tested without a server (test_web_results.py).
+    templates_api.py  /api/build/templates* + /api/build/workbooks/{name}/templates/insert (P11, register_templates_routes: one line in
+                  create_app, needs register_build_routes's returned BuildStore so an insert shares the workbook's undo/draft with every
+                  other edit)
+    refactor_api.py  duplicate/find-replace/merge routes (P11, register_refactor_routes: one line in create_app, same shared BuildStore);
+                  none of it is a new op kind - find/replace and "what changes?" resolve to set_cell ops, merge to update_step ops
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
     static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher),
@@ -221,7 +232,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            78 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            83 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -235,8 +246,8 @@ Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv`
 |---|---|---|
 | One file | `.venv/bin/pytest -q tests/test_page_ready.py` | seconds to ~1 min |
 | One test | `.venv/bin/pytest -q tests/test_web_ui.py -k theme` | |
-| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 585 tests, ~6 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
-| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 926 tests, 40+ min |
+| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 607 tests, ~6 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
+| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 953 tests, 40+ min |
 
 - Marker `browser` = needs Playwright (module-level `pytestmark` or per test); `realworkbook` = needs `workbooks/UAT_AEM_Travelex Regression_v9.1.xlsx` (skips otherwise).
 - Pure-logic files (all fast): `test_workbook_roundtrip -k "not real"`, `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
@@ -378,6 +389,27 @@ also reads `REQUEST_BODY`, `{NAME}`/`{SECRET:NAME}` in URL/headers/body/paths (r
 API tests now take part in Needs/Provides (their output columns go into the pool). Send now (`build/api_builder.send_now`) sends the **draft** with
 the engine's own `prepare_body`/`fetch`/`read_response`; a production environment needs `confirmProd: "PROD"`. Not built: "Describe a step"
 (Q48), a CSV of responses, recorded traffic (not a source by design). Unverified: real APIs through the work computer's proxy.
+
+P11 (templates, copy/paste, duplicate, find/replace, computed values) PR open: `workbook/templates.py` (new) and `workbook/refactor.py`
+(new) are pure op-synthesizers - given a model/editor they return `{templates}`/hits/candidates or lists of ops, never write a workbook
+themselves - so neither needed a new op kind and `workbook/builder.py` is untouched by this phase. Templates: one sheet per template in a
+shared `templates.xlsx` next to the workbooks (every Params reference written as `{TOKEN}`, since a template is not tied to one workbook's
+Params layout); inserting maps each token onto the target's own variables (exact/close-match/create a new column, `match_variables`), and
+anything left unmapped becomes `{?TOKEN}` (the `unmapped_template_variable` problem CONTRACT.md 1.2 already defines). Duplicate ("what
+changes?", Q26) and workbook-wide find & replace share one mechanism (`find_replace_preview`/`duplicate_candidates`): every sheet
+including `_rr_*` (a duplicate's domain lives in `_rr_environments`), never row 1 or a result column or a formula's literal text; the hits
+become `set_cell` ops sent to the existing `/edit`. Copy/paste of a step or block needed no Python at all: a `Step`'s fields already are
+`insert_step`'s fields, so it is entirely `views/build/actions.js` (a client-side clipboard). File-changed-on-disk (Q29) grew a real
+per-step merge alongside the reload/save-anyway P02 already had: `merge_ops` re-reads `diff("disk")` and turns a person's per-row
+"theirs"/"mine" pick into `update_step` ops - scoped to `kind: "changed"` hits only (an added/removed row still needs reload or
+save-anyway; CONTRACT.md documents the split). Value builder (Q23) writes a real formula string into `Value` via the existing
+`update_step`/`set_cell`; the only backend change was two new Excel functions, `CHOOSE` and `TEXTJOIN` (`formula.py`), both real Excel
+functions so the workbook still opens correctly in Excel. Two new route modules (`web/templates_api.py`, `web/refactor_api.py`) share
+`build_api.py`'s `BuildStore` (a one-line change to `create_app` capturing `register_build_routes`'s return value) so a template insert,
+a find/replace or a merge goes through the same undo/draft as every other edit. Not built: deleting a template (`WorkbookEditor` has no
+way to remove a sheet yet - a real P01 gap, surfaced as a plain 400 `unsupported` rather than faked); copy/paste of a whole test or
+workbook (decomposes into existing ops too, but was left to a later session: `add_test` + repeated `insert_step`/`add_variable`/`set_cell`
+from the JS side, same pattern as the template insert).
 
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)

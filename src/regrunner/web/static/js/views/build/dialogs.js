@@ -92,16 +92,27 @@ ${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)'
 }
 
 // ---- file changed on disk ------------------------------------------------------------------------------------
+function mergeRow(c, i, pick) {
+  const key = `${c.test}:${c.row}`;
+  const mergeable = c.kind === 'changed' && c.before != null;
+  const seg = mergeable ? html`<span class="seg" style="width: 170px"><span class="${pick !== 'theirs' ? 'on' : ''}" data-act="build-fc-pick" data-key="${key}" data-val="mine">Mine</span><span class="${pick === 'theirs' ? 'on' : ''}" data-act="build-fc-pick" data-key="${key}" data-val="theirs">Excel's</span></span>` : '';
+  return html`<tr data-key="c-${i}"><td>${c.test || ''}${c.row ? ' · ' + c.row : ''}</td><td><span class="tag ${c.kind === 'removed' ? 'tag-fail' : c.kind === 'added' ? 'tag-acc' : c.kind === 'test_added' || c.kind === 'test_removed' ? 'tag-warn' : ''}">${c.kind}</span></td>
+<td class="mono trunc" style="color: var(--tx3)">${mergeable ? `${c.before.value || c.before.method || ''} → ${c.after.value || c.after.method || ''}` : (mergeable === false && c.kind === 'changed' ? 'structural' : '')}</td><td>${seg}</td></tr>`;
+}
+
 export function fileChangedDialog(m) {
-  const inner = html`<div class="bn bn-warn">${icon('warn', 15, 'color: var(--warn)')}<span><b>The workbook changed on disk</b> (saved outside this session). Reload to take that version, or save anyway to overwrite it with your draft.</span></div>
+  const inner = html`<div class="bn bn-warn">${icon('warn', 15, 'color: var(--warn)')}<span><b>The workbook changed on disk</b> (saved outside this session). Reload to take that version, save anyway to overwrite it with your draft, or pick a side per changed step and merge.</span></div>
 ${m.loading ? html`<div style="color: var(--tx3); font-size: 12.5px">Comparing…</div>` : m.changes.length
-    ? html`<div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><thead><tr><th>Where</th><th>Step</th><th>What</th></tr></thead><tbody>
-${m.changes.map((c, i) => html`<tr data-key="c-${i}"><td>${c.test || ''}</td><td class="mono">${c.n || c.row || ''}</td><td><span class="tag ${c.kind === 'removed' ? 'tag-fail' : c.kind === 'added' ? 'tag-acc' : ''}">${c.kind}</span></td></tr>`)}
-</tbody></table></div>` : html`<span style="font-size: 12.5px; color: var(--tx3)">No changes to compare yet.</span>`}
+    ? html`<div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><thead><tr><th>Where</th><th>What</th><th>Change</th><th>Keep</th></tr></thead><tbody>
+${m.changes.map((c, i) => mergeRow(c, i, m.picks[`${c.test}:${c.row}`]))}
+</tbody></table></div>` : html`<span style="font-size: 12.5px; color: var(--tx3)">No differences from the current draft.</span>`}
 ${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : ''}`;
+  const merging = Object.values(m.picks).filter((v) => v === 'theirs').length;
   const footer = html`<button class="btn ${m.busy ? 'busy' : ''}" data-act="build-fc-reload" ${m.busy ? raw('disabled') : ''}>Reload from disk</button>
-<span style="flex: 1"></span><button class="btn btn-pri ${m.busy ? 'busy' : ''}" data-act="build-fc-save-anyway" ${m.busy ? raw('disabled') : ''}>Save anyway</button>`;
-  return backdrop(dialogShell('The workbook changed on disk', 'Reload it, or overwrite it with your draft.', inner, footer, { width: 640, wide: true }));
+<button class="btn ${m.busy ? 'busy' : ''}" data-act="build-fc-save-anyway" ${m.busy ? raw('disabled') : ''}>Save anyway</button>
+<span style="flex: 1"></span>
+<button class="btn btn-pri ${m.busy ? 'busy' : ''}" data-act="build-fc-merge" ${!merging || m.busy ? raw('disabled') : ''}>Merge ${merging || ''}</button>`;
+  return backdrop(dialogShell('The workbook changed on disk', 'Reload it, overwrite it, or merge step by step.', inner, footer, { width: 760, wide: true }));
 }
 
 // ---- history --------------------------------------------------------------------------------------------------
@@ -133,6 +144,136 @@ export function gridDialog(m) {
 <tbody>${m.grid.rows.map((row, i) => html`<tr data-key="gr-${i}">${row.map((c) => html`<td>${c == null ? '' : String(c)}</td>`)}</tr>`)}</tbody></table></div>`;
   const footer = html`<span style="flex: 1"></span><button class="btn" data-act="close-modal">Close</button>`;
   return backdrop(dialogShell(m.title, m.sheetName, inner, footer, { width: 900, wide: true }));
+}
+
+// ---- templates: browse the library, save a selection, insert with mapping (Q15-17) --------------------------------
+export function templatesLibraryDialog(m) {
+  const inner = m.loading ? html`<span style="color: var(--tx3); font-size: 12.5px">Loading…</span>`
+    : m.items.length ? m.items.map((t) => html`<div class="scard" data-key="tpl-${t.name}">
+${icon('layers', 15, 'color: var(--acc)')}<div style="display: flex; flex-direction: column; min-width: 0; flex: 1"><b>${t.name}</b>
+<span style="font-size: 11.5px; color: var(--tx3)">${t.count} step${t.count === 1 ? '' : 's'}${t.description ? ' · ' + t.description : ''}${t.variables.length ? ' · ' + t.variables.length + ' variable' + (t.variables.length === 1 ? '' : 's') : ''}</span></div></div>`)
+    : html`<span style="font-size: 12.5px; color: var(--tx3)">No templates saved yet. Select some steps in a test, then "Save as template".</span>`;
+  const footer = html`<span style="flex: 1"></span><button class="btn" data-act="close-modal">Close</button>`;
+  return backdrop(dialogShell('Templates', 'Shared across every workbook, next to workbooks/.', inner, footer, { width: 620 }));
+}
+
+export function saveTemplateDialog(m) {
+  const inner = html`<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Name</span>
+<input class="fld" value="${m.name}" placeholder="Traveler form" data-input="build-tpl-name" autofocus></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Description (optional)</span>
+<input class="fld" value="${m.description}" placeholder="What this section does" data-input="build-tpl-desc"></div>
+<span style="font-size: 12px; color: var(--tx3)">${m.count} step${m.count === 1 ? '' : 's'} will be copied. Later edits here or in the template do not spread to the other.</span>
+${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : ''}`;
+  const footer = html`<span style="flex: 1"></span><button class="btn" data-act="close-modal">Cancel</button>
+<button class="btn btn-pri ${m.busy ? 'busy' : ''}" data-act="build-tpl-save" ${m.busy ? raw('disabled') : ''}>Save as template</button>`;
+  return backdrop(dialogShell('Save as template', 'Insert this section into other tests later.', inner, footer, { width: 480 }));
+}
+
+export function insertTemplateDialog(m) {
+  if (m.step === 'pick') {
+    const inner = m.loading ? html`<span style="color: var(--tx3); font-size: 12.5px">Loading…</span>`
+      : m.items.length ? m.items.map((t) => html`<button class="scard" style="text-align: left; width: 100%" data-key="itpl-${t.name}" data-act="build-tpl-choose" data-name="${t.name}">
+${icon('layers', 15, 'color: var(--acc)')}<div style="display: flex; flex-direction: column; min-width: 0; flex: 1"><b>${t.name}</b>
+<span style="font-size: 11.5px; color: var(--tx3)">${t.count} step${t.count === 1 ? '' : 's'}${t.description ? ' · ' + t.description : ''}</span></div>${icon('chevron', 13, 'color: var(--tx3)')}</button>`)
+      : html`<span style="font-size: 12.5px; color: var(--tx3)">No templates saved yet.</span>`;
+    const footer = html`<span style="flex: 1"></span><button class="btn" data-act="close-modal">Cancel</button>`;
+    return backdrop(dialogShell('Insert a template', 'Pick one to insert here.', inner, footer, { width: 560 }));
+  }
+  if (!m.template) {
+    const inner = m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : html`<span style="color: var(--tx3); font-size: 12.5px">Loading…</span>`;
+    const footer = html`<button class="btn" data-act="build-tpl-back">${icon('chevl', 13)} Back</button><span style="flex: 1"></span><button class="btn" data-act="close-modal">Cancel</button>`;
+    return backdrop(dialogShell('Insert a template', 'Match its variables to yours.', inner, footer, { width: 480 }));
+  }
+  const rows = m.mapping.map((r, i) => html`<tr data-key="map-${i}"><td class="mono">{${r.templateVar}}</td>
+<td>${r.mine ? html`<span class="var">${icon('braces', 11)} ${r.mine}</span>` : html`<span class="tag tag-acc">${icon('plus', 10)} new variable</span>`}</td>
+<td><span class="tag ${r.mine ? '' : 'tag-warn'}">${r.how}</span></td></tr>`);
+  const inner = html`<div class="card" style="padding: 10px 12px; display: flex; align-items: center; gap: 10px; box-shadow: none">
+${icon('layers', 16, 'color: var(--acc)')}<b>${m.template.name}</b><span style="font-size: 12px; color: var(--tx3)">${m.template.count} steps · inserts after step ${m.afterN}</span></div>
+${m.mapping.length ? html`<div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><thead><tr><th>Template uses</th><th>In this workbook</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+<div class="bn">${icon('info', 15, 'color: var(--tx3)')}<span>Inserting copies the steps. Later edits here don't change the template, or the other way round.</span></div>` : ''}
+${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : ''}`;
+  const footer = html`<button class="btn" data-act="build-tpl-back">${icon('chevl', 13)} Back</button><span style="flex: 1"></span>
+<button class="btn" data-act="close-modal">Cancel</button>
+<button class="btn btn-pri ${m.busy ? 'busy' : ''}" data-act="build-tpl-insert" ${m.busy ? raw('disabled') : ''}>Insert ${m.template.count} step${m.template.count === 1 ? '' : 's'}</button>`;
+  return backdrop(dialogShell('Insert a template', 'Match its variables to yours.', inner, footer, { width: 720, wide: true }));
+}
+
+// ---- duplicate workbook: "what changes?" + find and replace (Q26) --------------------------------------------------
+export function duplicateWorkbookDialog(m) {
+  const rowLine = (r, i) => html`<div style="display: grid; grid-template-columns: 24px 1fr 1fr; gap: 10px; align-items: center" data-key="dup-${i}">
+<input type="checkbox" class="cb" ${r.on ? raw('checked') : ''} data-change="build-dup-toggle" data-i="${i}" aria-label="${r.label}">
+<div style="display: flex; flex-direction: column; min-width: 0"><b style="font-size: 12.5px">${r.label}</b><span class="mono trunc" style="font-size: 11px; color: var(--tx3)">${r.find}</span></div>
+<input class="fld mono" style="font-size: 12px; ${r.on ? '' : 'opacity: .5'}" value="${r.replace}" placeholder="keep" data-input="build-dup-replace" data-i="${i}" ${r.on ? '' : raw('disabled')}></div>`;
+  const inner = html`<div style="display: flex; align-items: center; gap: 10px"><span class="field" style="min-height: 34px; flex: 1"><b>${m.source}</b></span>${icon('arrowr', 16)}
+<input class="fld" value="${m.name}" placeholder="New workbook name" data-input="build-dup-name" style="flex: 1" autofocus></div>
+${m.loading ? html`<span style="color: var(--tx3); font-size: 12.5px">Looking for what usually changes…</span>`
+  : m.rows.length ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">What changes? (optional)</span>${m.rows.map((r, i) => rowLine(r, i))}</div>`
+  : html`<span style="font-size: 12.5px; color: var(--tx3)">Nothing obvious found to change; add your own below.</span>`}
+<div style="display: flex; gap: 8px; align-items: center"><span class="field" style="min-height: 32px; flex: 1">${icon('search', 13)}<input class="fld mono" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Find" value="${m.find}" data-input="build-dup-find"></span>
+<span class="field" style="min-height: 32px; flex: 1">${icon('arrowr', 13)}<input class="fld mono" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Replace" value="${m.replace}" data-input="build-dup-repl"></span>
+<button class="btn btn-sm" data-act="build-dup-add">${icon('plus', 12)} Add</button></div>
+${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : ''}
+<span style="font-size: 12px; color: var(--tx3)">Nothing is written until you duplicate.</span>`;
+  const footer = html`<span style="flex: 1"></span><button class="btn" data-act="close-modal">Cancel</button>
+<button class="btn btn-pri ${m.busy ? 'busy' : ''}" data-act="build-dup-run" ${m.busy || !m.name.trim() ? raw('disabled') : ''}>Duplicate</button>`;
+  return backdrop(dialogShell('Duplicate workbook', 'Copy, then change what differs.', inner, footer, { width: 720, wide: true }));
+}
+
+// ---- find & replace across the whole workbook -------------------------------------------------------------------
+export function findReplaceDialog(m) {
+  const hits = m.hits.map((h, i) => html`<tr data-key="fh-${i}"><td><input type="checkbox" class="cb" ${h.on ? raw('checked') : ''} data-change="build-fr-toggle" data-i="${i}" aria-label="Include this hit"></td>
+<td>${h.sheet}</td><td class="mono">${h.row}</td><td class="mono" style="color: var(--tx3)">${h.header}</td>
+<td class="mono"><span style="color: var(--fail); text-decoration: line-through">${h.before}</span> → <span style="color: var(--pass)">${h.after}</span></td></tr>`);
+  const inner = html`<div style="display: flex; gap: 8px"><span class="field" style="min-height: 34px; flex: 1">${icon('search', 14)}<input class="fld mono" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Find" value="${m.find}" data-input="build-fr-find" autofocus></span>
+<span class="field" style="min-height: 34px; flex: 1">${icon('arrowr', 14)}<input class="fld mono" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Replace with" value="${m.replace}" data-input="build-fr-repl"></span>
+<span class="seg" style="width: 220px"><span class="${m.whole ? 'on' : ''}" data-act="build-fr-whole" data-val="1">Whole value</span><span class="${m.whole ? '' : 'on'}" data-act="build-fr-whole" data-val="0">Part of a value</span></span>
+<button class="btn ${m.loading ? 'busy' : ''}" data-act="build-fr-preview">Find</button></div>
+${m.hits.length ? html`<div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><thead><tr><th></th><th>Sheet</th><th>Row</th><th>Column</th><th>Change</th></tr></thead><tbody>${hits}</tbody></table></div>`
+  : m.searched ? html`<span style="font-size: 12.5px; color: var(--tx3)">No matches.</span>` : ''}
+${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : ''}`;
+  const on = m.hits.filter((h) => h.on).length;
+  const footer = html`<span style="font-size: 12px; color: var(--tx3)">${on} of ${m.hits.length} selected</span><span style="flex: 1"></span>
+<button class="btn" data-act="close-modal">Close</button>
+<button class="btn btn-pri ${m.busy ? 'busy' : ''}" data-act="build-fr-apply" ${!on || m.busy ? raw('disabled') : ''}>Replace ${on}</button>`;
+  return backdrop(dialogShell('Find and replace', 'Across every sheet, header rows never touched.', inner, footer, { width: 900, wide: true }));
+}
+
+// ---- value builder: writes a real Excel formula (Q23) -------------------------------------------------------------
+const VB_TABS = [['date', 'Date'], ['unique', 'Unique'], ['pick', 'Pick from list'], ['math', 'Math'], ['join', 'Text join']];
+export function valueBuilderDialog(m) {
+  const tabs = html`<div class="seg" style="width: 100%">${VB_TABS.map(([k, label]) => html`<span class="${m.tab === k ? 'on' : ''}" data-act="build-vb-tab" data-val="${k}">${label}</span>`)}</div>`;
+  let body = '';
+  if (m.tab === 'date') {
+    body = html`<div style="display: flex; gap: 8px; align-items: center"><span style="font-size: 13px">Today</span>
+<input class="fld mono" type="number" style="width: 90px" value="${m.offset}" data-input="build-vb-offset"><span style="font-size: 13px">days</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Format</span>
+<input class="fld mono" value="${m.fmt}" placeholder="mm/dd/yyyy" data-input="build-vb-fmt"></div>`;
+  } else if (m.tab === 'unique') {
+    body = html`<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Prefix</span>
+<input class="fld" value="${m.prefix}" placeholder="qa+" data-input="build-vb-prefix"></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Suffix (e.g. @example.com, leave blank for a run id)</span>
+<input class="fld" value="${m.suffix}" placeholder="@example.com" data-input="build-vb-suffix"></div>`;
+  } else if (m.tab === 'pick') {
+    body = html`<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">One per line</span>
+<textarea class="fld" style="height: 90px; padding: 8px 10px" data-input="build-vb-list">${m.list}</textarea></div>`;
+  } else if (m.tab === 'math') {
+    body = html`<div style="display: flex; gap: 8px; align-items: center">
+<input class="fld mono" style="flex: 1" value="${m.a}" placeholder="{COST}" data-input="build-vb-a">
+<span class="seg" style="width: 140px">${['+', '-', '*', '/'].map((o) => html`<span class="${m.op === o ? 'on' : ''}" data-act="build-vb-op" data-val="${o}">${o}</span>`)}</span>
+<input class="fld mono" style="flex: 1" value="${m.b}" placeholder="{COST1}" data-input="build-vb-b"></div>`;
+  } else {
+    body = html`<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Parts, one per line ({VAR} allowed)</span>
+<textarea class="fld" style="height: 80px; padding: 8px 10px" data-input="build-vb-parts">${m.parts}</textarea></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Delimiter</span>
+<input class="fld" value="${m.delim}" placeholder=" " data-input="build-vb-delim"></div>`;
+  }
+  const inner = html`${tabs}${body}
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Formula</span>
+<div class="field mono mspan" style="min-height: 34px; word-break: break-all">${m.formula}</div></div>
+${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : ''}`;
+  const footer = html`<span style="flex: 1"></span><button class="btn" data-act="close-modal">Cancel</button>
+<button class="btn btn-pri" data-act="build-vb-use">Use this value</button>`;
+  return backdrop(dialogShell('Value builder', 'Writes a normal Excel formula into Value.', inner, footer, { width: 560 }));
 }
 
 export function lockedDialog(m) {

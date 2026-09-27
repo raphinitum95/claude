@@ -60,6 +60,7 @@ const P = {
   chevl: '<path d="M15 6l-6 6 6 6"></path>',
   history: '<path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path><path d="M12 7v5l4 2"></path>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"></path>',
+  layers: '<path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path>',
 };
 
 /** An inline SVG icon by name. */

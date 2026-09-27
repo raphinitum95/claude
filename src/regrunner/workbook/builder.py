@@ -1520,8 +1520,8 @@ _SIG = ("method", "name", "value", "expected", "match", "saveAs", "enabled", "on
 
 def _summary(step: dict) -> dict:
     return {"row": step["row"], "n": step["n"], "method": step["method"], "name": step["name"] or step["autoName"],
-            "locator": step["locator"]["value"], "value": step["value"], "expected": step["expected"], "enabled": step["enabled"],
-            "block": step["block"]}
+            "nameAuto": step["nameAuto"], "locator": step["locator"]["value"], "value": step["value"],
+            "expected": step["expected"], "enabled": step["enabled"], "block": step["block"]}
 
 
 _REF_ROW = re.compile(r"(\$?[A-Za-z]{1,3}\$?)\d+")

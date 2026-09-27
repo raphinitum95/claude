@@ -104,6 +104,17 @@ def test_substitute_right_left_mid():
     assert ev('=LEFT("abcdef",2)&RIGHT("abcdef",2)') == "abef"
 
 
+def test_choose_picks_by_position_and_rejects_out_of_range():
+    assert ev('=CHOOSE(2,"Basic","Plus","Max")') == "Plus"
+    with pytest.raises(ExcelError):
+        ev('=CHOOSE(4,"Basic","Plus","Max")')
+
+
+def test_textjoin_skips_empties_when_asked():
+    assert ev('=TEXTJOIN(", ",TRUE,"Jane","","Doe")') == "Jane, Doe"
+    assert ev('=TEXTJOIN("-",FALSE,"a","","b")') == "a--b"
+
+
 def test_formula_parse_cache_is_shared():
     assert parse_formula('=IF(A1="x",1,2)') is parse_formula('=IF(A1="x",1,2)')
 

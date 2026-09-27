@@ -48,6 +48,8 @@ from .build_api import register_build_routes
 from .presence import UiPresence
 from .results_api import register_results_routes
 from .run_batch import register_batch_routes
+from .templates_api import register_templates_routes
+from .refactor_api import register_refactor_routes
 
 STATIC = Path(__file__).parent / "static"
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._ -]+")
@@ -717,9 +719,11 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
 
     app = FastAPI(title="regrunner", docs_url=None, redoc_url=None, lifespan=lifespan)
     mgr = RunManager(cfg, config_path)
-    register_build_routes(app, mgr)                       # /api/build/*: the Workbook Builder (web/build_api.py)
+    build_store = register_build_routes(app, mgr)           # /api/build/*: the Workbook Builder (web/build_api.py)
     register_batch_routes(app, mgr)                        # /api/batches/*: batch grouping and last-run estimates (web/run_batch.py)
     register_results_routes(app, mgr)                       # /api/results/*: causes, trend, block map, compare (web/results_api.py)
+    register_templates_routes(app, mgr, build_store)        # /api/build/templates*: the shared template library (web/templates_api.py)
+    register_refactor_routes(app, mgr, build_store)         # duplicate/find-replace/merge (web/refactor_api.py)
     wb_cache: dict[tuple, Any] = {}
 
     # -- request guard -------------------------------------------------------------------------------
