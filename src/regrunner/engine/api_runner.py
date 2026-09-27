@@ -12,7 +12,9 @@ import json
 import os
 import re
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 from urllib.parse import urlparse
 
 from ..config import Config
@@ -20,7 +22,8 @@ from .ask import AskCancelled, AskTimeout, AskUnavailable
 from ..events import EventBus, now_iso
 from ..reporting.results import StepRecord, TestResult
 from ..workbook.api import METHODS, ApiRuntime, check, json_get, json_set, output_json_text, output_text, template_candidates
-from ..workbook.api_template import apply_replacements, json_to_tree, output_values, xml_to_tree
+from ..workbook.api_paths import MISSING, is_extended_xpath, is_json_path, json_path_first, xpath_all
+from ..workbook.api_template import apply_replacements, json_to_tree, output_values, replacement_text, xml_to_tree
 from ..workbook.model import TestCase, Workbook
 from ..workbook.sheet import cell_text
 from .outcome import FAILED, PASSED
@@ -61,11 +64,160 @@ def is_an_error_page(status: int, headers: dict, text: str) -> bool:
     return "json" not in low.get("content-type", "") and not text.lstrip().startswith(("{", "["))
 
 
+# -- the pieces "Send now" in the Workbook Builder shares with a run (build/api_builder.py): same request, same reading of the response ----------
+def prepare_body(runtime: ApiRuntime, request, cfg: Config, workbook_dir: Path) -> tuple[bytes | None, list[str], str]:
+    """``(body, notes, problem)`` of a row: the body typed in ``REQUEST_BODY`` (the builder's form), else the request template (JSON: ``update_json`` +
+    ``Replace``; any other text - an XML / SOAP envelope - ``Replace`` only, each value XML-escaped), else none."""
+    typed, missing = runtime.request_body(request.json_format)
+    if typed is not None:
+        if missing:
+            return None, [], "Nothing gives a value for " + ", ".join("{%s}" % m for m in missing) + " in the request body."
+        return typed.encode("utf-8"), ["body: the REQUEST_BODY cell"], ""
+    if request.method not in ("POST", "PUT", "PATCH") or not request.template_file:
+        return None, [], ""
+    fallback = [cfg.api.templates_dir, os.environ.get("RR_API_TEMPLATES_DIR", "")]
+    tried = template_candidates(request.template_location, request.template_file, fallback, workbook_dir)
+    found = next((p for p in tried if p.is_file()), None)
+    if found is None:
+        return None, [], (f"Request template {request.template_file!r} was not found. Looked in: " + "; ".join(str(p) for p in tried)
+                          + ". On the QA machines it is on the L: drive; elsewhere put the folder in secrets.env as RR_API_TEMPLATES_DIR=<folder>.")
+    try:
+        raw = found.read_text(encoding="utf-8-sig")
+    except OSError as err:
+        return None, [], f"Request template {found} could not be read: {err}"
+    notes = [f"template: {found}"]
+    try:
+        data = json.loads(raw)
+    except ValueError as err:
+        if not raw.lstrip().startswith("<"):
+            return None, [], f"Request template {found} could not be read as JSON: {err}"
+        return _xml_template(runtime, found, raw, notes)
+    for path, value in runtime.body_updates():
+        if not json_set(data, path, value):
+            notes.append(f"update_json: {path} does not exist in the template (left as it is)")
+    if runtime.io.replace:
+        try:
+            data, filled = apply_replacements(data, runtime.io.replace, runtime.values)
+        except ValueError as err:
+            return None, [], f"Cannot build the request from {found.name}: {err}."
+        notes.append(f"Replace: {filled} placeholders filled from this row")
+    return json.dumps(data, indent=4).encode("utf-8"), notes, ""
+
+
+def _xml_template(runtime: ApiRuntime, found: Path, text: str, notes: list[str]) -> tuple[bytes | None, list[str], str]:
+    """An XML (SOAP) request template: every ``Replace`` placeholder is swapped for its column's text, XML-escaped, in InputOutput order."""
+    filled = 0
+    for placeholder, column in runtime.io.replace.items():
+        key = column.strip().upper()
+        if not placeholder or key not in runtime.values or placeholder not in text:
+            continue
+        problem = runtime.error_in(column)
+        if problem:
+            return None, [], f"Cannot build the request from {found.name}: {problem}."
+        filled += text.count(placeholder)
+        text = text.replace(placeholder, xml_escape(replacement_text(runtime.values[key])))
+    if runtime.io.update_json and runtime.body_updates():
+        notes.append("update_json does not apply to an XML template (Replace does)")
+    notes.append(f"Replace: {filled} placeholders filled from this row")
+    return text.encode("utf-8"), notes, ""
+
+
+@dataclass
+class ApiResponse:
+    status: int
+    headers: dict
+    text: str
+    elapsed_ms: int
+    data: object = None                         # the body as JSON, when it is JSON
+    is_json: bool = False
+    notes: list = field(default_factory=list)
+
+
+async def fetch(pw, cfg: Config, method: str, url: str, headers: dict, body: bytes | None) -> ApiResponse:
+    """Send one request with Playwright's request context (the same proxy and HTTPS settings as a run).  Raises when no response arrived."""
+    api = cfg.api
+    insecure = cfg.browser.ignore_https_errors if api.ignore_https_errors is None else api.ignore_https_errors
+    context = None
+    t0 = time.perf_counter()
+    try:
+        options = {"ignore_https_errors": bool(insecure)}
+        if api.proxy:
+            options["proxy"] = {"server": api.proxy}
+        context = await pw.request.new_context(**options)
+        response = await asyncio.wait_for(context.fetch(url, method=method, headers=headers, data=body, timeout=api.timeout_s * 1000),
+                                          timeout=api.timeout_s + 5)
+        status, got, text = response.status, dict(response.headers), await response.text()
+    finally:
+        if context is not None:
+            try:
+                await context.dispose()
+            except Exception:
+                pass
+    out = ApiResponse(status, got, text, int((time.perf_counter() - t0) * 1000))
+    try:
+        out.data = json.loads(text) if text.strip() else None
+    except ValueError:
+        pass
+    out.is_json = out.data is not None
+    return out
+
+
+def read_response(runtime: ApiRuntime, response: ApiResponse) -> list[str]:
+    """Put what the ``output_json`` / ``Output`` rows ask for into the row (``runtime.record_output``), like the legacy runner, plus the paths the
+    Workbook Builder writes: a JSONPath (``$.plans[?(@.code=='{PLAN}')].eligible``) and an XPath that starts at the document or ends on ``@attr``.
+    Returns the notes for the report."""
+    notes: list[str] = []
+    runtime.record_output("RES_STATUS_CD_OUT", str(response.status))
+    runtime.record_output("ELAPSEDTIME_OUT", str(response.elapsed_ms))
+    data = response.data if response.is_json else None
+    for path, column in runtime.io.output_json.items():
+        filled = runtime.fill(path)
+        if filled.missing:
+            notes.append(f"output_json: nothing gives a value for {', '.join('{%s}' % m for m in filled.missing)} in {path!r}")
+            continue
+        if is_json_path(filled.text):
+            if ".." in filled.text:
+                notes.append(f"output_json: {path!r} uses '..', which is not supported (write the whole path)")
+                continue
+            found = json_path_first(data, filled.text) if response.is_json else MISSING
+            value = "None" if found is MISSING or found is None else output_text(found)
+        elif "*" in path or ".." in path:
+            notes.append(f"output_json: {path!r} is a JSONPath expression this runner cannot read")
+            continue
+        else:
+            value = output_json_text(data, filled.text) if response.is_json else ""
+        if value != "":
+            runtime.record_output(column, value)
+    if runtime.io.output:                                                 # Output: element paths (policyresponses/policydetail/policynumber)
+        tree = json_to_tree(data, runtime.lower_tags()) if response.is_json else xml_to_tree(response.text)
+        if tree is None:
+            notes.append("Output: the response is neither JSON nor XML, so nothing was read from it")
+        else:
+            legacy = {p: c for p, c in runtime.io.output.items() if not ("{" in p or is_extended_xpath(p))}
+            got = [(column, value) for _p, column, value in output_values(tree, legacy, strip=runtime.strip_response())]
+            for path, column in runtime.io.output.items():
+                if path in legacy:
+                    continue
+                filled = runtime.fill(path)
+                try:
+                    values = [] if filled.missing else xpath_all(tree, filled.text)
+                except ValueError as err:
+                    notes.append(f"Output: {err}")
+                    continue
+                values = [v.strip() if runtime.strip_response() else v for v in values if v.strip() and v.strip().upper() != "NONE"]
+                if values:
+                    got.append((column, ";".join(values)))
+            for column, value in got:
+                runtime.record_output(column, value)
+            notes.append(f"Output: {len(got)} values read from the response")
+    return notes
+
+
 class ApiTestRunner:
     __test__ = False
 
     def __init__(self, *, workbook: Workbook, case: TestCase, pw, cfg: Config, bus: EventBus, run_dir: Path, cancel: asyncio.Event,
-                 planned: int, shared: dict, worker: int = 0, attempt: int = 1, throttle=None, asker=None):
+                 planned: int, shared: dict, worker: int = 0, attempt: int = 1, throttle=None, asker=None, pool=None):
         self.workbook, self.case, self.pw, self.cfg, self.bus = workbook, case, pw, cfg, bus
         self.run_dir, self.cancel, self.shared, self.worker, self.attempt, self.throttle = run_dir, cancel, shared, worker, attempt, throttle
         self.test_dir = run_dir / "tests" / case.slug
@@ -73,6 +225,7 @@ class ApiTestRunner:
         self.result = TestResult(id=case.id, title=case.title, sheet=case.sheet, scenario=case.scenario, description=case.description,
                                  total_steps=planned, attempt=attempt)
         self._asker = asker
+        self._pool = pool                         # the run's shared variables ({NAME}; what a response saves goes in)
         self._runtime: ApiRuntime | None = None   # the runtime in use (replaced when a person supplies an empty input)
 
     def _emit(self, type_: str, **fields):
@@ -103,30 +256,8 @@ class ApiTestRunner:
         return now_iso(), time.perf_counter()
 
     def _template(self, runtime: ApiRuntime, request) -> tuple[bytes | None, list[str], str]:
-        """(body, notes, error) for a POST/PUT/PATCH with a request template."""
-        if request.method not in ("POST", "PUT", "PATCH") or not request.template_file:
-            return None, [], ""
-        fallback = [self.cfg.api.templates_dir, os.environ.get("RR_API_TEMPLATES_DIR", "")]
-        tried = template_candidates(request.template_location, request.template_file, fallback, self.workbook.path.parent)
-        found = next((p for p in tried if p.is_file()), None)
-        if found is None:
-            return None, [], (f"Request template {request.template_file!r} was not found. Looked in: " + "; ".join(str(p) for p in tried)
-                              + ". On the QA machines it is on the L: drive; elsewhere put the folder in secrets.env as RR_API_TEMPLATES_DIR=<folder>.")
-        try:
-            data = json.loads(found.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError) as err:
-            return None, [], f"Request template {found} could not be read as JSON: {err}"
-        notes = [f"template: {found}"]
-        for path, value in runtime.body_updates():
-            if not json_set(data, path, value):
-                notes.append(f"update_json: {path} does not exist in the template (left as it is)")
-        if runtime.io.replace:
-            try:
-                data, filled = apply_replacements(data, runtime.io.replace, runtime.values)
-            except ValueError as err:
-                return None, [], f"Cannot build the request from {found.name}: {err}."
-            notes.append(f"Replace: {filled} placeholders filled from this row")
-        return json.dumps(data, indent=4).encode("utf-8"), notes, ""
+        """(body, notes, error) of the request (``prepare_body``)."""
+        return prepare_body(runtime, request, self.cfg, self.workbook.path.parent)
 
     # -- the test -------------------------------------------------------------------------------------------------------------------
     async def run(self) -> TestResult:
@@ -138,7 +269,7 @@ class ApiTestRunner:
             if self.cancel.is_set():
                 result.status = "CANCELLED"
                 return result
-            runtime = self._runtime = self.workbook.api_runtime(case, self.shared)
+            runtime = self._runtime = self.workbook.api_runtime(case, self.shared, pool=self._pool)
             checks = runtime.checkpoints()
             result.total_steps = 1 + len(checks)
             sent = await self._request(runtime)
@@ -171,9 +302,9 @@ class ApiTestRunner:
         """Step 1.  True when a response arrived (whatever its status); False when the test cannot go on."""
         result, row = self.result, runtime.row
         request = runtime.request()
-        name = f"{request.method} {request.url}".strip()
+        name = runtime.mask(f"{request.method} {request.url}".strip())
         started_at, t0 = self._begin(1, row, name, request.method)
-        fail = lambda message: (self._record(1, row, name, request.method, FAILED, error=message, value=request.url, started_at=started_at, t0=t0), False)[1]
+        fail = lambda message: (self._record(1, row, name, request.method, FAILED, error=message, value=runtime.mask(request.url), started_at=started_at, t0=t0), False)[1]
 
         problem = runtime.error_in("WEBSERVICE_URL") or runtime.error_in("WEBSERVICE_METHOD")
         if problem:
@@ -186,7 +317,7 @@ class ApiTestRunner:
                 return fail(problem)
             self._runtime = runtime
             request = runtime.request()
-            name = f"{request.method} {request.url}".strip()
+            name = runtime.mask(f"{request.method} {request.url}".strip())
         if not request.url:
             return fail(f"There is no URL for this row: {request.url_problem}." if request.url_problem else "WEBSERVICE_URL is empty for this row.")
         if urlparse(request.url).scheme not in ("http", "https"):
@@ -197,77 +328,40 @@ class ApiTestRunner:
         if problem:
             return fail(problem)
 
-        api = self.cfg.api
-        insecure = self.cfg.browser.ignore_https_errors if api.ignore_https_errors is None else api.ignore_https_errors
-        (self.test_dir / "request.txt").write_text(
+        (self.test_dir / "request.txt").write_text(runtime.mask(
             f"{request.method} {request.url}\n" + "".join(f"{k}: {MASK if k in request.secret_headers else v}\n" for k, v in request.headers.items())
-            + ("\n" + body.decode("utf-8") if body else ""), encoding="utf-8")
+            + ("\n" + body.decode("utf-8") if body else "")), encoding="utf-8")
         if self.throttle is not None:
             await self.throttle.before_load(self.cancel)                  # the run-wide gap and any cool-down after a block
         t0 = time.perf_counter()                                          # (the time the request took, not the time it waited for its turn)
-        context = None
         try:
-            options = {"ignore_https_errors": bool(insecure)}
-            if api.proxy:
-                options["proxy"] = {"server": api.proxy}
-            context = await self.pw.request.new_context(**options)
-            response = await asyncio.wait_for(
-                context.fetch(request.url, method=request.method, headers=request.headers, data=body, timeout=api.timeout_s * 1000),
-                timeout=api.timeout_s + 5)
-            status, headers, text = response.status, dict(response.headers), await response.text()
+            response = await fetch(self.pw, self.cfg, request.method, request.url, request.headers, body)
         except Exception as err:
-            reason = (str(err).strip().splitlines() or [type(err).__name__])[0][:300]
+            reason = runtime.mask((str(err).strip().splitlines() or [type(err).__name__])[0][:300])
             return fail(f"The request could not be completed: {reason}.{tls_hint(reason)}")
-        finally:
-            if context is not None:
-                try:
-                    await context.dispose()
-                except Exception:
-                    pass
-
-        elapsed_ms = int((time.perf_counter() - t0) * 1000)
-        try:
-            data = json.loads(text) if text.strip() else None
-            pretty = json.dumps(data, indent=4, ensure_ascii=False) if data is not None else text
-            (self.test_dir / "response.json").write_text(pretty, encoding="utf-8")
-        except ValueError:
-            data = None
-            (self.test_dir / "response.txt").write_text(text, encoding="utf-8")
+        status, headers, text, elapsed_ms = response.status, response.headers, response.text, response.elapsed_ms
+        if response.is_json:
+            (self.test_dir / "response.json").write_text(json.dumps(response.data, indent=4, ensure_ascii=False), encoding="utf-8")
+        else:
+            (self.test_dir / ("response.xml" if xml_to_tree(text) is not None else "response.txt")).write_text(text, encoding="utf-8")
         notes.append(f"HTTP {status} in {elapsed_ms} ms; response saved in tests/{self.case.slug}/")
         if status in self.cfg.runner.block_statuses and is_an_error_page(status, headers, text):
-            message = http_block_message(request.url, status, headers)
+            message = runtime.mask(http_block_message(request.url, status, headers))
             result.blocked = message                                          # the runner pauses and tries again (or stops, see throttle.retry_budget)
             result.error = f"The site did not answer. {message}"
-            self._record(1, row, name, request.method, FAILED, error=message, value=request.url, notes=notes, started_at=started_at, t0=t0)
+            self._record(1, row, name, request.method, FAILED, error=message, value=runtime.mask(request.url), notes=notes, started_at=started_at, t0=t0)
             return False
         if status in (401, 403) and not expects_a_status:                     # the API itself said no, and nothing in the workbook expected that
-            message = self._refusal(runtime, request, status, text)
+            message = runtime.mask(self._refusal(runtime, request, status, text))
             result.error = message
-            self._record(1, row, name, request.method, FAILED, error=message, value=request.url, notes=notes, started_at=started_at, t0=t0)
+            self._record(1, row, name, request.method, FAILED, error=message, value=runtime.mask(request.url), notes=notes, started_at=started_at, t0=t0)
             return False
         if self.throttle is not None and status < 400:
             self.throttle.loaded_ok = True
-        runtime.record_output("RES_STATUS_CD_OUT", str(status))
-        runtime.record_output("ELAPSEDTIME_OUT", str(elapsed_ms))
-        for path, column in runtime.io.output_json.items():
-            if path.startswith("$") or "*" in path or ".." in path:
-                notes.append(f"output_json: {path!r} is a JSONPath expression; only dotted paths (a.b.[0].c) are supported")
-                continue
-            value = output_json_text(data, path) if data is not None else ""
-            if value != "":
-                runtime.record_output(column, value)
-        if runtime.io.output:                                             # Output: element paths (policyresponses/policydetail/policynumber)
-            tree = json_to_tree(data, runtime.lower_tags()) if data is not None else xml_to_tree(text)
-            if tree is None:
-                notes.append("Output: the response is neither JSON nor XML, so nothing was read from it")
-            else:
-                got = output_values(tree, runtime.io.output, strip=runtime.strip_response())
-                for _path, column, value in got:
-                    runtime.record_output(column, value)
-                notes.append(f"Output: {len(got)} values read from the response")
+        notes += read_response(runtime, response)
         if status >= 400:
             notes.append("the response is an error; checks below read from it")
-        self._record(1, row, name, request.method, PASSED, value=request.url, notes=notes, sets=self._sets(runtime), started_at=started_at, t0=t0)
+        self._record(1, row, name, request.method, PASSED, value=runtime.mask(request.url), notes=notes, sets=self._sets(runtime), started_at=started_at, t0=t0)
         return True
 
     @property
@@ -326,16 +420,19 @@ class ApiTestRunner:
             self.result.variables.append({"name": need["column"], "value": answer, "stored": answer, "cell": need["source"], "seq": 1,
                                           "row": runtime.row, "step": "", "by_hand": True})
             self._emit("variable_set", step=1, name=need["column"], value=answer, cell=need["source"], by_hand=True)
-        return self.workbook.api_runtime(self.case, self.shared), ""
+        return self.workbook.api_runtime(self.case, self.shared, pool=self._pool), ""
 
     def _check(self, runtime: ApiRuntime, point, seq: int) -> None:
         started_at, t0 = self._begin(seq, runtime.row, f"Check {point.actual_column}", point.kind.upper())
         expected_raw = runtime.values.get(point.expected_column.upper())
-        expected = cell_text(expected_raw)
+        if isinstance(expected_raw, str) and "{" in expected_raw:
+            expected_raw = runtime.fill(expected_raw).text                # an expected value may be {PLAN} (the builder writes it)
+        expected = runtime.mask(cell_text(expected_raw))
         actual = runtime.actual(point.actual_column)
         ok = check(point.kind, expected_raw, actual)
-        comparison = "contains" if point.kind.startswith("contains") else "exact"
-        notes = [] if ok else [f"{point.expected_column} vs {point.actual_column}"]
+        comparison = "contains" if point.kind.startswith("contains") else "exact" if point.kind.startswith("compare") else ""
+        how = "" if comparison else f" ({point.kind.replace('_', ' ')})"            # greater than / between / matches: said in the notes
+        notes = [] if ok else [f"{point.expected_column} vs {point.actual_column}{how}"]
         if not ok and actual == "":
             notes.append("nothing was found in the response for that column (path missing or empty)")
         self._record(seq, runtime.row, f"Check {point.actual_column}", point.kind.upper(), PASSED if ok else FAILED,

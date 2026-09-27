@@ -23,3 +23,4 @@ Build API and XML tests in the UI.
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+2026-09-27 · engine: `workbook/api_paths.py` (JSONPath with "item where", stdlib XPath + @attr/text()/prefixes), `{NAME}`/`{SECRET:}` in API URL/headers/`REQUEST_BODY`/paths, pool Needs/Provides for API tests, XML templates, greater_than/less_than/between/matches checks; `api_runner.prepare_body/fetch/read_response` shared with Send now; mock `/policy/xml/v1` · next: `build/api_builder.py` (view, send now, tree, imports, ops) + routes

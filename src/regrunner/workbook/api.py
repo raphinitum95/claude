@@ -25,11 +25,13 @@ from typing import Any, Mapping
 from .sheet import BookState, ErrorText, cell_text
 
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
-CHECK_KINDS = ("compare", "compare_ignore_case", "contains", "contains_ignore_case")
+CHECK_KINDS = ("compare", "compare_ignore_case", "contains", "contains_ignore_case", "greater_than", "less_than", "between", "matches")
+# (the last four are written by the Workbook Builder, P10: only the new runner reads them; the legacy runner skipped unknown functions)
 _FUNCTIONS = {"addheader": "add_header", "add_header": "add_header", "update_json": "update_json", "output_json": "output_json",
               "compare": "compare", "compare_ignore_case": "compare_ignore_case", "contains": "contains",
               "contains_ignore_case": "contains_ignore_case", "disablecheckpoint": "disable", "disable_checkpoint": "disable",
-              "replace": "replace", "output": "output"}
+              "replace": "replace", "output": "output", "greater_than": "greater_than", "less_than": "less_than", "between": "between",
+              "matches": "matches"}
 
 
 def is_api_sheet(headers) -> bool:
@@ -210,10 +212,32 @@ def output_text(value: Any) -> str:
 
 
 # -- comparing -----------------------------------------------------------------------------------------------------------------------
+def _number(text: str) -> float | None:
+    try:
+        return float(re.sub(r"[^\d.\-]", "", text.replace(",", "")) or "x")
+    except ValueError:
+        return None
+
+
 def check(kind: str, expected: Any, actual: str) -> bool:
-    """The legacy verdict: text equality after trimming (numbers compare to four decimals), or containment; ``_ignore_case`` upper-cases both."""
+    """The legacy verdict: text equality after trimming (numbers compare to four decimals), or containment; ``_ignore_case`` upper-cases both.
+    The builder's kinds: ``greater_than`` / ``less_than`` (numbers, "$1,234.50" reads as 1234.5), ``between`` (expected ``low;high`` or ``low and
+    high``, both ends included) and ``matches`` (a regular expression found in the actual text)."""
     exp_text = cell_text(expected).strip()
     act_text = (actual or "").strip()
+    if kind in ("greater_than", "less_than", "between"):
+        value = _number(act_text)
+        ends = [_number(p) for p in re.split(r"\s*(?:;|\band\b)\s*", exp_text, flags=re.I) if p.strip()]
+        if value is None or not ends or None in ends:
+            return False
+        if kind == "between":
+            return len(ends) == 2 and min(ends) <= value <= max(ends)
+        return value > ends[0] if kind == "greater_than" else value < ends[0]
+    if kind == "matches":
+        try:
+            return re.search(exp_text, act_text) is not None
+        except re.error:
+            return False
     if kind.startswith("compare") and isinstance(expected, (int, float)) and not isinstance(expected, bool):
         exp_text = "{:20.4f}".format(float(expected))
         try:
@@ -258,10 +282,16 @@ class ApiRequest:
 
 
 class ApiRuntime:
-    """One data row of an API sheet, evaluated the way the UI rows are (formulas, tokens); results are written back into the sheet state."""
+    """One data row of an API sheet, evaluated the way the UI rows are (formulas, tokens); results are written back into the sheet state.
 
-    def __init__(self, book: BookState, case, globals_: dict[str, Any], secrets: Mapping[str, str]):
+    ``{NAME}`` / ``{SECRET:NAME}`` in the URL, header values, the ``REQUEST_BODY`` cell and response paths (written by the Workbook Builder) are
+    filled from the row's own columns, then the run's shared variables (``pool``), then the environment table (``env_table``, ``_rr_environments``);
+    a secret put in is kept in ``secret_values`` so every file and report masks it.  Legacy rows have no braces, so nothing changes for them."""
+
+    def __init__(self, book: BookState, case, globals_: dict[str, Any], secrets: Mapping[str, str], *, pool=None, env_table=None):
         self.book, self.case, self.globals, self.secrets = book, case, globals_, secrets
+        self.pool, self.env_table = pool, env_table
+        self.secret_values: set[str] = pool.secret_values if pool is not None else set()   # (the pool's own set: masked in every test of the run)
         self.sheet = book.sheet(case.sheet)
         self.row = case.param_row
         self.columns = self.sheet.data.headers
@@ -306,10 +336,16 @@ class ApiRuntime:
             elif text.lower() == "none":
                 headers[header] = ""
             elif key in self.values or override:
-                headers[header] = text
+                headers[header] = self.fill(text).text
                 secret_headers.add(header)                              # values are masked in every file and report
         json_format = cell_text(self.values.get("JSON_FORMAT")).strip().upper() in ("Y", "YES", "TRUE", "1")
         url, soap_action, content_type, url_problem = self.endpoint()
+        if url and "{" in url:
+            filled = self.fill(url, quote=True)
+            url = filled.text
+            if filled.missing and not url_problem:
+                url_problem = "nothing gives a value for " + ", ".join("{%s}" % m for m in filled.missing) + " in the URL"
+                url = ""
         if json_format:
             headers.setdefault("Content-Type", "application/json")
         elif content_type:
@@ -321,6 +357,90 @@ class ApiRuntime:
         return ApiRequest(method=(self.text("WEBSERVICE_METHOD") or "POST").upper(), url=url, headers=headers,
                           secret_headers=secret_headers, json_format=json_format, template_location=location,
                           template_file=template_file, url_problem=url_problem)
+
+    # -- {NAME} ---------------------------------------------------------------------------------------------------------------------------
+    def value_of(self, name: str) -> str | None:
+        """``{NAME}``: a non-empty column of this row, else the run's shared variables, else the environment table (``None`` = nothing gives one)."""
+        from .variables import SECRET_RE, secret_value
+        key = name.upper().strip()
+        if key in self.values and cell_text(self.values[key]).strip():
+            return cell_text(self.values[key])
+        pooled = self.pool.get(key) if self.pool is not None else None
+        if pooled is not None:
+            return pooled
+        env = self.env_table.value(key, self.environment) if self.env_table is not None else None
+        if env is None:
+            return None
+
+        def put(m) -> str:
+            value = secret_value(m.group(1), self.environment)
+            if value is None:
+                return m.group(0)
+            self.secret_values.add(value)
+            return value
+        return SECRET_RE.sub(put, env)
+
+    def fill(self, text: str, *, escape=None, quote: bool = False):
+        """``text`` with ``{NAME}`` / ``{SECRET:NAME}`` filled in (``variables.Substituted``: ``missing`` names stay as written).  ``escape``: how
+        a value is written into a body (JSON string / XML text); ``quote``: URL-encode the values (a path or query part)."""
+        from urllib.parse import quote as url_quote
+        from .variables import secret_value, substitute
+
+        def secret(name: str) -> str | None:
+            return secret_value(name, self.environment)
+
+        out = substitute(text or "", lambda n: (self.value_of(n), False), secret)
+        self.secret_values.update(v for v in out.secrets if v)
+        if (escape or quote) and out.used + out.secrets:
+            # (filled again, value by value, so only the values are escaped - never the text around them)
+            def one(value: str) -> str:
+                value = escape(value) if escape else value
+                return url_quote(value, safe="/:?&=@+,;%~") if quote else value
+            fresh = substitute(text or "", lambda n: ((lambda v: None if v is None else one(v))(self.value_of(n)), False),
+                               lambda n: (lambda v: None if v is None else one(v))(secret(n)))
+            out.text = fresh.text
+        return out
+
+    def names_used(self) -> set[str]:
+        """Every ``{NAME}`` in the URL, header columns, body and response paths of this row (UPPER; secrets not included)."""
+        from .variables import INLINE_RE
+        texts = [self.text("WEBSERVICE_URL"), self.text("REQUEST_BODY"), *self.io.output_json.keys(), *self.io.output.keys()]
+        texts += [self.text(c) for c in self.io.add_header.values()]
+        return {m.upper() for t in texts for m in INLINE_RE.findall(t or "")}
+
+    def pool_reads(self) -> set[str]:
+        """``{NAME}``s only the run's shared variables can give (not a column of the row, not the environment table): the test Needs them."""
+        out = set()
+        for name in self.names_used():
+            if name in self.values and cell_text(self.values[name]).strip():
+                continue
+            if self.env_table is not None and self.env_table.value(name, self.environment) is not None:
+                continue
+            out.add(name)
+        return out
+
+    def pool_sets(self) -> set[str]:
+        """The names a response puts into the run's shared variables (Provides): ``output_json`` / ``Output`` columns this sheet has."""
+        return {c.upper() for c in [*self.io.output_json.values(), *self.io.output.values()] if c.upper() in self.columns}
+
+    def request_body(self, json_format: bool) -> tuple[str | None, list[str]]:
+        """``(body, names nothing gives a value for)``: the body typed in the ``REQUEST_BODY`` cell (the Workbook Builder's form), filled in;
+        ``None`` when the row has none (a template file, or no body).  A value is escaped for the body's format, so a quote in it cannot break
+        the JSON / XML."""
+        text = self.text("REQUEST_BODY") if "REQUEST_BODY" in self.columns else ""
+        if not text:
+            return None, []
+        from xml.sax.saxutils import escape as xml_escape
+        esc = (lambda v: json.dumps(v)[1:-1]) if json_format else xml_escape
+        filled = self.fill(text, escape=esc)
+        return filled.text, filled.missing
+
+    def mask(self, text: str) -> str:
+        """``text`` with every secret value put into this row's request replaced by dots."""
+        for value in sorted(self.secret_values, key=len, reverse=True):
+            if value and len(value) >= 3:
+                text = text.replace(value, "\u2022" * 6)
+        return text
 
     def environment_table(self) -> dict[str, str]:
         """The ``Environments`` sheet for the run's environment: ``{Parameter: Value}`` (Environment | Parameter | Value; the legacy ``getParamDict``)."""
@@ -461,6 +581,8 @@ class ApiRuntime:
         if col:
             self.sheet.set(self.row, col, value)
             self.written[(self.case.sheet, self.row, col)] = value
+            if self.pool is not None and column.upper() in self.pool_sets():
+                self.pool.set(column.upper(), value, self.case.id)          # {COLUMN} in any later test of the run
         self.values[column.upper()] = value
 
     def actual(self, column: str) -> str:
