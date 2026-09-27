@@ -230,3 +230,26 @@ async def test_a_steps_edit_after_the_window_is_read_by_the_next_steps_without_a
     s.run("next", count=1)
     state = await settled(s)
     assert results(state) == [(2, "PASSED")] and await s._page().locator("#chosen").inner_text() == "Plus"
+
+
+async def test_the_sites_own_scripts_can_reach_the_overlay_but_never_change_the_workbook(session):
+    s = session
+    before = s.doc.version
+    page = s._page()
+    await page.evaluate("window.__rrBuildCall({kind: 'use'})")
+    await page.evaluate("window.__rrBuildCall({kind: 'pick', element: {tag: 'button', text: 'Choose'}})")
+    await asyncio.sleep(0.5)
+    assert s.doc.version == before and s.doc.status()["modified"] is False
+    assert await page.evaluate("Object.keys(window).includes('__rrBuild')") is False           # (not enumerable: the site's globals look the same)
+
+
+async def test_switching_to_another_data_row_starts_the_test_again_in_the_window(session):
+    s = session
+    s.run("to", row=3)
+    await settled(s)
+    await s.switch("Plans", 3, "UAT")
+    state = await settled(s)
+    assert state["dataRow"] == 3 and results(state) == [(1, "PASSED")] and state["cursor"]["n"] == 1
+    s.run("next", count=1)
+    await settled(s)
+    assert await s._page().locator("#chosen").inner_text() == "Max"

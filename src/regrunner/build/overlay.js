@@ -8,7 +8,8 @@
 //   (a click) or in the Build tab.
 //
 // It talks to the builder through one binding, window.__rrBuildCall({kind, ...}) (context.expose_binding), and the builder talks to it with
-// window.__rrBuild.apply(state).  Everything it draws lives in a closed shadow root on an element of its own; events on it are stopped in the
+// window.__rrBuild.apply(state).  The site's own scripts can reach the binding too, so it can only ever say hello, switch Pick on/off and
+// report a pick: nothing the page says changes the workbook (a person does that in the Build tab: "Use for step N").  Everything it draws lives in a closed shadow root on an element of its own; events on it are stopped in the
 // capture phase on window before any listener of the site runs (this script runs before the site's scripts, so its listeners come first).
 (() => {
   'use strict';
@@ -252,7 +253,6 @@ button.pri { background: #5cc8ff; color: #06121c; }
     for (const line of c.lines || []) hd.appendChild(el('span', `m${c.ok === false ? ' bad' : ''}`, line));
     card.appendChild(hd);
     const ft = el('div', 'ft');
-    if (c.use) { const b = el('button', 'pri', c.use); b.setAttribute('data-rr-act', 'use'); ft.appendChild(b); }
     const again = el('button', '', 'Pick again');
     again.setAttribute('data-rr-act', 'pick');
     ft.appendChild(again);
@@ -341,7 +341,6 @@ button.pri { background: #5cc8ff; color: #06121c; }
     if (act === 'pick') { st.mode = st.mode === 'pick' ? 'browse' : 'pick'; st.card = null; redraw(); call({ kind: 'mode', mode: st.mode }); }
     else if (act === 'done') { st.mode = 'browse'; st.card = null; hoverEl = null; redraw(); call({ kind: 'mode', mode: 'browse' }); }
     else if (act === 'close-card') { st.card = null; redraw(); }
-    else if (act === 'use') { call({ kind: 'use' }); }
   }
 
   function onPress(ev) {

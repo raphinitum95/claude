@@ -27,3 +27,4 @@ The live headed browser the builder drives, element picking and replays.
 <!-- one line per checkpoint: date · what's done · what's next -->
 2026-09-27 · build/ package (session, locators, overlay), session routes in web/build_api.py, BuildCfg, TestRunner.prepare_runtime/open_session · next: builder plainWords, Build tab session panel, tests, docs
 2026-09-27 · Build tab session strip + pick panel + side-effect dialog (views/build/session.js), builder plainWords, test_build_locators.py + test_build_session.py green · next: HTTP/UI tests, docs, PR
+2026-09-27 · done: page cannot write via the binding, switch test/row reopens the site, HTTP + UI tests, AGENTS/README/events docs · PR into qa-regression

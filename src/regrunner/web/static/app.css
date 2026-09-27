@@ -245,8 +245,10 @@ details.more > summary::-webkit-details-marker { display: none }
 .mitem:hover { background: var(--surface2) }
 
 /* --- Build tab: the build window strip (P08, views/build/session.js) ---------------------------------------- */
-.sess-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 16px; border-bottom: 1px solid var(--line); background: var(--surface); min-width: 0; flex-wrap: wrap }
+.sess-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 16px; border-bottom: 1px solid var(--line); background: var(--surface); min-width: 0; overflow: hidden; white-space: nowrap }
+.sess-bar > * { flex: none }
+.sess-bar > .sess-line { flex: 0 1 auto; min-width: 0; overflow: hidden }
 .sess-bar.stale { background: var(--warn-soft) }
-.sess-line { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; min-width: 0; max-width: 360px }
+.sess-line { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; max-width: 360px }
 .sess-card { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: none }
 .which-num { width: 20px; height: 20px; flex: none; border-radius: 50%; background: var(--warn); color: #06121C; display: grid; place-items: center; font: 700 11px var(--f-mono) }

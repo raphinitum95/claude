@@ -70,7 +70,7 @@ function blockHeader(S, t, b, idx) {
 <div style="display: flex; align-items: center; gap: 8px"><span class="badge k-nav">${BLOCK_KIND_LABEL[b.kind] || b.kind}</span>
 <span class="disp trunc" style="font-size: 18px; font-weight: 700">${b.title}</span>
 <button class="btn btn-ghost btn-sm" style="padding: 0 5px" data-act="build-rename-block" aria-label="Rename block">${icon('pencil', 12)}</button></div>
-<span style="font-size: 12px; color: var(--tx3)">Block ${idx + 1} of ${t.blocks.length} · steps ${b.start + 1}–${b.end}</span></div>
+<span style="font-size: 12px; color: var(--tx3)">Block ${idx + 1} of ${t.blocks.length} · steps ${b.start}–${b.end}</span></div>
 <button class="icon-btn" data-act="build-next-block" aria-label="Next block" ${idx === t.blocks.length - 1 ? raw('disabled') : ''}>${icon('chevr', 14)}</button>
 <span style="flex: 1"></span>
 <button class="btn" data-act="build-toggle-menu">${icon('plus', 13)} Add step ${icon('chevron', 12)}</button></div>
@@ -101,7 +101,7 @@ ${s.lastResult ? html`<span class="pdot" style="background: var(--${s.lastResult
 }
 
 function cardsView(S, t, b) {
-  const steps = t.steps.filter((s) => s.n > b.start && s.n <= b.end);
+  const steps = t.steps.filter((s) => s.n >= b.start && s.n <= b.end);
   return html`<div class="scroll" style="flex: 1; overflow: auto; padding: 0 16px 16px">
 <div style="display: flex; flex-direction: column; gap: 5px">
 ${steps.map((s) => stepCard(S, t, s))}

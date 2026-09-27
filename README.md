@@ -455,6 +455,18 @@ Runs are background processes at low priority (one process per set of workers, h
 or mouse is used anywhere). Light and dark themes follow your system; the fonts come from Google Fonts (system fonts are the
 fallback when offline).
 
+**Build window (Build tab).** In a test's editor, **Open the site** opens the site in a browser window of its own (Chrome/Edge, visible), with a small
+pill on the page: **Pick**, then click an element there (the site never sees that click). The builder works out the most stable locator that finds exactly that
+element (id → test id → a stable attribute → its text → its text inside its card → class + position), checks it on the live page, and keeps up to three
+others as backups; it also describes the element in plain words (*button "Choose" inside card "Max"*). Click a word to make it a variable (`{PLAN}`): the
+locator follows the variable and is checked again with each data row's value. *Which one?* finds every element with a text, numbers them on the page, and
+you choose one. **Use for step N** writes it to the step. **Run up to here** (key `R`) replays steps 1..N with the data row you are building with, using
+exactly the actions a real run uses; the window stays open, so **Run this step** and **Run next 5** carry on from there. A replay stops at its first failed
+step, and before a step flagged *has side effects* it asks *Run it for real?* (production always blocks such steps; a production environment needs `PROD`
+typed to open the window at all). When a step that already ran is changed, the strip says *Earlier steps changed: replay from the start*. The window
+replays the draft you are editing (not the saved file), in its own browser: it is not a run, is not listed with the runs, and a run of the same workbook can
+go on at the same time. One window per workbook (three at most); it closes itself after `build.idle_close_s` without use.
+
 **Security.** It listens on `127.0.0.1` only and has no login, so instead every state-changing request must come from the
 page itself: the `Host` must be local (blocks DNS rebinding), the `Origin` must match, and a custom header is required (a
 different website in your browser cannot send it). PROD runs are also refused *by the server* unless the request carries the
@@ -467,6 +479,7 @@ strict Content-Security-Policy with everything from the workbook escaped. Do not
 `POST /api/workbooks/{name}/lint|plan|audit` `GET /api/workbooks/{name}/start-url` `POST /api/runs/command` `POST /api/runs`
 `GET /api/runs` `GET /api/runs/{id}` `POST /api/runs/{id}/cancel|answer|report|reveal` `GET /api/runs/{id}/events|log|selectors`
 `POST /api/runs/{id}/selectors/apply` `GET /api/auth` `POST /api/auth/login|save|cancel` `WS /ws/runs/{id}`
+Build window: `GET /api/build/session/{name}[?since=]` `POST /api/build/session/{name}/start|pick|which|choose|variable|use|run-to-here|run-step|run-next|stop|answer|close`
 
 ## Evidence (`runs/<run-id>/`)
 
@@ -599,6 +612,7 @@ Workbook tokens that must not live in Excel, such as `DT_ZScalerUser`, are suppl
 Things you are most likely to change: `publish.dir` (shared copy of each run for the team), `runner.workers`, `waits.mode`, `timeouts.element_s`, `screenshots.mode`,
 `browser.name` (which browser runs use by default, see *Which browser a run uses*), `browser.timezone` (the workbook's `TODAY()+1` dates use *your* machine's date), `browser.channel: chromium`
 (full Chromium instead of the headless shell, e.g. if links to PDFs must open in a viewer tab).
+`build.idle_close_s` closes an unused Build window (default 30 minutes).
 
 ## Extending
 

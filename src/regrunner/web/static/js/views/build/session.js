@@ -203,13 +203,15 @@ export function sessionBar(S0) {
 <button class="btn btn-sm ${ui.busy ? 'busy' : ''}" data-act="build-sess-open">${icon('globe', 13)} Open the site</button>
 <span style="font-size: 12px; color: var(--tx3)">${st && st.error ? st.error + ' ' : ''}A browser window of its own: pick elements on the page and run steps with row ${effectiveBuildingWith(t) || '–'}'s data.</span></div>`;
   }
-  const other = st.test !== t.id;
+  const want = effectiveBuildingWith(t);
+  const other = st.test !== t.id || (want != null && st.dataRow !== want);          // the window follows another test or data row
   const busy = st.status === 'running';
   const sel = s ? s.n : null;
   return html`<div class="sess-bar${st.stale ? ' stale' : ''}">
 <span class="pdot" style="background: var(--${busy ? 'acc' : 'pass'})" title="Build window open"></span>
 <b style="font-size: 12.5px">Build window</b><span class="mono" style="font-size: 11px; color: var(--tx3)">${st.environment || ''} · row ${st.dataRow || '–'}${st.cursor ? ` · at step ${st.cursor.n}` : ''}</span>
-${other ? html`<span class="tag tag-warn" title="The window is on another test">on ${st.test}</span>` : ''}
+${other ? html`<span class="tag tag-warn" title="The window is on another test or data row">on ${st.test} · row ${st.dataRow || '–'}</span>
+<button class="btn btn-sm" data-act="build-sess-open" ${busy ? raw('disabled') : ''} title="Start this test from its beginning in the window">${icon('refresh', 12)} Switch to ${t.id} · row ${want || '–'}</button>` : ''}
 <span style="width: 1px; height: 18px; background: var(--line2)"></span>
 ${busy ? html`<button class="btn btn-sm" data-act="build-sess-stop">${icon('stop', 12)} Stop</button>` : html`
 <button class="btn btn-sm" data-act="build-sess-run-to" ${sel && !other ? '' : raw('disabled')} title="Replay steps 1 to ${sel || '…'} from the start (R)">${icon('play', 12)} Run up to here</button>
@@ -279,7 +281,7 @@ ${p.frame ? html`<span style="font-size: 11.5px; color: var(--warn)">${icon('fra
 ${p.ok ? html`<button class="btn btn-pri btn-sm" style="justify-content: center" data-act="build-sess-use" ${forN || s ? '' : raw('disabled')}>${icon('check', 12)} Use for step ${forN || (s ? s.n : '…')}</button>` : ''}
 </div>`);
   }
-  blocks.push(html`<div style="display: flex; gap: 6px"><div class="field" style="flex: 1; height: 32px">${icon('search', 13)}<input class="fld" style="border: 0; height: auto; padding: 0; background: transparent; font-size: 12.5px" placeholder="Which one? Text of a button, link…" value="${ui.whichText}" data-input="build-sess-which-text" autocomplete="off"></div>
+  blocks.push(html`<div style="display: flex; gap: 6px"><div style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 8px; background: var(--surface); color: var(--tx3)">${icon('search', 13)}<input class="fld" style="flex: 1; min-width: 0; width: auto; border: 0; height: auto; padding: 0; background: transparent; font-size: 12.5px" placeholder="Which one? Text of a button, link…" value="${ui.whichText}" data-input="build-sess-which-text" autocomplete="off"></div>
 <button class="btn btn-sm" data-act="build-sess-which">Find</button></div>`);
   return html`<div style="display: flex; flex-direction: column; gap: 10px">${blocks}</div>`;
 }

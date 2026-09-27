@@ -176,7 +176,7 @@ export function setBlock(i) {
   const ed = S.build.ed;
   ed.block = Math.max(0, Math.min(i, t.blocks.length - 1));
   const b = t.blocks[ed.block];
-  const s = t.steps.find((x) => x.n === b.start + 1) || t.steps.find((x) => x.n > b.start && x.n <= b.end);
+  const s = t.steps.find((x) => x.n >= b.start && x.n <= b.end);
   if (s) ed.sel = s.row;
   ed.menu = false;
   rerender();
@@ -261,7 +261,7 @@ export function moveToBlock(title) {
   applyOps([{ op: 'move_steps', test: t.id, rows, block: title }]);
 }
 export function renameBlock(row, title) { const t = currentTest(); if (t) applyOps([{ op: 'rename_block', test: t.id, row, title }]); }
-function firstRowOfBlock(t, b) { const s = t.steps.find((x) => x.n > b.start && x.n <= b.end); return s ? s.row : null; }
+function firstRowOfBlock(t, b) { const s = t.steps.find((x) => x.n >= b.start && x.n <= b.end); return s ? s.row : null; }
 
 // ---- variable map ------------------------------------------------------------------------------------------------
 export function selectVariable(key) { S.build.selVariable = key; rerender(); }

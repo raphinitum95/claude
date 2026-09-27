@@ -28,6 +28,10 @@ Event types (all carry ``type``, ``ts`` and ``run_id``):
     side_effect_paused   test, step, row, name, environment         ...in a build-mode replay: a person is asked before it runs (user_input_needed follows)
     backup_locator_suggestion  test, step, row, locator, matches, screenshot   the step's element was not found but a BACKUP_LOCATORS entry was
                    (the step still failed; nothing was done with the backup; screenshot = a picture of what it found, relative to the run folder)
+    build_session_started  workbook, test, environment, data_row      the Build tab's browser window opened (build/session.py; its own stream,
+                   never a run's events.jsonl: the Build tab polls GET /api/build/session/<workbook>, which also carries the replayed steps' events)
+    build_session_replay_progress  row, step, status, done | kind, done, finished, stopped   a step of a build replay ended / the replay ended
+    build_session_closed   workbook, reason                            the build window closed (by the person, idle, or the browser went away)
     screenshot_saved  test, step, path, kind
     console_error  test, step, kind, message, url          (kind: console|pageerror)
     network_error  test, step, kind, url, status, method, message   (kind: requestfailed|http_error)

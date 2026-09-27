@@ -87,6 +87,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Writing workbooks (edit cells/rows/columns, hidden `_rr_*` sheets, save + backup, drafts, lock/external-change checks) | `workbook/writer.py` (`WorkbookEditor`) | `test_workbook_roundtrip.py` (`-k "not real"` = 2 s; the real-workbook cases take ~2.5 min) |
 | Workbook Builder model (tests/blocks/steps/variables JSON, ops, undo/draft/save/history/diff), builder problems, `/api/build/*` | `workbook/builder.py`, `lint.py` (`builder_problems`), `web/build_api.py`; the shapes are fixed in `dev/plan/CONTRACT.md` | `test_builder_model.py` (~10 s, real workbooks included), `test_build_api.py` (2 s). **Restart UI** for build_api changes |
 | Build tab UI (Run · Build · Results tabs, workbook map, variable map, test editor: block map/cards/inspector/grid/drawer/problems/add-step menu, new-workbook/environments/fingerprint/history/file-changed dialogs) | `web/static/js/views/build/*.js` (state in `state.js`'s `freshBuild`/`freshEditor`), `views/shell.js` (`tabs`, `headerShell`), `views/modals.js` (routes `build-*` modal kinds to `build/dialogs.js`), `main.js` (`#/build...` routes, merges `build/actions.js` into the action tables), `icons.js`, `app.css` ("Build tab" section) | `test_web_build.py`, `test_web_ui.py -k theme`. JS only: reload the page, no UI restart |
+| Build window (Build tab's live browser: overlay pill/pick/which-one, locator + backups + plain words, word → variable, run up to here / this step / next N, side-effect pause, "earlier steps changed") | `build/session.py` (`BuildSession`, `SessionStore`, `BuildAsker`), `build/locators.py` (pure), `build/overlay.js`, `web/build_api.py` (`register_session_routes`), `web/static/js/views/build/session.js`, `engine/test_runner.py` (`prepare_runtime`/`open_session`) | `test_build_locators.py` (fast), `test_build_session.py` (mock site `build_pick.html`), `test_web_build_session.py`. **Restart UI** for session.py/build_api changes; overlay.js is read at server start too |
 | API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates | `workbook/api.py`, `workbook/api_template.py`, `engine/api_runner.py` | `test_api_tests.py`, `test_api_purchase_flavour.py` |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
 | Workers, several workbooks at once, joining a run, progress, shutdown/cancel | `engine/runner.py`, `engine/pool.py`, `engine/inbox.py`, `engine/diagnostics.py` | `test_multi_run.py`, `test_progress_and_parked_worker.py`, `test_shutdown.py`, `test_py39_compat.py` |
@@ -178,12 +179,18 @@ src/regrunner/
     writer.py 1400 (WorkbookEditor: patches only the XML an edit touches; row insert/delete/move rewrite every reference)
     builder.py 1850 (Workbook Builder model: build_model, apply_ops, BuildDocument undo/draft/save/history/diff, BuildStore; CONTRACT.md)
     api.py 495 · api_template.py 113
+  build/        the Build tab's live browser window (P08; the UI server runs it, never a run): session.py (BuildSession: headed browser + overlay
+                on every context, pick -> locator checked with the engine's selectors, word -> {VARIABLE}, replays with TestRunner's own steps,
+                BuildAsker for the side-effect pause, stale check; SessionStore: one per workbook, 3 max), locators.py (candidates id -> test id ->
+                attribute -> text -> text in container -> class+position, choose, plain words, words_of_locator), overlay.js (pill, hover outline,
+                pick, which-one numbers; closed shadow root; presses swallowed in the window capture phase)
   selectors/  spec.py resolve.py xpath2css.py migrate.py harvest.py
   reporting/  results.py (data model) html_report.py console.py from_events.py
   web/
     app.py 1081   FastAPI: create_app, RunManager, cli_flags(), routes under /api/...
     presence.py   UiPresence: which UI windows are open (/api/ui/hello, /api/ui/goodbye) for serve --exit-when-closed
     build_api.py  /api/build/* routes (register_build_routes: one line in create_app); later builder phases add their own modules
+                  (+ register_session_routes: /api/build/session/{name}/* for the build window, P08)
     run_batch.py  /api/batches/* routes (register_batch_routes: one line in create_app): groups runs that share a run.json batch_id, and
                   last-run-per-test durations for the Run plan's Timeline view. A batch is only a label - it never changes how a run executes.
     results_api.py  /api/results/* routes (register_results_routes: one line in create_app): batch page (causes, trend, what changed,
@@ -192,7 +199,8 @@ src/regrunner/
                   paths/data, so it is unit-tested without a server (test_web_results.py).
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
-    static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher)}.js
+    static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher),
+                  session (P08: build window strip, pick panel, which-one, side-effect dialog; polls /api/build/session/<wb>)}.js
     static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen),batch,test,compare,index (header+screen dispatcher)}.js;
                   results.js stays the single finished-run page opened from Run (`#/run/:id`); `#/results...` is the separate browsable tab
 
@@ -204,7 +212,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            68 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            72 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -322,6 +330,19 @@ mark a dependency-skip differently from any other unset-variable failure).
 
 P07 (engine II) PR open: ASSERT_PAGE reads `_rr_fingerprints` (`{DOMAIN}` filled in; URL part AND landmark + text, within the step time, patient while the page loads); a failure sets `StepOut.stop` + `hard`, so Ignore_not_existing_object never swallows it and the test stops (`TestRunner._hard_stop`). SIDE_EFFECTS=Y: blocked on any production environment (the table's `#PRODUCTION` row, or a name PROD/PRODUCTION) and the test stops; `TestRunner(side_effects="ask")` (for P08's build replays; runs never set it) asks through `engine/ask.py` first. A step that compares for itself (CHECK_*, WAIT_UNTIL TEXT) sets `StepOut.check`: Exact_Match/Contains are then not applied, a mismatch is "Comparison Failed" with the reason in the notes. BACKUP_LOCATORS are only probed after a non-optional element miss: result in `detail`, `diagnosis.backup` + first summary line, a clipped screenshot `screenshots/<seq>_r<row>_backup.jpg`, and a `backup_locator_suggestion` event. New events (`page_gate`, `popup_dismissed`, `side_effect_*`, `backup_locator_suggestion`) are documented in `events.py`; like P03's, `runstate.js`/`from_events.py` do not reduce them yet (the step's notes carry the same facts). PICK_DATE / CHOOSE_SUGGESTION are heuristics (data-date / aria-label day cells, "Next month" buttons, role=option lists): unverified on the real sites' widgets.
 
+P08 (build session I) PR open: `src/regrunner/build/`. The Build tab's "Open the site" opens a browser in the **UI server's** process (like the
+sign-in window) with `overlay.js` on every context (`add_init_script` + `expose_binding("__rrBuildCall")`): pill (Pick · what it does · Done), hover
+outline + plain-words label, pick (presses never reach the site: stopped in the window capture phase, registered before any site script). A pick's
+candidates (`locators.candidates`) are checked live with the engine's own `legacy_strategy` selectors; the first that finds exactly that element is the
+step's `FindBy`/`FindBy_Value`/`Index`, up to 3 others its `BACKUP_LOCATORS`; `words_of_locator` shows the words of any locator in those forms
+(`Step.locator.plainWords`). "Run up to here / this step / next N" replay the **draft** (written to `runs/.build/<stem>/`) with `TestRunner` itself
+(`prepare_runtime`/`open_session`/`_execute`/`_next_row`), `side_effects="ask"` + `BuildAsker` (the "Run it for real?" dialog); a replay stops at its
+first failed step; edits after the window are re-read without a replay (`_shared`/pool carry over), edits at or above it (or to the data row) raise
+the stale banner. Decided: a build window is not a run (no run.json/results.json, not in `/api/runs`, not in `busy()`), coexists with a run of the same
+workbook (the run reads the saved file in its own process). Not built (P09): record, check/save this, typed text -> variable, widgets, fingerprints,
+auto switch-to-frame steps (a pick inside a frame only says so). Unverified: headed Chrome/Edge on the work computer (tests run headless).
+Fixed in passing (P04's editor): a block's `start` is inclusive (CONTRACT 2.4), the cards view hid each block's first step.
+
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
@@ -351,6 +372,9 @@ Gotchas:
 - Mock pages: an element's `id` is also a `window` global (`id="paid"` makes `window.paid` the element), so name JS counters differently.
 - `runner.allow_prod` / `--allow-prod` only guards an environment literally named PROD; one the workbook's `_rr_environments` marks production
   (`#PRODUCTION` row) is not guarded there, but its SIDE_EFFECTS steps are still blocked by the engine (`engine/gates.py`).
+- Build window: the overlay lives in a **closed** shadow root on `<rr-build-overlay>` (Playwright's `text=`/CSS engines do not see into it), and
+  `window.__rrBuild` is non-enumerable; the picked element is `window.__rrBuild.picked()` (never a DOM attribute). Evaluating in a page with a JS
+  dialog open hangs: `BuildSession.broadcast`/`_page` check `pending_dialog` first. `build.headless: true` is for tests only.
 - `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
   narrow window clips it instead of pushing the header wider than the viewport (see the `Run` tab's version tag vs. the `Build` tab's breadcrumb).
 

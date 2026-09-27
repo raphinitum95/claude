@@ -232,11 +232,7 @@ class BuildSession:
         self._browser.on("disconnected", lambda *_: self._browser_gone())
         self.status = "ready"
         self.emit("build_session_started", workbook=self.name, test=self.test_id, environment=self.environment, data_row=self.data_row)
-        first = await asyncio.to_thread(self._first_step)
-        if first and first["method"] == "OPEN":
-            self._launch("to", row=first["row"])
-        else:
-            await self._open_blank()
+        await self._open_site()
         if self.cfg.build.idle_close_s:
             self._watch = asyncio.create_task(self._close_when_idle())
         self.touch()
@@ -256,6 +252,14 @@ class BuildSession:
         self._steps_cache = None
         self.data_row = int(data_row) if data_row is not None else test["buildingWith"]
 
+    async def _open_site(self) -> None:
+        """A page to pick on: the test's first step when it is an Open step (it only opens the site), else a blank window."""
+        first = await asyncio.to_thread(self._first_step)
+        if first and first["method"] == "OPEN":
+            self._launch("to", row=first["row"])
+        elif not self._open_pages():
+            await self._open_blank()
+
     def _first_step(self) -> dict | None:
         steps = [s for s in self._steps() if s["enabled"] is not False]
         return steps[0] if steps else None
@@ -268,7 +272,10 @@ class BuildSession:
         if environment and environment != self.environment:
             self.environment = environment
         await self._drop_runner()
+        self.pick = self.which = None
+        self.replay = None
         self.touch()
+        await self._open_site()
 
     def _browser_gone(self) -> None:
         if self.status != "closed":
@@ -384,7 +391,8 @@ class BuildSession:
         return {"mode": self.mode, "label": label}
 
     async def _on_call(self, source: dict, payload: Any):
-        """The overlay calling (``window.__rrBuildCall``): never raises into the page."""
+        """The overlay calling (``window.__rrBuildCall``): never raises into the page.  The site's scripts can call it too, so nothing it can
+        ask for writes to the workbook: hello, Pick on / off, and a pick (which a person still has to use)."""
         try:
             kind = payload.get("kind") if isinstance(payload, dict) else ""
             if kind == "hello":
@@ -396,9 +404,7 @@ class BuildSession:
             elif kind == "pick":
                 self.which = None
                 frame = source.get("frame") if isinstance(source, dict) else None
-                asyncio.ensure_future(self._picked(frame, L.to_desc(payload.get("element"))))
-            elif kind == "use":
-                asyncio.ensure_future(self._use_quietly())
+                asyncio.ensure_future(self._picked_quietly(frame, L.to_desc(payload.get("element"))))
         except Exception:
             return None
         return None
@@ -472,7 +478,8 @@ class BuildSession:
         if p.get("frame"):
             lines.append(f"inside frame {p['frame'][:60]}")
         n = p.get("forN")
-        return {"title": p.get("text", ""), "ok": True, "lines": lines, "use": f"Use for step {n}" if n else ""}
+        lines.append(f"Use it on step {n} in the Build tab" if n else "Choose its step in the Build tab")
+        return {"title": p.get("text", ""), "ok": True, "lines": lines}
 
     async def find_matches(self, text: str, kind: str = "") -> dict:
         """Q10: every element that matches ``text`` (a kind of element optional) gets a numbered outline; one is then chosen."""
@@ -601,11 +608,11 @@ class BuildSession:
         await self.broadcast({"card": None})
         return applied
 
-    async def _use_quietly(self) -> None:
+    async def _picked_quietly(self, frame, desc: dict) -> None:
         try:
-            await self.use()
-        except BuildError as err:
-            await self.broadcast({"card": {**self._card(), "ok": False, "lines": [str(err)], "use": ""}})
+            await self._picked(frame, desc)
+        except Exception as err:                                          # (the page's click must never see an error)
+            self.emit("log", level="warning", message=f"the pick could not be worked out: {(str(err).splitlines() or [err])[0]}")
 
     # -- replays -----------------------------------------------------------------------------------------------------------------------
     def _write_draft(self) -> Path:
