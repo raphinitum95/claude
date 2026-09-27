@@ -24,3 +24,4 @@ Run several tests (or one test twice with different rows) as one unit with sync 
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+- 2026-09-27 · `_rr_scenarios` format + board model (`workbook/scenarios.py`), engine (`engine/scenario.py`: lanes as test cases, one worker per scenario, sync points / order markers, failed lane releases, timeouts), `TestRunner(lane=)`, `Schedule` groups, results `lane`/`syncs`, 4 browser tests pass · next: fast tests, build API + board UI, live/results lanes

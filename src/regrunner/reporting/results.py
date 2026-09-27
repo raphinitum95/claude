@@ -72,6 +72,8 @@ class TestResult:
     timing: dict[str, Any] = field(default_factory=dict)            # where the test's time went (engine/timing.py) + queue_s: waiting for a worker before it started
     third_party: list[dict[str, Any]] = field(default_factory=list) # other companies' hosts its pages loaded: [{host, requests, bytes}] (measure.third_party)
     site_version: dict[str, Any] = field(default_factory=dict)      # {fingerprint, files}: the site's own code files it loaded (measure.site_code_patterns)
+    lane: dict[str, Any] = field(default_factory=dict)              # a lane of a concurrency scenario: {scenario, key, label, test, sheet, data_row} (engine/scenario.py)
+    syncs: list[dict[str, Any]] = field(default_factory=list)       # ...and what happened at its sync points / order markers: [{item, kind, role, state, at, waited_s, message}]
 
 
 @dataclass

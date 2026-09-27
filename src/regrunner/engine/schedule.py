@@ -3,6 +3,8 @@
 A test that has to wait is *held in the queue* rather than started and paused: a paused test would keep a worker, and with a few workers
 all taken by tests waiting for one that has not started, the run would never finish.
 
+A concurrency scenario's lanes (engine/scenario.py) are a *group*: starting one starts them all, so they go to one worker together.
+
 One :class:`Schedule` belongs to one run.  When several runs share the workers of a process, ``engine/pool.py`` asks each run's schedule
 ``next_ready`` and hands the worker to the run with the fewest tests going.
 """
@@ -13,9 +15,11 @@ import time
 
 
 class Schedule:
-    def __init__(self, cases: list, deps: dict[str, list[str]]):
+    def __init__(self, cases: list, deps: dict[str, list[str]], groups: dict[str, list[str]] | None = None):
         self._pending = list(cases)                    # in priority order
         self._deps = deps
+        self._groups = groups or {}                    # test id -> the ids that start with it (a scenario's lanes)
+        self._by_id = {c.id: c for c in cases}
         self._done: set[str] = set()
         self._running = 0
         self.opened = time.monotonic()
@@ -46,9 +50,16 @@ class Schedule:
             ready = self._pending[0]                   # nothing can ever become ready (a cycle nobody caught): run in order rather than hang
         return ready
 
+    def group_of(self, case) -> list:
+        """The tests that start together with ``case`` (itself included), in their own order."""
+        ids = self._groups.get(case.id)
+        return [self._by_id[i] for i in ids if i in self._by_id] if ids else [case]
+
     def start(self, case) -> None:
-        self._pending.remove(case)
-        self._running += 1
+        for member in self.group_of(case):
+            if member in self._pending:
+                self._pending.remove(member)
+                self._running += 1
 
     def finish(self, case_id: str) -> None:
         self._done.add(case_id)

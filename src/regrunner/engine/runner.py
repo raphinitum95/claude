@@ -13,7 +13,7 @@ import copy
 import shutil
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -131,6 +131,7 @@ class RunPlan:
     flows: list[Flow]
     order: Order
     site: str = ""                                  # the host the workbook opens first: what page-load spacing and block cool-downs are kept per
+    scenarios: list = field(default_factory=list)   # the concurrency scenarios this run takes part in (engine/scenario.py ScenarioPlan)
 
 
 @dataclass
@@ -199,7 +200,14 @@ def _load_and_plan(options: RunOptions, cfg: Config, headless: bool) -> RunPlan:
     """Everything that needs the workbook but no browser (seconds of CPU on a big one: called off the event loop)."""
     workbook = Workbook(options.workbook, environment=options.environment, headless=headless,
                         seed=options.seed, secrets=workbook_secrets())
-    cases = select_cases(workbook.discover(), options, cfg)
+    discovered = workbook.discover()
+    from .scenario import ScenarioError, adjust_order, pick
+    try:
+        scenarios, rest = pick(workbook, options, discovered)      # a named scenario runs all its lanes; a plain run includes the ones whose Execute is Y
+    except ScenarioError as err:
+        raise SelectionError(str(err)) from err
+    cases = [] if rest == [] else select_cases(discovered, options if rest == options.tests else replace(options, tests=rest), cfg)
+    cases += [lane for plan in scenarios for lane in plan.lanes]
     if not cases:
         raise SelectionError("No tests selected (all DataSheets rows are 'N'? use --tests or --all)")
     environment = (options.environment or workbook.global_settings().get("Environment") or "").upper() \
@@ -223,6 +231,7 @@ def _load_and_plan(options: RunOptions, cfg: Config, headless: bool) -> RunPlan:
         flows.append(Flow.of(case, position.get(case.id, 0), runtime))
     chains = options.chains if options.chains is not None else load_chains(cfg, Path(options.workbook))[0]
     order = plan_order(flows, [c.id for c in cases], chains)
+    adjust_order(order, scenarios)                                    # a scenario's lanes start together: never waiting for one another
     try:
         from urllib.parse import urlparse
         from ..insight import start_url
@@ -230,7 +239,7 @@ def _load_and_plan(options: RunOptions, cfg: Config, headless: bool) -> RunPlan:
     except Exception:                                                 # (an API-only workbook, a URL that cannot be worked out: it is its own site)
         site = ""
     return RunPlan(options=options, cfg=cfg, workbook=workbook, cases=cases, environment=environment, headless=headless,
-                   plans=plans, flows=flows, order=order, site=site)
+                   plans=plans, flows=flows, order=order, site=site, scenarios=scenarios)
 
 
 async def plan_run(options: RunOptions, cfg: Config, kind: browsers.Browser | None = None) -> RunPlan:
@@ -285,7 +294,9 @@ async def open_run(plan: RunPlan, bus: EventBus | None, browser_info: dict[str, 
     # Tests others read from first (an API purchase whose policy number a UI test types), then the longest UI test (shortest wall-clock), the API tests
     # that read what the UI tests produce last; a test that has to wait for others is held back until they are done.
     feeds = {p for named in plan.order.data.values() for producers in named.values() for p in producers}
-    schedule = Schedule(sorted(plan.cases, key=lambda c: (c.id in plan.order.after_ui, c.id not in feeds, -len(plan.plans[c.id]))), plan.order.deps)
+    from .scenario import groups_of
+    schedule = Schedule(sorted(plan.cases, key=lambda c: (c.id in plan.order.after_ui, c.id not in feeds, -len(plan.plans[c.id]))), plan.order.deps,
+                        groups=groups_of(plan.scenarios))        # a scenario is handed to one worker as a whole
     asker = Asker(run_dir, bus, cancel, mode=ask_mode, default_timeout_s=cfg.ask.timeout_s)           # ASK_USER: who can answer
     return RunCtx(plan=plan, run_id=run_id, run_dir=run_dir, bus=bus, jsonl=jsonl, schedule=schedule, cancel=cancel, asker=asker,
                   selector_map=SelectorMap.load(cfg.path(cfg.selectors.map)), harvest=HarvestStore() if cfg.selectors.harvest else None,
@@ -308,9 +319,14 @@ def announce_run(ctx: RunCtx, workers: int) -> None:
                 tests=len(plan.cases), total_steps=total_steps, browser=ctx.browser_info, shares=ctx.shares)
     ctx.bus.emit("run_started", workbook=str(options.workbook), environment=plan.environment, workers=workers,
                  headless=plan.headless, browser=ctx.browser_info, seed=options.seed, warnings=ctx.result.warnings, params=params,
-                 shares=ctx.shares,
+                 shares=ctx.shares, scenarios=[s.describe() for s in plan.scenarios],
                  tests=[{"id": c.id, "title": c.title, "description": c.description, "scenario": c.scenario,
-                         "total_steps": len(plan.plans[c.id]), "waits_for": plan.order.deps.get(c.id, [])} for c in plan.cases])
+                         "total_steps": len(plan.plans[c.id]), "waits_for": plan.order.deps.get(c.id, []),
+                         **({"lane": c.info()} if hasattr(c, "info") else {})} for c in plan.cases])
+    from .scenario import sign_in_note
+    for scenario in plan.scenarios:
+        if sign_in_note(scenario):
+            ctx.note(sign_in_note(scenario), "info")
     for note in plan.order.notes:                                     # what will wait for what, and what nothing sets (the terminal and the event log say it too)
         if note["kind"] in ("waits", "missing", "conflict", "parallel"):
             ctx.note(note["message"], "warning" if note["kind"] in ("missing", "conflict") else "info")
@@ -506,7 +522,8 @@ class Engine:
         ctx.note(f"{case.id}: {res.error}", "error" if res.status == "ERROR" else "warning")
         return res
 
-    async def run_case(self, ctx: RunCtx, case: TestCase, get_browser, n: int) -> TestResult:
+    async def run_case(self, ctx: RunCtx, case: TestCase, get_browser, n: int, lane=None) -> TestResult:
+        """``lane``: the test is a lane of a scenario (engine/scenario.py LaneHook): it is run once, never again on its own."""
         cfg, bus = ctx.cfg, ctx.bus
         attempts: list[dict[str, Any]] = []
         attempt = 0
@@ -541,7 +558,7 @@ class Engine:
                                         run_dir=ctx.run_dir, selector_map=ctx.selector_map, cancel=ctx.cancel,
                                         planned_rows=ctx.plans[case.id], worker=n, harvest=ctx.harvest, devices=self.devices,
                                         attempt=attempt, throttle=throttle, asker=ctx.asker, visible=at_window or not ctx.plan.headless, shared=ctx.shared,
-                                        pool=ctx.pool, pw=self.pw)
+                                        pool=ctx.pool, pw=self.pw, lane=lane)
                 ctx.partial[case.id] = runner.result
                 try:
                     res = await asyncio.wait_for(runner.run(), timeout=cfg.runner.test_timeout_s)
@@ -554,6 +571,12 @@ class Engine:
                     if at_window:
                         await self.close_window()
             ctx.shared.update(runner.written)                   # parameter cells this test filled in (a policy number...): the API tests read them
+            if lane is not None:                                # a scenario's lane: the moment the lanes shared cannot be repeated for one of them
+                if res.infra:
+                    res.error = (f"Not run: {res.infra}. This says nothing about the application. A scenario's lane is not run again on its own "
+                                 "(the moment the lanes shared has passed): run the scenario again.")
+                res.attempts = attempts
+                return res
             if res.captcha and not at_window and ctx.plan.headless and cfg.captcha.solve == "ask" and ctx.asker.available and not ctx.cancel.is_set():
                 # A captcha needs a person.  The test was stopped where it met it; it is run again from the start in a visible browser window,
                 # and there it waits for the person to solve the captcha (a headless browser cannot be turned into a visible one).
@@ -613,6 +636,33 @@ class Engine:
                              "error": res.error, "duration_s": res.duration_s})
             bus.emit("log", level="warning", message=f"{case.id}: attempt {attempt} {res.status}; retrying")
 
+    async def run_one(self, ctx: RunCtx, case: TestCase, get_browser, n: int, lane=None) -> TestResult:
+        """One test on worker ``n``, as a task a forced stop can end; whatever happens, a result."""
+        reason = self.producer_failed(ctx, case)
+        if reason:
+            return self.not_run(ctx, case, reason, n)
+        task = asyncio.ensure_future(self.run_case(ctx, case, get_browser, n, lane=lane))
+        ctx.tasks.add(task)
+        try:
+            await asyncio.wait({task})
+        finally:
+            ctx.tasks.discard(task)
+        if task.cancelled():
+            return self.stopped(ctx, case, "Stopped by force: the run was cancelled and this test did not end in time.", "CANCELLED")
+        if task.exception() is not None:
+            err = task.exception()
+            return self.stopped(ctx, case, f"The runner failed on this test: {type(err).__name__}: {err}", "ERROR")
+        return task.result()
+
+    @staticmethod
+    def record(ctx: RunCtx, case: TestCase, res: TestResult, queued_s: float, deps_s: float) -> None:
+        """A finished test's result goes into the run (and results.json, so a run that stops later keeps it)."""
+        if ctx.cfg.measure.timing:
+            res.timing = {**(res.timing or {}), "queue_s": round(queued_s, 2), **({"deps_s": round(deps_s, 2)} if deps_s >= 0.05 else {})}
+        ctx.results[case.id] = res
+        ctx.result.tests = [ctx.results[c.id] for c in ctx.cases if c.id in ctx.results]
+        ctx.result.save(ctx.run_dir / "results.json")
+
     async def worker(self, n: int, delay: float = 0.0) -> None:
         browser = None
         cfg = self.cfg
@@ -633,32 +683,17 @@ class Engine:
                 if picked is None:
                     break
                 ctx, case = picked
+                group = ctx.schedule.group_of(case)
+                if len(group) > 1:                                            # a concurrency scenario: every lane at once, on this worker
+                    from .scenario import run_scenario
+                    await run_scenario(self, ctx, group, get_browser, n)
+                    continue
                 queued_s, deps_s = ctx.schedule.queued_s(case.id)             # waiting for a worker is the run's time, not the test's
                 try:
-                    reason = self.producer_failed(ctx, case)
-                    if reason:
-                        res = self.not_run(ctx, case, reason, n)
-                    else:
-                        task = asyncio.ensure_future(self.run_case(ctx, case, get_browser, n))
-                        ctx.tasks.add(task)
-                        try:
-                            await asyncio.wait({task})
-                        finally:
-                            ctx.tasks.discard(task)
-                        if task.cancelled():
-                            res = self.stopped(ctx, case, "Stopped by force: the run was cancelled and this test did not end in time.", "CANCELLED")
-                        elif task.exception() is not None:
-                            err = task.exception()
-                            res = self.stopped(ctx, case, f"The runner failed on this test: {type(err).__name__}: {err}", "ERROR")
-                        else:
-                            res = task.result()
+                    res = await self.run_one(ctx, case, get_browser, n)
                 finally:
                     await self.pool.finished(ctx, case.id)
-                if ctx.cfg.measure.timing:
-                    res.timing = {**(res.timing or {}), "queue_s": round(queued_s, 2), **({"deps_s": round(deps_s, 2)} if deps_s >= 0.05 else {})}
-                ctx.results[case.id] = res
-                ctx.result.tests = [ctx.results[c.id] for c in ctx.cases if c.id in ctx.results]
-                ctx.result.save(ctx.run_dir / "results.json")
+                self.record(ctx, case, res, queued_s, deps_s)
         finally:
             if browser is not None:
                 try:

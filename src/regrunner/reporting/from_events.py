@@ -30,7 +30,7 @@ def results_from_events(run_dir: Path) -> RunResult:
     tests: dict[str, TestResult] = {}
     for t in start.get("tests", []):
         tests[t["id"]] = TestResult(id=t["id"], title=t.get("title", t["id"]), scenario=t.get("scenario", ""),
-                                    description=t.get("description", ""), total_steps=t.get("total_steps", 0))
+                                    description=t.get("description", ""), total_steps=t.get("total_steps", 0), lane=dict(t.get("lane") or {}))
     finished: set[str] = set()
     last_ts = start["ts"]
     for e in events:
@@ -58,6 +58,12 @@ def results_from_events(run_dir: Path) -> RunResult:
                 if step.seq == e["step"]:
                     step.screenshot, step.box = e.get("path"), e.get("box")
                     break
+        elif kind == "scenario_sync" and test:                     # a lane of a concurrency scenario at a sync point / order marker
+            entry = {"item": e.get("sync", ""), "kind": e.get("kind", ""), "role": e.get("role", ""), "state": e.get("state", ""), "at": e["ts"],
+                     "message": e.get("message", "")}
+            if "waited_s" in e:
+                entry["waited_s"] = e["waited_s"]
+            test.syncs.append(entry)
         elif kind in _REVIEW_TYPES and test:
             item = {k: v for k, v in e.items() if k not in ("ts", "run_id")}
             test.review.append(item)
