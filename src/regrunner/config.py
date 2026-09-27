@@ -238,6 +238,13 @@ class CaptchaWatchCfg:
 
 
 @dataclass
+class BuildCfg:
+    """The Build tab's live browser window (P08: pick elements, run up to here).  It is opened by the UI server, never by a run."""
+    headless: bool = False                   # the window has to be visible for a person to pick in it: true only for automated tests
+    idle_close_s: float = 1800               # a build window nobody has used for this long closes itself (0 = never)
+
+
+@dataclass
 class PublishCfg:
     """A second, shared copy of every finished run: the report and a pass/fail summary (not the screenshots folder)."""
     dir: str = ""                    # e.g. /Volumes/QA-Share/regression-runs  or  '\\server\share\regression-runs'; empty = off
@@ -287,6 +294,7 @@ class Config:
     api: ApiCfg = field(default_factory=ApiCfg)
     ask: AskCfg = field(default_factory=AskCfg)
     captcha: CaptchaWatchCfg = field(default_factory=CaptchaWatchCfg)
+    build: BuildCfg = field(default_factory=BuildCfg)
     behaviour: BehaviourCfg = field(default_factory=BehaviourCfg)
     measure: MeasureCfg = field(default_factory=MeasureCfg)
     tags: dict[str, list[str]] = field(default_factory=dict)      # tag -> test ids (workbook has no tags)

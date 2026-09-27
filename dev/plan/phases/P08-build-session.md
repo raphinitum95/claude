@@ -25,3 +25,4 @@ The live headed browser the builder drives, element picking and replays.
 
 ## Progress
 <!-- one line per checkpoint: date · what's done · what's next -->
+2026-09-27 · build/ package (session, locators, overlay), session routes in web/build_api.py, BuildCfg, TestRunner.prepare_runtime/open_session · next: builder plainWords, Build tab session panel, tests, docs

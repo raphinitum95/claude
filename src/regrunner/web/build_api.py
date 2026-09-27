@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
+from ..build.session import BuildSession, SessionStore
 from ..workbook.builder import BuildDocument, BuildError, BuildStore, keyword_catalogue, new_workbook
 from ..workbook.writer import WriterError
 
@@ -176,4 +177,141 @@ def register_build_routes(app: FastAPI, mgr: Any) -> BuildStore:
                 return {"name": real, "hidden": editor.is_hidden(real), "headers": clean[0] if clean else [], "rows": clean[1:]}
         return await run(grid)
 
+    register_session_routes(app, mgr, doc, run)
     return store
+
+
+def register_session_routes(app: FastAPI, mgr: Any, doc, run) -> SessionStore:
+    """``/api/build/session/{name}/*`` (P08): the build window of a workbook (``build/session.py``).  One per workbook; it replays the draft
+    in a browser of its own, so it never gets in the way of a run (a run of the same workbook may go on at the same time)."""
+    sessions = SessionStore()
+
+    def live(name: str) -> BuildSession:
+        s = sessions.get(mgr.resolve_workbook(name).name)
+        if s is None:
+            raise BuildApiError(409, "The build browser is not open. Open it first.", "closed")
+        return s
+
+    async def act(coro):
+        try:
+            return await coro
+        except BuildError as err:
+            raise BuildApiError(err.status, str(err), err.kind, **err.extra) from err
+
+    def row_of(body: dict, key: str = "row") -> int | None:
+        value = body.get(key)
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            raise BuildApiError(400, f"{key} is a row number.", key) from None
+
+    async def state(s: BuildSession, since: int = 0) -> dict:
+        return await asyncio.to_thread(s.state, since)
+
+    @app.get("/api/build/session/{name}")
+    async def session_state(name: str, since: int = 0):
+        path = mgr.resolve_workbook(name)
+        s = sessions.get(path.name)
+        if s is None:
+            last = sessions.last(path.name)
+            return {"open": False, "workbook": path.name, "error": last.error if last is not None else ""}
+        return await state(s, since)
+
+    @app.post("/api/build/session/{name}/start")
+    async def session_start(name: str, body: dict[str, Any]):
+        d = doc(name)
+        cfg = mgr.current()
+        test = str(body.get("test") or "").strip()
+        if not test:
+            raise BuildApiError(400, "Which test? Open one first.", "test")
+        model = await run(d.model, body.get("env") or None)
+        environment = str(body.get("env") or model.get("environment") or "").upper()
+        production = {n.upper() for n in model["environments"].get("production", [])} | {"PROD", "PRODUCTION"}
+        if environment in production and str(body.get("confirmProd") or "").strip() != "PROD":
+            raise BuildApiError(400, f"{environment} is a production environment: the build window would use the real site. Confirm by typing PROD.",
+                                "prod_confirm")
+        stem = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(d.path.name).stem)
+        folder = cfg.path(cfg.runs_dir) / ".build" / stem          # (a dot folder: never listed as a run)
+        s = await act(sessions.open(d, cfg, folder, test_id=test, data_row=row_of(body, "dataRow"), environment=environment,
+                                    headless=bool(cfg.build.headless or body.get("headless"))))
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/pick")
+    async def session_pick(name: str, body: dict[str, Any]):
+        s = live(name)
+        await act(s.set_mode(str(body.get("mode") or "pick"), row_of(body)))
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/which")
+    async def session_which(name: str, body: dict[str, Any]):
+        s = live(name)
+        if body.get("row") is not None:
+            s.pick_for = row_of(body)
+        await act(s.find_matches(str(body.get("text") or ""), str(body.get("kind") or "")))
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/choose")
+    async def session_choose(name: str, body: dict[str, Any]):
+        s = live(name)
+        await act(s.choose(row_of(body, "i") or 0))
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/variable")
+    async def session_variable(name: str, body: dict[str, Any]):
+        s = live(name)
+        await act(s.make_variable(str(body.get("role") or ""), str(body.get("token") or "")))
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/use")
+    async def session_use(name: str, body: dict[str, Any], env: str | None = None):
+        s = live(name)
+        applied = await act(s.use(row_of(body)))
+        return {"applied": applied, "model": await run(doc(name).model, env), "session": await state(s)}
+
+    @app.post("/api/build/session/{name}/run-to-here")
+    async def session_run_to(name: str, body: dict[str, Any]):
+        s = live(name)
+        await act(_sync(s.run, "to", row_of(body)))
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/run-step")
+    async def session_run_step(name: str, body: dict[str, Any]):
+        s = live(name)
+        await act(_sync(s.run, "step", row_of(body)))
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/run-next")
+    async def session_run_next(name: str, body: dict[str, Any] | None = None):
+        s = live(name)
+        await act(_sync(s.run, "next", None, row_of(body or {}, "count")))
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/stop")
+    async def session_stop(name: str):
+        s = live(name)
+        s.stop()
+        return await state(s)
+
+    @app.post("/api/build/session/{name}/answer")
+    async def session_answer(name: str, body: dict[str, Any]):
+        s = live(name)
+        if not s.asker.answer(str(body.get("id") or ""), str(body.get("answer") or "")):
+            raise BuildApiError(409, "That question is not waiting any more.", "closed")
+        return {"ok": True}
+
+    @app.post("/api/build/session/{name}/close")
+    async def session_close(name: str):
+        path = mgr.resolve_workbook(name)
+        s = sessions.get(path.name)
+        if s is not None:
+            await s.close()
+        return {"open": False, "workbook": path.name}
+
+    return sessions
+
+
+async def _sync(fn, *args):
+    """A session method that is plain (it starts its work in the background) where ``act`` expects something to await."""
+    return fn(*args)

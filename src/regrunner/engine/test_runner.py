@@ -198,6 +198,25 @@ class TestRunner:
         """The secrets to mask, longest first (short ones would mask ordinary words)."""
         return sorted((v for v in self._secrets if len(v) >= 4), key=len, reverse=True)
 
+    # -- set-up (``run`` starts with these; a build session (build/session.py) calls them itself and then runs the steps one at a time) -------
+    def prepare_runtime(self):
+        """The test's runtime: its values, the run's variables, IF / loop / CALL_TEST.  The build session calls it again after every edit, so the
+        steps it replays read the workbook as it is now (``workbook`` replaced first; what earlier steps saved stays in ``_shared`` / ``pool``)."""
+        runtime = self.workbook.runtime(self.case, shared=self._shared, pool=self.pool)
+        self._secrets = runtime.secret_values
+        self.pool = runtime.pool                                  # (the run's, or the runtime's own when the test runs by itself)
+        self._flowctl = FlowControl(self, runtime)
+        self.written = runtime.written
+        return runtime
+
+    def open_session(self, runtime) -> BrowserSession:
+        """The test's browser session (its window opens with the first Open step)."""
+        self.session = BrowserSession(self._browser_getter, self.cfg, self.review, self.case.id, runtime.environment,
+                                      devices=self._devices, throttle=self._throttle, cancel=self.cancel)
+        self.session.notice = self.notice
+        self.session.timing = self.timing
+        return self.session
+
     # -- helpers ------------------------------------------------------------------------------------
     def _emit(self, type_: str, **fields):
         return self.bus.emit(type_, test=self.case.id, **fields)
@@ -269,15 +288,8 @@ class TestRunner:
         result.started_at = now_iso()
         self._emit("test_started", title=case.title, total_steps=result.total_steps, worker=self.worker,
                    attempt=self.attempt)
-        runtime = self.workbook.runtime(case, shared=self._shared, pool=self.pool)
-        self._secrets = runtime.secret_values
-        self.pool = runtime.pool                                  # (the run's, or the runtime's own when the test runs by itself)
-        self._flowctl = FlowControl(self, runtime)
-        self.written = runtime.written
-        self.session = BrowserSession(self._browser_getter, self.cfg, self.review, case.id, runtime.environment,
-                                      devices=self._devices, throttle=self._throttle, cancel=self.cancel)
-        self.session.notice = self.notice
-        self.session.timing = self.timing
+        runtime = self.prepare_runtime()
+        self.open_session(runtime)
         method_col = runtime.columns.get("METHOD")
         later = {row: self.planned_rows[i + 1:] for i, row in enumerate(self.planned_rows)}
 

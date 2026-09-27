@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Choose your plan</title>
+<style>
+  body { font-family: Georgia, serif; margin: 0; padding: 20px 40px; }
+  .cards { display: flex; gap: 20px; margin-top: 70px; }
+  .card { border: 1px solid #ccd; border-radius: 10px; padding: 18px; width: 200px; }
+  .card button { width: 100%; height: 38px; }
+  label { display: block; margin-top: 18px; }
+</style>
+</head>
+<body>
+<h1>Choose your plan</h1>
+<!-- The build window's pick tests: three cards with the same "Choose" button (only the card heading tells them apart), a field with a
+     label, a test id, a link to another page, a link that opens a new window, an iframe.  The site counts every press it sees (its own
+     listeners, on window and document, capture and bubble) so a test can tell the overlay kept them to itself. -->
+<div class="cards">
+  <div class="card plan-card"><h3>Basic</h3><span class="price">$96.40</span><button class="choose" onclick="chosen('Basic')">Choose</button></div>
+  <div class="card plan-card"><h3>Plus</h3><span class="price">$121.80</span><button class="choose" onclick="chosen('Plus')">Choose</button></div>
+  <div class="card plan-card"><h3>Max</h3><span class="price">$148.20</span><button class="choose" onclick="chosen('Max')">Choose</button></div>
+</div>
+<p>Chosen: <span id="chosen">none</span></p>
+<label for="firstName">First name</label><input id="firstName" type="text">
+<p><button data-testid="pay-now" onclick="document.getElementById('paid').textContent = 'paid ' + (++payCount)">Pay now</button>
+   <span id="paid">not paid</span></p>
+<p><a href="second.html" id="next-page">Next page</a> · <a href="build_frame.html" target="_blank" id="new-window">Open in a new window</a></p>
+<iframe name="inner" src="build_frame.html" style="width: 420px; height: 90px"></iframe>
+<script>
+  var payCount = 0;
+  window.sitePresses = 0;
+  window.siteClicks = [];
+  function chosen(name) { document.getElementById('chosen').textContent = name; window.siteClicks.push(name); }
+  for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
+    window.addEventListener(type, () => { window.sitePresses += 1; }, true);
+    document.addEventListener(type, () => { window.sitePresses += 1; }, false);
+  }
+</script>
+</body>
+</html>

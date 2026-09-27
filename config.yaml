@@ -118,6 +118,12 @@ reports:
 #   solve: ask            # ask = open the window | fail = just end the test
 #   timeout_s: 300        # how long the window waits for it to be solved
 
+# The Build tab's live browser window ("Open browser": pick elements on the page, run up to here). The UI server opens it, one per workbook;
+# it replays the draft you are editing with the same actions as a real run, in its own browser, so it never gets in the way of a run.
+# build:
+#   headless: false       # the window must be visible to pick in it; true only for automated tests
+#   idle_close_s: 1800    # a build window nobody has used for this long closes itself (0 = never)
+
 # Tests that run one after another (each waits for the one before it). The web UI's Run order card saves the same thing beside the workbook; `regrunner run --chain A,B,C` does it for one run.
 # chains:
 #   qantas-test.xlsx:                # the workbook's file name, or * for any
