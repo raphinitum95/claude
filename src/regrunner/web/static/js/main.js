@@ -14,12 +14,13 @@ import { resultsHeader, resultsTabView } from './views/results/index.js';
 import * as A from './actions.js';
 import * as AB from './views/build/actions.js';
 import * as BS from './views/build/session.js';
+import * as BA from './views/build/api_editor.js';
 import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
-const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...AR.acts };
-const changes = { ...A.changes, ...AB.changes };
-const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...AR.inputs };
+const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...AR.acts };
+const changes = { ...A.changes, ...AB.changes, ...BA.changes };
+const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...AR.inputs };
 
 const baseTitle = document.title;
 const appEl = () => document.getElementById('app');

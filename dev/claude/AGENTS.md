@@ -29,7 +29,7 @@ Short doesn't mean incomplete: always include failures, risks, required actions 
    Reports are shared with a QA team (`publish.dir`).
 5. **Python 3.9 must keep working** (`requires-python >= 3.9`; the work computer uses 3.9). Create `asyncio.Event/Lock/Queue`
    inside coroutines only (guarded by `tests/test_py39_compat.py`). Annotations use `from __future__ import annotations`.
-6. **Run only the tests your change touches** (section 5). The full suite is 808 tests / 40+ min: only when the user asks.
+6. **Run only the tests your change touches** (section 5). The full suite is 888 tests / 40+ min: only when the user asks.
    Always tell the user which tests you ran.
 7. **Do not edit the user's workbooks** (`workbooks/*.xlsx`). If a cell is wrong, tell the user which cell and why.
 8. **Changes to server code** (`src/regrunner/web/app.py` or anything it imports at server start) **need the user to restart the UI**.
@@ -88,7 +88,8 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Workbook Builder model (tests/blocks/steps/variables JSON, ops, undo/draft/save/history/diff), builder problems, `/api/build/*` | `workbook/builder.py`, `lint.py` (`builder_problems`), `web/build_api.py`; the shapes are fixed in `dev/plan/CONTRACT.md` | `test_builder_model.py` (~10 s, real workbooks included), `test_build_api.py` (2 s). **Restart UI** for build_api changes |
 | Build tab UI (Run · Build · Results tabs, workbook map, variable map, test editor: block map/cards/inspector/grid/drawer/problems/add-step menu, new-workbook/environments/fingerprint/history/file-changed dialogs) | `web/static/js/views/build/*.js` (state in `state.js`'s `freshBuild`/`freshEditor`), `views/shell.js` (`tabs`, `headerShell`), `views/modals.js` (routes `build-*` modal kinds to `build/dialogs.js`), `main.js` (`#/build...` routes, merges `build/actions.js` into the action tables), `icons.js`, `app.css` ("Build tab" section) | `test_web_build.py`, `test_web_ui.py -k theme`. JS only: reload the page, no UI restart |
 | Build window (Build tab's live browser: overlay pill/pick/which-one, locator + backups + plain words, word → variable, run up to here / this step / next N, side-effect pause, "earlier steps changed") | `build/session.py` (`BuildSession`, `SessionStore`, `BuildAsker`), `build/locators.py` (pure), `build/overlay.js`, `web/build_api.py` (`register_session_routes`), `web/static/js/views/build/session.js`, `engine/test_runner.py` (`prepare_runtime`/`open_session`) | `test_build_locators.py` (fast), `test_build_session.py` (mock site `build_pick.html`), `test_web_build_session.py`. **Restart UI** for session.py/build_api changes; overlay.js is read at server start too |
-| API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates | `workbook/api.py`, `workbook/api_template.py`, `engine/api_runner.py` | `test_api_tests.py`, `test_api_purchase_flavour.py` |
+| API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates; `{NAME}` / `REQUEST_BODY` / JSONPath + XPath paths / XML (SOAP) templates / greater_than-between-matches checks | `workbook/api.py`, `workbook/api_template.py`, `workbook/api_paths.py`, `engine/api_runner.py` (`prepare_body`, `fetch`, `read_response`) | `test_api_tests.py`, `test_api_purchase_flavour.py`, `test_api_paths_and_xml.py` |
+| Build tab API / XML editor (form, Send now, response tree with "this item" / "item where", cURL, Postman, templates; `api_*` ops) | `build/api_builder.py`, `web/build_apitest.py` (`/api/build/api/*`), `web/static/js/views/build/api_editor.js`; CONTRACT.md 1.6 | `test_api_builder.py` (Send now hits the mock APIs), `test_web_api_builder.py`. **Restart UI** for api_builder/build_apitest changes |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
 | Workers, several workbooks at once, joining a run, progress, shutdown/cancel | `engine/runner.py`, `engine/pool.py`, `engine/inbox.py`, `engine/diagnostics.py` | `test_multi_run.py`, `test_progress_and_parked_worker.py`, `test_shutdown.py`, `test_py39_compat.py` |
 | WAF 403/429, cool-down, pacing per site | `engine/throttle.py`, `engine/session.py` (`raise_if_blocked`), `engine/runner.py` (`run_case`) | `test_waf.py`, `test_web_paused_banner.py` |
@@ -178,10 +179,11 @@ src/regrunner/
     variables.py 339 (VariablePool, environment table, secret_value, {NAME} substitute, IF conditions, flow_map of IF/loops)
     writer.py 1400 (WorkbookEditor: patches only the XML an edit touches; row insert/delete/move rewrite every reference)
     builder.py 1850 (Workbook Builder model: build_model, apply_ops, BuildDocument undo/draft/save/history/diff, BuildStore; CONTRACT.md)
-    api.py 495 · api_template.py 113
+    api.py 617 · api_template.py 113 · api_paths.py 236 (JSONPath with [?(@.k=='v')] filters, stdlib XPath + /@attr, text(), prefixes; paths the builder writes)
   build/        the Build tab's live browser window (P08; the UI server runs it, never a run): session.py (BuildSession: headed browser + overlay
                 on every context, pick -> locator checked with the engine's selectors, word -> {VARIABLE}, replays with TestRunner's own steps,
-                BuildAsker for the side-effect pause, stale check; SessionStore: one per workbook, 3 max), locators.py (candidates id -> test id ->
+                BuildAsker for the side-effect pause, stale check; SessionStore: one per workbook, 3 max), api_builder.py (P10: API/XML
+                editor view, api_* ops registered in builder.EXTRA_OPS, Send now on the draft, JSON/XML response trees, cURL/Postman/template import), locators.py (candidates id -> test id ->
                 attribute -> text -> text in container -> class+position, choose, plain words, words_of_locator), overlay.js (pill, hover outline,
                 pick, which-one numbers; closed shadow root; presses swallowed in the window capture phase)
   selectors/  spec.py resolve.py xpath2css.py migrate.py harvest.py
@@ -191,6 +193,7 @@ src/regrunner/
     presence.py   UiPresence: which UI windows are open (/api/ui/hello, /api/ui/goodbye) for serve --exit-when-closed
     build_api.py  /api/build/* routes (register_build_routes: one line in create_app); later builder phases add their own modules
                   (+ register_session_routes: /api/build/session/{name}/* for the build window, P08)
+    build_apitest.py  /api/build/api/* (P10): API test view, Send now, cURL / Postman reading, template list + fields (registered from build_api.py)
     run_batch.py  /api/batches/* routes (register_batch_routes: one line in create_app): groups runs that share a run.json batch_id, and
                   last-run-per-test durations for the Run plan's Timeline view. A batch is only a label - it never changes how a run executes.
     results_api.py  /api/results/* routes (register_results_routes: one line in create_app): batch page (causes, trend, what changed,
@@ -200,7 +203,8 @@ src/regrunner/
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
     static/js/views/{shell,newrun,live,results,modals}.js
     static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher),
-                  session (P08: build window strip, pick panel, which-one, side-effect dialog; polls /api/build/session/<wb>)}.js
+                  session (P08: build window strip, pick panel, which-one, side-effect dialog; polls /api/build/session/<wb>),
+                  api_editor (P10: the editor of an api/xml test, dispatched from editor.js's testEditor)}.js
     static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen),batch,test,compare,index (header+screen dispatcher)}.js;
                   results.js stays the single finished-run page opened from Run (`#/run/:id`); `#/results...` is the separate browsable tab
 
@@ -212,7 +216,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            72 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            75 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -226,8 +230,8 @@ Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv`
 |---|---|---|
 | One file | `.venv/bin/pytest -q tests/test_page_ready.py` | seconds to ~1 min |
 | One test | `.venv/bin/pytest -q tests/test_web_ui.py -k theme` | |
-| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 510 tests, ~4 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
-| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 808 tests, 40+ min |
+| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 562 tests, ~6 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
+| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 888 tests, 40+ min |
 
 - Marker `browser` = needs Playwright (module-level `pytestmark` or per test); `realworkbook` = needs `workbooks/UAT_AEM_Travelex Regression_v9.1.xlsx` (skips otherwise).
 - Pure-logic files (all fast): `test_workbook_roundtrip -k "not real"`, `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
@@ -343,6 +347,14 @@ workbook (the run reads the saved file in its own process). Not built (P09): rec
 auto switch-to-frame steps (a pick inside a frame only says so). Unverified: headed Chrome/Edge on the work computer (tests run headless).
 Fixed in passing (P04's editor): a block's `start` is inclusive (CONTRACT 2.4), the cards view hid each block's first step.
 
+P10 (API/XML building) PR open: an api/xml test opens `views/build/api_editor.js` (steps · request Form/Paste cURL/Postman/From template ·
+response tree). It writes only what the runner reads (API sheet row + shared `InputOutput`, CONTRACT.md 1.6) through `api_*` ops; the new runner
+also reads `REQUEST_BODY`, `{NAME}`/`{SECRET:NAME}` in URL/headers/body/paths (row -> pool -> environment table), JSONPath/XPath paths
+(`workbook/api_paths.py`, stdlib only: lxml is not installed and not needed), XML (SOAP) templates (Replace, XML-escaped) and four new check kinds.
+API tests now take part in Needs/Provides (their output columns go into the pool). Send now (`build/api_builder.send_now`) sends the **draft** with
+the engine's own `prepare_body`/`fetch`/`read_response`; a production environment needs `confirmProd: "PROD"`. Not built: "Describe a step"
+(Q48), a CSV of responses, recorded traffic (not a source by design). Unverified: real APIs through the work computer's proxy.
+
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
@@ -375,6 +387,10 @@ Gotchas:
 - Build window: the overlay lives in a **closed** shadow root on `<rr-build-overlay>` (Playwright's `text=`/CSS engines do not see into it), and
   `window.__rrBuild` is non-enumerable; the picked element is `window.__rrBuild.picked()` (never a DOM attribute). Evaluating in a page with a JS
   dialog open hangs: `BuildSession.broadcast`/`_page` check `pending_dialog` first. `build.headless: true` is for tests only.
+- `InputOutput` rows are shared by every API sheet and keyed by path/header/placeholder (`read_input_output` builds dicts): never add a second
+  row for the same key with another column (it takes the key away from the other sheets); reuse the existing row's column (`api_builder`).
+- A secret header's value typed straight into a sheet (legacy `DT_apiKey`) is shown as `••••••` by the API editor; the builder writes
+  `{SECRET:NAME}` for new ones so the value lives in secrets.env.
 - `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
   narrow window clips it instead of pushing the header wider than the viewport (see the `Run` tab's version tag vs. the `Build` tab's breadcrumb).
 

@@ -2,7 +2,7 @@
 
 It reports through the same events as a UI test, so the console, the web UI, the report and the shared copy need nothing new:
 step 1 is the request, and every check the workbook asks for (``compare`` / ``contains`` ...) is a step of its own with the expected and the
-actual value.  Only the request and the response are stored (``tests/<id>/request.txt``, ``response.json``); header values from ``addHeader``
+actual value.  Only the request and the response are stored (``tests/<id>/request.txt``, ``response.json`` / ``.xml`` / ``.txt``); header values from ``addHeader``
 (bearer tokens, API keys) are never written anywhere.
 """
 from __future__ import annotations
@@ -70,6 +70,8 @@ def prepare_body(runtime: ApiRuntime, request, cfg: Config, workbook_dir: Path) 
     ``Replace``; any other text - an XML / SOAP envelope - ``Replace`` only, each value XML-escaped), else none."""
     typed, missing = runtime.request_body(request.json_format)
     if typed is not None:
+        if request.method in ("GET", "HEAD"):
+            return None, [f"body: not sent with {request.method} (the REQUEST_BODY cell is kept for another method)"], ""
         if missing:
             return None, [], "Nothing gives a value for " + ", ".join("{%s}" % m for m in missing) + " in the request body."
         return typed.encode("utf-8"), ["body: the REQUEST_BODY cell"], ""
