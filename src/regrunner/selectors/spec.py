@@ -124,3 +124,26 @@ def parse_locator(text: str, origin: str = "sheet") -> Strategy:
 def parse_locator_list(text: str, origin: str = "sheet") -> list[Strategy]:
     """``a || b || c`` -> strategies in priority order."""
     return [parse_locator(part, origin) for part in re.split(r"\s*\|\|\s*", text.strip()) if part.strip()]
+
+
+def parse_backup_locators(text: str, origin: str = "backup") -> list[Strategy]:
+    """The ``BACKUP_LOCATORS`` cell (CONTRACT.md 1.1): a JSON list of locators (``["css=#pay", "text=Pay now"]``).  A cell that is not JSON is read
+    as one locator per line or ``||``-separated, so a hand-typed cell still works.  Locators that cannot be parsed are left out."""
+    import json
+    text = (text or "").strip()
+    if not text:
+        return []
+    items: list[str]
+    try:
+        loaded = json.loads(text)
+        items = [str(x) for x in loaded] if isinstance(loaded, list) else [str(loaded)]
+    except ValueError:
+        items = [part for line in text.splitlines() for part in re.split(r"\s*\|\|\s*", line)]
+    out: list[Strategy] = []
+    for item in items:
+        if item.strip():
+            try:
+                out.append(parse_locator(item, origin))
+            except ValueError:
+                continue
+    return out

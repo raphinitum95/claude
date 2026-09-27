@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>widgets</title>
+<style>
+  #calendar{display:none;border:1px solid #999;padding:4px;width:260px} #calendar button.day{width:30px}
+  #promo{display:none;position:fixed;top:20px;left:20px;background:#fff;border:2px solid #333;padding:20px}
+  #city-list li{cursor:pointer;list-style:none;padding:2px}
+</style></head>
+<body>
+<!-- ASSERT_PAGE: the landmark -->
+<h1 id="heading">Payment details</h1>
+
+<!-- DISMISS_IF_SHOWN: a promo that opens a moment after the page -->
+<div id="promo" role="dialog">Get 10% off! <button id="promo-close" onclick="document.getElementById('promo').style.display='none'; window.promoClosed=true">Close</button></div>
+
+<!-- WAIT_UNTIL: a spinner that goes, a status that becomes Ready -->
+<div id="spinner">Loading...</div>
+<span id="status">Working</span>
+
+<!-- PICK_DATE: a browser date field, a typed field with a DD/MM/YYYY placeholder, a read-only field with a calendar -->
+<input type="date" id="native">
+<input id="typed" placeholder="DD/MM/YYYY">
+<input id="cal" readonly placeholder="Departure date">
+<div id="calendar">
+  <button type="button" aria-label="Previous month" id="prev">&lt;</button>
+  <span class="title" id="title"></span>
+  <button type="button" aria-label="Next month" id="next">&gt;</button>
+  <div id="days"></div>
+</div>
+
+<!-- CHOOSE_SUGGESTION: suggestions that arrive late, in the listbox the input names -->
+<input id="city" aria-controls="city-list" autocomplete="off">
+<ul id="city-list" role="listbox"></ul>
+
+<!-- checks -->
+<input id="amount" value="1,250.00">
+<span id="total">Total: $1,234.50</span>
+<ul id="items"><li class="item">a</li><li class="item">b</li><li class="item">c</li></ul>
+<a href="#" id="buy" role="button" aria-disabled="true">Buy</a>
+<button id="ok">OK</button>
+<input type="checkbox" id="agree" checked> <input type="checkbox" id="news">
+<select id="plan"><option>Basic</option><option selected>Max</option></select>
+<span id="when">15/03/2027</span> <span id="bad-when">2027/03/15</span>
+<span id="ref">REF-12345</span>
+
+<!-- SIDE_EFFECTS and BACKUP_LOCATORS: a button with real consequences; its id changed, its test id did not -->
+<button id="pay-new" data-testid="pay" onclick="window.payCount=(window.payCount||0)+1; document.getElementById('paid').textContent='paid ' + window.payCount">Pay now</button>
+<span id="paid"></span>
+
+<script>
+  setTimeout(() => { document.getElementById('promo').style.display = 'block'; }, 600);
+  setTimeout(() => { document.getElementById('spinner').remove(); }, 800);
+  setTimeout(() => { document.getElementById('status').textContent = 'Ready'; }, 900);
+
+  // a small calendar: starts on January 2027, one month at a time
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let shown = {y: 2027, m: 0};
+  const pad = n => String(n).padStart(2, '0');
+  function draw() {
+    document.getElementById('title').textContent = months[shown.m] + ' ' + shown.y;
+    const days = new Date(shown.y, shown.m + 1, 0).getDate();
+    let html = '';
+    for (let d = 1; d <= days; d++) {
+      const iso = shown.y + '-' + pad(shown.m + 1) + '-' + pad(d);
+      html += '<button type="button" class="day" data-date="' + iso + '">' + d + '</button>';
+    }
+    document.getElementById('days').innerHTML = html;
+  }
+  document.getElementById('cal').addEventListener('click', () => { draw(); document.getElementById('calendar').style.display = 'block'; });
+  document.getElementById('next').addEventListener('click', () => { shown.m++; if (shown.m > 11) { shown.m = 0; shown.y++; } setTimeout(draw, 50); });
+  document.getElementById('prev').addEventListener('click', () => { shown.m--; if (shown.m < 0) { shown.m = 11; shown.y--; } setTimeout(draw, 50); });
+  document.getElementById('days').addEventListener('click', e => {
+    const iso = e.target.getAttribute('data-date');
+    if (!iso) return;
+    const [y, m, d] = iso.split('-');
+    document.getElementById('cal').value = d + '/' + m + '/' + y;
+    document.getElementById('calendar').style.display = 'none';
+  });
+
+  const cities = ['Sydney', 'Sydney Airport', 'Melbourne'];
+  document.getElementById('city').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase();
+    setTimeout(() => {
+      document.getElementById('city-list').innerHTML = q
+        ? cities.filter(c => c.toLowerCase().startsWith(q)).map(c => '<li role="option">' + c + '</li>').join('') : '';
+    }, 300);
+  });
+  document.getElementById('city-list').addEventListener('click', e => {
+    if (e.target.tagName !== 'LI') return;
+    document.getElementById('city').value = e.target.textContent;
+    document.getElementById('city-list').innerHTML = '';
+  });
+</script>
+</body></html>
