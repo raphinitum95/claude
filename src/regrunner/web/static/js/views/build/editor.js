@@ -6,6 +6,7 @@ import {
   bm, currentTest, selectedStep, buildUrl, effectiveBuildingWith,
 } from './actions.js';
 import { sessionBar, sessionMark, pickPanel, sessionOpen } from './session.js';
+import { apiEditor } from './api_editor.js';
 
 const KIND_BADGE = { nav: 'Go', act: 'Click', input: 'Type', check: 'Check', save: 'Save', wait: 'Wait', call: 'Call', flow: 'Flow', legacy: 'Legacy', other: 'Step', empty: '' };
 const BLOCK_KIND_LABEL = { page: 'Page', window: 'Window', call: 'Call', loop: 'Repeat' };
@@ -243,6 +244,7 @@ export function testEditor(S) {
   const t = currentTest();
   const m = bm();
   if (!t) return html`<div class="app-body">${buildRail(S)}<main class="main"><div class="page"><b>That test does not exist in ${m ? m.name : 'this workbook'}.</b></div></main></div>`;
+  if (t.kind === 'api' || t.kind === 'xml') return apiEditor(S);         // API / XML tests: their own editor (P10)
   const ed = S.build.ed;
   const b = t.blocks.length ? t.blocks[Math.min(ed.block, t.blocks.length - 1)] : { start: 0, end: t.steps.length, title: 'All steps', kind: 'page' };
   const idx = t.blocks.indexOf(b);

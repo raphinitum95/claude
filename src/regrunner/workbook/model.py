@@ -344,22 +344,23 @@ class Workbook:
         return ""
 
     # -- runtime -----------------------------------------------------------------------------
-    def api_runtime(self, case: TestCase, shared: dict | None = None, *, seed: int | None = None):
+    def api_runtime(self, case: TestCase, shared: dict | None = None, *, seed: int | None = None, pool: VariablePool | None = None):
         """Runtime of an API row.  ``shared``: cells the UI tests of this run wrote into their parameter sheets, ``{(sheet, row, col): value}``,
-        so that ``=AgentStandAlone_Params!E2`` in an API row sees the policy number the UI test produced."""
+        so that ``=AgentStandAlone_Params!E2`` in an API row sees the policy number the UI test produced.  ``pool``: the run's shared variables
+        (``{NAME}`` in what the Workbook Builder writes); ``None`` = none."""
         from .api import ApiRuntime
         book = BookState(self.data, now=self.now, seed=self.seed if seed is None else seed)
         globals_ = self._build_global(book)
         for (sheet, row, col), value in (shared or {}).items():
             if book.has_sheet(sheet):
                 book.sheet(sheet).set(row, col, value)
-        return ApiRuntime(book, case, globals_, self.secrets)
+        return ApiRuntime(book, case, globals_, self.secrets, pool=pool, env_table=self.environment_table())
 
     def runtime(self, case: TestCase, *, seed: int | None = None, shared: dict | None = None, pool: VariablePool | None = None) -> "TestRuntime":
         """``shared``: parameter cells other tests of the run wrote (or a person supplied), ``{(sheet, row, col): value}``; this test sees them.
         ``pool``: the run's shared variables (values any test saved under a name); ``None`` = a pool of its own (planning)."""
         if case.kind == "api":
-            return self.api_runtime(case, shared, seed=seed)               # type: ignore[return-value]
+            return self.api_runtime(case, shared, seed=seed, pool=pool)    # type: ignore[return-value]
         book = BookState(self.data, now=self.now, seed=self.seed if seed is None else seed)
         globals_ = self._build_global(book)
         params_state = None
