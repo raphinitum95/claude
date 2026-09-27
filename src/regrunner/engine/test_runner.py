@@ -25,6 +25,7 @@ from ..workbook.variables import INLINE_RE, MARKERS, VariablePool, evaluate_cond
 from .actions import ASK_METHODS, NO_PAGE_METHODS, ActionError, StepContext, run_action
 from .ask import AskCancelled, AskTimeout, AskUnavailable
 from .failure_capture import capture_failure
+from .gates import SIDE_EFFECT_MODES
 from .outcome import FAILED, PASSED, Verdict, evaluate
 from .patience import WaitNotice
 from .session import BrowserSession
@@ -147,7 +148,7 @@ class TestRunner:
                  cfg: Config, bus: EventBus, run_dir: Path, selector_map: SelectorMap,
                  cancel: asyncio.Event, planned_rows: list[int], worker: int = 0, harvest=None,
                  devices: dict | None = None, attempt: int = 1, throttle=None, asker=None, visible: bool = False, shared: dict | None = None,
-                 pool: VariablePool | None = None, pw=None, call_stack: tuple = (), base_id: str = ""):
+                 pool: VariablePool | None = None, pw=None, call_stack: tuple = (), base_id: str = "", side_effects: str = "run"):
         self.workbook, self.case, self.cfg, self.bus = workbook, case, cfg, bus
         self.run_dir, self.selector_map, self.cancel = run_dir, selector_map, cancel
         self.planned_rows = planned_rows
@@ -190,6 +191,8 @@ class TestRunner:
         self._called_steps: list[StepRecord] = []                 # a called test's steps, reported after the CALL_TEST step
         self._call_stop: tuple[str, str] = ("", "")               # (infra | blocked | captcha, why) when a called test stopped for a reason the caller shares
         self._branch_skipped = 0                                  # planned steps an IF (or a loop with nothing to repeat) left out
+        self.side_effects = side_effects if side_effects in SIDE_EFFECT_MODES else "run"   # SIDE_EFFECTS=Y steps: "ask" in a build-mode replay (P08)
+        self._hard_stop = ""                                      # a failed step that ends the test (a page gate, a blocked side effect): why
 
     def hidden(self) -> list[str]:
         """The secrets to mask, longest first (short ones would mask ordinary words)."""
@@ -354,6 +357,9 @@ class TestRunner:
                 if self._no_window:
                     closed = f' (step {closer[0]} "{closer[1]}" closed the last one)' if closer else " (no Open step ran first, or the window was closed)"
                     stop_reason = f"No browser window is open any more{closed}, so the steps after step {seq} could not run"
+                    break
+                if self._hard_stop:
+                    stop_reason = self._hard_stop                             # a failed page gate / blocked side effect: the rest would act on the wrong page
                     break
                 if self._captcha_stop:
                     result.captcha = self._captcha_stop                       # nothing behind a captcha can be trusted: stop, do not "pass" the rest
@@ -577,7 +583,8 @@ class TestRunner:
             step, blank_error = await self._fill_blank_params(runtime, step, seq)
         ctx = StepContext(step=step, session=self.session, cfg=cfg, selector_map=self.selector_map,
                           review=self.review, test_dir=self.test_dir, harvest=self.harvest, test_id=self.case.id, seq=seq,
-                          asker=self._asker, secret_values=runtime.secret_values, notice=self.notice, flow=self._flowctl)
+                          asker=self._asker, secret_values=runtime.secret_values, notice=self.notice, flow=self._flowctl,
+                          runtime=runtime, emit=lambda type_, **f: self._emit(type_, **mask_fields(f, self.hidden())), side_effects=self.side_effects)
         spec_element = step.method not in NO_PAGE_METHODS
         variable_error = self._variable_error(runtime, step) if not blank_error else ""
         if blank_error or variable_error:
@@ -744,6 +751,8 @@ class TestRunner:
             verdict, self._captcha_stop = Verdict(FAILED, stop), stop        # never swallowed by Ignore_not_existing_object
         writes = runtime.record(step, verdict.status, verdict.error, output)      # the parameters this step set
         failed = verdict.status == FAILED
+        if failed and ctx.out.stop:
+            self._hard_stop = ctx.out.stop
         if failed and spec_element:
             with self.timing.span("runner", "failure_capture"):
                 self._settled = await self._failed_on_settled_page(ctx)
@@ -759,6 +768,12 @@ class TestRunner:
         detail = mask_text(ctx.out.detail, hidden)
         with self.timing.span("runner", "failure_capture"):
             diagnosis = await self._diagnose(ctx, step, seq, verdict, detail, stop, lambda text: mask_text(text, hidden), actual) if failed and on_page else None
+        if failed and ctx.out.backup and ctx.out.backup.get("locator"):                # a backup locator found the element the step did not (never used)
+            b = ctx.out.backup
+            line = (f"Backup locator {b['locator']} found {b['matches']} match{'es' if b['matches'] != 1 else ''}: proposed locator {b['locator']} "
+                    "(the step still failed; accept it in the Build tab if it is the right element).")
+            diagnosis = {**(diagnosis or {}), "backup": {k: (mask_text(v, hidden) if isinstance(v, str) else v) for k, v in b.items()}}
+            diagnosis["summary"] = [mask_text(line, hidden), *diagnosis.get("summary", [])]
         box, screenshot, screenshot_full = None, None, None
         try:
             with self.timing.span("runner", "screenshots"):

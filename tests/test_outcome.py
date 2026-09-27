@@ -32,6 +32,14 @@ CASES = [
                                                                              {},                         True,  "b",    FAILED, "Comparison Failed"),
     ("numeric expected",  {"exact_match": "Y", "expected_value": 0},         {},                         True,  "0",    PASSED, ""),
     ("crlf normalised",   {"exact_match": "Y", "expected_value": "a\r\nb"},  {},                         True,  "a\nb", PASSED, ""),
+    # the new check steps compare for themselves (CONTRACT.md 1.3): their result replaces Exact_Match / Contains, and is never swallowed
+    ("own check holds",   {"exact_match": "Y", "expected_value": "^\\d+$"},  {"check": "regex"},          True,  "123",  PASSED, ""),
+    ("own check fails",   {"expected_value": "> 20"},                        {"check": "compare", "check_failed": "12 is not > 20"},
+                                                                                                         True,  "12",   FAILED, "Comparison Failed"),
+    ("ignore keeps own check", {"ignore_not_existing_object": "Y"},          {"check": "count", "check_failed": "2 match, not = 3"},
+                                                                                                         False, "2",    FAILED, "Comparison Failed"),
+    ("hard stop not swallowed", {"ignore_not_existing_object": "Y"},         {"error": "Not on the page Payment", "hard": True, "stop": "gate"},
+                                                                                                         False, "",     FAILED, "Not on the page Payment"),
 ]
 
 
