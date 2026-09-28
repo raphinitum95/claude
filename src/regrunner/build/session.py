@@ -421,7 +421,12 @@ class BuildSession:
         context = await self._browser.new_context(viewport=None if not self.headless else {"width": 1280, "height": 800})
         await self.arm(context)
         self._blank = context
-        await context.new_page()
+        page = await context.new_page()
+        if not self.headless:
+            try:
+                await page.bring_to_front()
+            except Exception:
+                pass
 
     async def close_blank(self) -> None:
         blank, self._blank = self._blank, None
@@ -837,10 +842,22 @@ class BuildSession:
             self.emit("build_session_replay_progress", kind=kind, done=len((self.replay or {}).get("results", [])), finished=True,
                       stopped=stopped)
             self.touch()
+            if kind == "to":
+                await self._to_front()
             try:
                 await self.broadcast()
             except Exception:
                 pass
+
+    async def _to_front(self) -> None:
+        """A window opened by the Open step comes up in front of the app that asked for it (a headed window opened from a background
+        process can otherwise appear behind it, and look as if nothing opened)."""
+        if self.headless or self.status == "closed":
+            return
+        try:
+            await self._page().bring_to_front()
+        except Exception:
+            pass
 
     async def _run_rows(self, *, first: int, until: int | None = None, count: int | None = None, only: bool = False) -> str:
         """The row loop of ``TestRunner.run`` for part of a test.  Returns why it stopped early ("" when it got where it was asked to)."""

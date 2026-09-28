@@ -33,7 +33,7 @@ from .gates import has_side_effects, is_production, read_fingerprints
 from .keys import parse_sendkeys
 from .outcome import StepOut, compare_ok, normalize_expected
 from .patience import NO_NOTICE, Patience, plain_seconds
-from .session import ActionError, BrowserSession, FrameStep
+from .session import ActionError, BrowserSession, FrameStep, web_address
 from .settle import idle_ms, settle
 from .timing import timing_of
 
@@ -273,7 +273,7 @@ async def open_browser(ctx: StepContext) -> None:
 
 @action("NAVIGATE", "DRIVER_GET")
 async def navigate(ctx: StepContext) -> None:
-    url = ctx.value_text.strip()
+    url = web_address(ctx.value_text)
     if not url:
         raise ActionError("Navigate: no URL")
     await ctx.session.pace()

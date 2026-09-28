@@ -24,6 +24,17 @@ _TWO_LEVEL_SUFFIXES = {"co.uk", "org.uk", "ac.uk", "gov.uk", "com.au", "net.au",
 _SECRET_PARAM = re.compile(r"(pass(word|code)?|pwd|token|secret|card|cvv|cvc|ssn|auth|otp|^code$|[_-]code$)", re.I)
 
 
+def web_address(url: str) -> str:
+    """An address as a workbook may hold it, as one a browser opens: ``example.com/x`` -> ``https://example.com/x`` (``http://`` for this computer's
+    own ``localhost`` / ``127.x``).  The environment table's ``DOMAIN`` is normally a bare host, and Playwright refuses one ("Cannot navigate to
+    invalid URL"), so an Open / Navigate step given ``{DOMAIN}`` failed before it reached the site.  An address that has a scheme is left alone."""
+    url = url.strip()
+    if not url or re.match(r"^([a-z][a-z0-9+.-]*://|(about|data|file|blob|chrome|javascript):)", url, re.I):
+        return url
+    local = re.match(r"^(localhost|127(\.\d{1,3}){3}|\[::1\])([:/?#]|$)", url, re.I)
+    return ("http://" if local else "https://") + url
+
+
 def mask_url(url: str) -> str:
     """The URL as logged: scheme and host dropped, secret-looking query values hidden, long values cut."""
     parts = urlparse(url)
@@ -159,6 +170,7 @@ class BrowserSession:
 
     async def open(self, url: str, *, width: int | None = None, height: int | None = None,
                    device: dict | None = None, scale: float | None = None) -> None:
+        url = web_address(url)
         await self.close()
         self.typed.clear()
         b = self.cfg.browser

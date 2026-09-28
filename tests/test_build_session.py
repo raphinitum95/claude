@@ -301,6 +301,31 @@ def test_a_domain_without_a_scheme_is_opened_over_https():
     assert site_url("http://localhost:8123") == "http://localhost:8123"
 
 
+def test_an_open_step_given_a_bare_domain_gets_a_scheme_like_the_environment_table_holds_it():
+    from regrunner.engine.session import web_address
+    assert web_address("owneradvantage.qa.example.com") == "https://owneradvantage.qa.example.com"
+    assert web_address(" owneradvantage.qa.example.com/a?b=1 ") == "https://owneradvantage.qa.example.com/a?b=1"
+    assert web_address("127.0.0.1:8123/x.html") == "http://127.0.0.1:8123/x.html" and web_address("localhost:3000") == "http://localhost:3000"
+    assert web_address("http://x.test/a") == "http://x.test/a" and web_address("about:blank") == "about:blank" and web_address("") == ""
+
+
+async def test_an_open_step_whose_domain_has_no_scheme_opens_the_site(site, tmp_path):
+    cfg = Config(base_dir=tmp_path)
+    cfg.build.headless = True
+    cfg.build.idle_close_s = 0
+    bare = site.rstrip("/").split("://", 1)[1]                # 127.0.0.1:<port>, as a DOMAIN cell holds it
+    envs = [["Variable", "Required", "Secret", "UAT"], ["DOMAIN", "Y", "", bare]]
+    path = book(tmp_path / "bare.xlsx", {"Plans": [("Open", "open plans", {"Page": "chrome", "Value": "{DOMAIN}/build_pick.html"})]},
+                params={"Plans": [{"PLAN": "Basic"}]}, environments=envs)
+    s = BuildSession(BuildDocument(path, tmp_path / "runs"), cfg, tmp_path / "runs" / ".build" / "bare", environment="UAT", headless=True)
+    await s.start("Plans", None)
+    try:
+        state = await settled(s)
+        assert results(state) == [(1, "PASSED")] and s._page().url.endswith("/build_pick.html")
+    finally:
+        await s.close()
+
+
 async def test_closing_the_last_build_window_closes_the_session_so_it_can_be_opened_again(session):
     s = session
     for page in s._open_pages():
