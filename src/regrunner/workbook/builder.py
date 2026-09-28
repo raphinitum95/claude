@@ -52,6 +52,8 @@ FINGERPRINT_HEADERS = ("Name", "UrlContains", "Landmark", "LandmarkText", "Notes
 ENVIRONMENT_FIXED_HEADERS = ("Variable", "Required", "Secret")
 PRODUCTION_ROW = "#PRODUCTION"
 DEFAULT_ENVIRONMENTS = ("QA", "UAT", "PROD")
+# what a run can name (``regrunner run --env``, the web server's ``env``): an environment called "Pre Prod" could never be picked
+ENVIRONMENT_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
 
 # the 26 columns every keyword sheet of the real workbooks has (a new test gets them)
 STANDARD_COLUMNS = ("blnExecute", "Step_Number", "Step_Name", "Status", "Error_Check", "breakpoint", "Test_Case", "Page", "FindBy",
@@ -384,6 +386,12 @@ def _is_api_sheet(cols: dict[str, int]) -> bool:
     return "BLNEXECUTE" in cols and ("WEBSERVICE_URL" in cols or "ENVIRONMENT_PARAMETER" in cols)
 
 
+def _api_status_unchecked(editor: WorkbookEditor, sheet: str) -> dict | None:
+    """An API test that expects a status nothing checks (``build/api_builder.status_unchecked``; the ``status_never_checked`` problem)."""
+    from ..build.api_builder import status_unchecked             # (the API editor owns how InputOutput is read; imported late: it imports this)
+    return status_unchecked(editor, sheet)
+
+
 def _data_rows(grid: _Grid | None, label_headers: Iterable[str] = ("NOTES", "SCENARIO", "TC_NAME", "TESTCONDITION")) -> list[dict]:
     if grid is None:
         return []
@@ -518,6 +526,68 @@ def read_environments(editor: WorkbookEditor) -> dict:
         return {"source": "legacy", "names": names, "production": [n for n in names if n.upper() in ("PROD", "PRODUCTION")],
                 "rows": list(table_by.values())}
     return {"source": "none", "names": list(DEFAULT_ENVIRONMENTS), "production": ["PROD"], "rows": []}
+
+
+def choose_environment(environments: dict, asked: str | None, global_value: str = "") -> str:
+    """The environment the Build tab shows and replays in.  A workbook with its own environment table (``_rr_environments``) has no default: a
+    run must pick one of its environments, so the Build tab uses the one asked for when the table has it, else the table's first one, spelt as
+    the table spells it (the header shows which).  Any other workbook keeps the legacy rule: the one asked for, else ``Global!Environment``."""
+    wanted = str(asked or "").strip()
+    if environments.get("source") == "rr" and environments.get("names"):
+        names = environments["names"]
+        return next((n for n in names if n.upper() == wanted.upper()), names[0])
+    return (wanted or global_value or "").strip().upper()
+
+
+def secrets_used(editor: WorkbookEditor) -> list[str]:
+    """The names of every secret the workbook uses (``{SECRET:NAME}`` in any cell, a ``Secret = Y`` row of ``_rr_variables`` or of the environment
+    table).  Their values live in secrets.env, never in the file: whoever receives the workbook needs their own (Download says so).  Names
+    only: this never reads a value."""
+    names = {n.upper(): n for n in sorted(editor.find_in_text(SECRET_RE))}
+    for token, info in read_variable_labels(editor).items():
+        if info["secret"]:
+            names.setdefault(token, info["token"])
+    for row in read_environments(editor)["rows"]:
+        if row["secret"] and not any(SECRET_RE.search(v or "") for v in row["values"].values()):
+            names.setdefault(row["variable"].upper(), row["variable"])
+    return sorted(names.values(), key=str.upper)
+
+
+def variable_values(editor: WorkbookEditor, token: str, sheets: Iterable[str] | None = None, *, secret: bool = False) -> dict:
+    """The stored values of one variable, for the Variables tab.  Read on demand for the variable on screen: the model would grow by megabytes
+    on the real workbooks if it carried every Params value.  ``sources``: each Params sheet (``sheets``, else every DataSheets Params sheet)
+    that has the variable as a column, with its value in each data row (a formula comes back as written: the tab leaves it to the grid);
+    ``environment``: its environment-table row, a secret row's typed-in values masked (only ``{SECRET:NAME}`` references are shown).  ``secret``:
+    the variable is a secret, so a value typed into its Params column is masked too (``masked``: the page says so, never shows the value)."""
+    tu = str(token or "").strip().upper()
+    if sheets is None:
+        _, ds_rows = _datasheets(editor)
+        sheets = [d.param_sheet for d in ds_rows if d.param_sheet]
+    _, ds_rows = _datasheets(editor)
+    sources, seen = [], set()
+    for name in sheets:
+        sheet = _sheet_key(editor, name)
+        if sheet is None or sheet.upper() in seen or sheet.upper().startswith(RR_PREFIX.upper()):
+            continue
+        seen.add(sheet.upper())
+        g = _Grid(editor, sheet)
+        if tu not in g.cols:
+            continue
+        rows = []
+        for r in _data_rows(g):
+            value = g.get(r["row"], tu)
+            hide = secret and value not in (None, "") and not SECRET_RE.fullmatch(text_of(value).strip())
+            rows.append({"row": r["row"], "label": r["label"], "enabled": r["enabled"], "value": "••••••" if hide else _jsonable(value),
+                         "formula": is_formula(value), "masked": hide})
+        sources.append({"sheet": sheet, "column": g.header_names[g.cols[tu] - 1], "rows": rows,
+                        "tests": [d.sheet for d in ds_rows if d.param_sheet and d.param_sheet.upper() == sheet.upper()]})
+    env = read_environments(editor)
+    row = next((dict(r) for r in env["rows"] if r["variable"].upper() == tu), None)
+    if row is not None and row["secret"]:
+        row["typedIn"] = [n for n, v in row["values"].items() if v and not SECRET_RE.fullmatch(v.strip())]
+        row["values"] = {n: (v if not v or SECRET_RE.fullmatch(v.strip()) else "••••••") for n, v in row["values"].items()}
+    return {"token": token, "sources": sources, "environment": row,
+            "environments": {"source": env["source"], "names": env["names"], "production": env["production"]}}
 
 
 def read_fingerprints(editor: WorkbookEditor) -> list[dict]:
@@ -799,7 +869,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
             if row and text_of(row[0]).strip():
                 globals_[text_of(row[0]).strip()] = row[1] if len(row) > 1 else None
     env_value = next((v for k, v in globals_.items() if k.upper() == "ENVIRONMENT"), None)
-    chosen_env = (environment or ("" if is_formula(env_value) else text_of(env_value))).strip().upper()
+    chosen_env = choose_environment(environments, environment, "" if is_formula(env_value) else text_of(env_value))
 
     grids: dict[str, _Grid] = {}
 
@@ -842,8 +912,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
         else:
             parsed = {"steps": [], "blocks": [], "sections": [], "stored": False, "columns": g.header_names}
             data_rows = _data_rows(g)
-            json_format = [g.text(r["row"], "JSON_FORMAT") for r in data_rows if r["enabled"]]
-            kind = "api" if "JSON_FORMAT" in g.cols and any(is_true(x) for x in json_format) else "xml"
+            kind = "api"                      # (one kind of API test, JSON or XML alike: its Content-Type header says which - feedback item 16)
         tests.append({
             "id": key, "sheet": key, "kind": kind, "listed": d is not None, "dataSheetsRow": d.row if d else None,
             "enabled": bool(d.enabled) if d else False, "paramSheet": params.name if params is not None else (d.param_sheet or None if d else None),
@@ -852,6 +921,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
             "blocks": parsed["blocks"], "steps": parsed["steps"], "sections": parsed["sections"], "needs": [], "provides": [],
             "calls": sorted({s["call"].split("#")[0] for s in parsed["steps"] if s["call"]}), "columns": parsed["columns"],
             "lastRun": last_tests.get(key.upper()), "_params": params, "_variables": variables,
+            "_statusUnchecked": _api_status_unchecked(editor, key) if api and not ui else None,
         })
     # loops over other Params sheets make them variable sources too
     for t in tests:
@@ -966,6 +1036,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
         attach_problems(model, builder_problems(model) + scenario_problems(model))
     for t in model["tests"]:
         t.pop("_needs", None)
+        t.pop("_statusUnchecked", None)
     return model
 
 
@@ -1270,45 +1341,61 @@ class _Ops:
         self.set_block(sheet, rows, parsed["blocks"][i - 1]["title"])
         return {"op": "merge_blocks", "test": sheet, "rows": rows}
 
-    def rename_variable(self, op: dict) -> dict:
-        old, new = str(op.get("from") or "").strip(), str(op.get("to") or "").strip()
+    def rename_changes(self, old: str, new: str) -> list[dict]:
+        """Every cell a rename of variable ``old`` to ``new`` changes, as ``{sheet, row, column, header, before, after}`` (nothing is written):
+        the Variables tab shows this list before the rename, and ``rename_variable`` writes exactly it.  Params headers; in test sheets a whole
+        cell that is the token (the legacy rule: a Params header replaces an equal cell), ``{TOKEN}`` / ``{?TOKEN}`` / ``{SECRET:TOKEN}`` inside
+        text (also a formula's text); in API sheets and page fingerprints only the ``{...}`` forms (a bare word there is plain text); the
+        ``_rr_variables`` and environment-table rows of the variable."""
         if not TOKEN_RE.match(old) or not TOKEN_RE.match(new):
             raise BuildError("Variable names are letters, digits and _ (starting with a letter).")
-        if old.upper() == new.upper() and old == new:
-            return {"op": "rename_variable", "changed": 0}
-        ou = old.upper()
+        if old == new:
+            return []
+        ou, nu = old.upper(), new.upper()
         inline = re.compile(r"\{(\??)" + re.escape(old) + r"\}", re.I)
         secret = re.compile(r"\{SECRET:" + re.escape(old) + r"\}", re.I)
-        changed = 0
+
+        def swap(text: str) -> str:
+            return secret.sub("{SECRET:" + new + "}", inline.sub(lambda m: "{" + m.group(1) + new + "}", text))
+        changes: list[dict] = []
+
+        def change(sheet: str, row: int, col: int, header: str, before: Any, after: Any) -> None:
+            if after != before:
+                changes.append({"sheet": sheet, "row": row, "column": col, "header": header, "before": before, "after": after})
         _, ds_rows = _datasheets(self.e)
         param_names = {d.param_sheet.upper() for d in ds_rows if d.param_sheet}
+        if nu != ou:
+            env_rows = {r["variable"].upper() for r in read_environments(self.e)["rows"]} if _sheet_key(self.e, RR_ENVIRONMENTS) else set()
+            if nu in env_rows or nu in read_variable_labels(self.e):
+                raise BuildError(f"There is already a variable called {new}: renaming {old} to it would merge the two.", "exists", 409)
         for sheet in self.e.sheet_names():
             su = sheet.upper()
+            written = self.e.headers(sheet)
+            headers = {k.upper(): v for k, v in written.items()}
+            names = {v: k for k, v in written.items()}
             if su.startswith(RR_PREFIX.upper()):
+                if su == RR_FINGERPRINTS.upper():                       # (a URL part may hold {DOMAIN} etc.)
+                    for r, values in enumerate(self.e.rows(sheet)[1:], start=2):
+                        for c, v in enumerate(values, start=1):
+                            if isinstance(v, str) and v:
+                                change(sheet, r, c, names.get(c, ""), v, swap(v))
                 continue
-            headers = {k.upper(): v for k, v in self.e.headers(sheet).items()}
             if su in param_names:
-                if new.upper() in headers and new.upper() != ou:
+                if nu in headers and nu != ou:
                     raise BuildError(f"{sheet} already has a column {new}.", "exists", 409)
                 if ou in headers:
-                    self.e.set(sheet, 1, headers[ou], new)
-                    changed += 1
+                    change(sheet, 1, headers[ou], names.get(headers[ou], old), self.e.get(sheet, 1, headers[ou]), new)
                 continue
-            if not _is_ui_sheet(headers):
+            ui, api = _is_ui_sheet(headers), _is_api_sheet(headers)
+            if not ui and not api:
                 continue
             skip = {headers.get(h) for h in ("STEP_NAME", "METHOD", "NOTES", *RESULT_COLUMNS)}
             for r, values in enumerate(self.e.rows(sheet)[1:], start=2):
                 for c, v in enumerate(values, start=1):
                     if v in (None, "") or c in skip or not isinstance(v, str):
                         continue
-                    nv = v
-                    if not is_formula(v) and v.strip().upper() == ou:
-                        nv = new
-                    else:
-                        nv = secret.sub("{SECRET:" + new + "}", inline.sub(lambda m: "{" + m.group(1) + new + "}", nv))
-                    if nv != v:
-                        self.e.set(sheet, r, c, nv)
-                        changed += 1
+                    nv = new if ui and not is_formula(v) and v.strip().upper() == ou else swap(v)
+                    change(sheet, r, c, names.get(c, ""), v, nv)
         for table, key in ((RR_VARIABLES, "TOKEN"), (RR_ENVIRONMENTS, "VARIABLE")):
             name = _sheet_key(self.e, table)
             if name is None:
@@ -1318,9 +1405,76 @@ class _Ops:
             col = header.get(key)
             for r, values in enumerate(rows[1:], start=2):
                 if col is not None and col < len(values) and text_of(values[col]).strip().upper() == ou:
-                    self.e.set(name, r, col + 1, new)
+                    change(name, r, col + 1, text_of(rows[0][col]), values[col], new)
+        return changes
+
+    def rename_variable(self, op: dict) -> dict:
+        old, new = str(op.get("from") or "").strip(), str(op.get("to") or "").strip()
+        changes = self.rename_changes(old, new)
+        for c in changes:
+            self.e.set(c["sheet"], c["row"], c["column"], c["after"])
+        if any(c["sheet"].upper() == RR_ENVIRONMENTS.upper() for c in changes):
+            self.show_environments()
+        return {"op": "rename_variable", "from": old, "to": new, "changed": len(changes)}
+
+    def delete_variable(self, op: dict) -> dict:
+        """Take a stored variable out of the workbook: its Params column(s) are emptied (header and values; the column itself stays, so no
+        formula or reference elsewhere shifts), its ``_rr_variables`` row and its environment-table row go.  Steps that use it are left alone
+        (the problems panel then lists them); a secret's value in secrets.env is left alone too.  ``DOMAIN`` cannot go: every environment
+        needs the address its tests open."""
+        token = str(op.get("token") or "").strip()
+        if not TOKEN_RE.match(token):
+            raise BuildError("Variable names are letters, digits and _ (starting with a letter).")
+        tu = token.upper()
+        changed = 0
+        env_name = _sheet_key(self.e, RR_ENVIRONMENTS)
+        if tu == "DOMAIN" and env_name is not None:
+            raise BuildError("DOMAIN cannot be deleted: every environment needs the address its tests open. Change its values instead.")
+        _, ds_rows = _datasheets(self.e)
+        done: set[str] = set()
+        for d in ds_rows:
+            sheet = _sheet_key(self.e, d.param_sheet) if d.param_sheet else None
+            if sheet is None or sheet.upper() in done:
+                continue
+            done.add(sheet.upper())
+            col = self.e.column(sheet, token)
+            if col is None:
+                continue
+            for r in range(1, self.e.max_row(sheet) + 1):
+                if self.e.get(sheet, r, col) not in (None, ""):
+                    self.e.set(sheet, r, col, None)
                     changed += 1
-        return {"op": "rename_variable", "from": old, "to": new, "changed": changed}
+        for table, key in ((RR_VARIABLES, "TOKEN"), (RR_ENVIRONMENTS, "VARIABLE")):
+            name = _sheet_key(self.e, table)
+            if name is None:
+                continue
+            rows = self.e.rows(name)
+            col = {text_of(v).strip().upper(): i for i, v in enumerate(rows[0] if rows else [])}.get(key)
+            kept = rows[:1] + [r for r in rows[1:] if not (col is not None and col < len(r) and text_of(r[col]).strip().upper() == tu)]
+            if len(kept) != len(rows):
+                self.e.write_table(name, kept)
+                changed += len(rows) - len(kept)
+                if name == env_name:
+                    self.show_environments()
+        if not changed:
+            raise BuildError(f"{token} is not stored anywhere in this workbook: it only appears in steps (as {{{token}}} or as the name a "
+                             "step saves into), so it goes when those steps stop using it.", "not_found", 404)
+        return {"op": "delete_variable", "token": token, "changed": changed}
+
+    def show_environments(self) -> None:
+        """Make the environment table a visible sheet right after Global: someone who opens a downloaded workbook in Excel then sees every
+        environment and its values, not only Global.  The name stays ``_rr_environments`` (every reader, the engine's included, looks for it).
+        Files written before this were saved with it hidden: it becomes visible the next time the builder writes the table."""
+        name = _sheet_key(self.e, RR_ENVIRONMENTS)
+        if name is None:
+            return
+        self.e.set_hidden(name, False)
+        glob = _sheet_key(self.e, "Global")
+        if glob is not None:
+            try:
+                self.e.move_sheet(name, after=glob)
+            except WriterError:
+                pass                                        # (an unusual sheet list: the table stays visible where it is)
 
     def _upsert(self, table: str, headers: tuple[str, ...], key: str, key_value: str, values: dict[str, Any],
                 old_key: str | None = None) -> None:
@@ -1359,7 +1513,10 @@ class _Ops:
         token = str(op.get("token") or "").strip() or make_token(op.get("label") or "")
         if not TOKEN_RE.match(token):
             raise BuildError("Variable names are letters, digits and _ (starting with a letter).")
-        sheet = self.sheet(op.get("sheet"))
+        if not op.get("sheet") and op.get("test"):
+            sheet = self.params_sheet_for(str(op["test"]))
+        else:
+            sheet = self.sheet(op.get("sheet"))
         if self.e.column(sheet, token) is not None:
             raise BuildError(f"{sheet} already has a column {token}.", "exists", 409)
         col = self.e.add_column(sheet, token)
@@ -1369,6 +1526,26 @@ class _Ops:
         if op.get("label"):
             self.set_variable({"token": token, "label": op["label"]})
         return {"op": "add_variable", "token": token, "sheet": sheet}
+
+    def params_sheet_for(self, test: str) -> str:
+        """The Params sheet of ``test``, made when it has none (``<test>_Params``: a blnExecute column and one data row, linked in DataSheets):
+        a new data variable for a test that never had data needs somewhere to live."""
+        sheet = self.sheet(test)
+        existing = self.params_of(sheet)
+        if existing is not None:
+            return existing.name
+        base = f"{sheet[:24]}_Params"
+        name, n = base, 2
+        while _sheet_key(self.e, name) is not None:
+            name, n = f"{base[:28]}{n}", n + 1
+        try:
+            self.e.add_sheet(name)
+        except WriterError as err:
+            raise BuildError(str(err)) from err
+        self.e.set(name, 1, 1, "blnExecute")
+        self.e.set(name, 2, 1, "Y")
+        self.set_test({"test": sheet, "paramSheet": name})
+        return name
 
     def set_cell(self, op: dict) -> dict:
         sheet = self.sheet(op.get("sheet"))
@@ -1389,6 +1566,10 @@ class _Ops:
             raise BuildError("Keep at least one environment.")
         if len({n.upper() for n in names}) != len(names):
             raise BuildError("Two environments have the same name.")
+        bad = [n for n in names if not ENVIRONMENT_NAME_RE.match(n)]
+        if bad:
+            raise BuildError(f"{bad[0]!r} cannot be an environment name: use letters, digits, - and _ (up to 16), so a run can name it "
+                             "(regrunner run --env).")
         production = {str(n).upper() for n in op.get("production") or []}
         rows = [list(ENVIRONMENT_FIXED_HEADERS) + names, [PRODUCTION_ROW, "", ""] + ["Y" if n.upper() in production else "" for n in names]]
         seen = set()
@@ -1402,6 +1583,7 @@ class _Ops:
                         [values.get(n, "") for n in names])
         self.e.ensure_rr_sheet(RR_ENVIRONMENTS)
         self.e.write_table(_sheet_key(self.e, RR_ENVIRONMENTS), rows)
+        self.show_environments()
         return {"op": "set_environments", "names": names}
 
     def set_fingerprint(self, op: dict) -> dict:
@@ -1492,8 +1674,8 @@ def _int(value: Any, what: str) -> int:
 
 
 OPS = ("insert_step", "update_step", "delete_steps", "move_steps", "bulk_edit", "rename_block", "split_block", "merge_blocks",
-       "rename_variable", "set_variable", "add_variable", "set_cell", "set_environments", "set_fingerprint", "delete_fingerprint",
-       "set_test", "add_test")
+       "rename_variable", "delete_variable", "set_variable", "add_variable", "set_cell", "set_environments", "set_fingerprint",
+       "delete_fingerprint", "set_test", "add_test")
 EXTRA_OPS: dict[str, Any] = {}      # ops a later phase adds in its own module, ``name -> fn(editor, op) -> applied`` (P10: build/api_builder.py, api_*)
 
 
@@ -1513,6 +1695,11 @@ def apply_ops(editor: WorkbookEditor, ops: list[dict]) -> list[dict]:
         except WriterError as err:
             raise BuildError(str(err), "op", 422, index=i) from err
     return applied
+
+
+def rename_preview(editor: WorkbookEditor, old: str, new: str) -> list[dict]:
+    """What ``rename_variable`` from ``old`` to ``new`` would change, cell by cell, without changing anything (the Variables tab's preview)."""
+    return _Ops(editor).rename_changes(str(old or "").strip(), str(new or "").strip())
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1607,8 +1794,9 @@ _NEW_PARTS = {
 
 
 def new_workbook(path: str | Path, environments: list[dict]) -> SaveResult:
-    """Create ``path`` (Q45): Global (Environment = the first environment), DataSheets, and the environment table with DOMAIN per
-    environment.  Refuses to overwrite a file."""
+    """Create ``path`` (Q45): Global, DataSheets, and the environment table with DOMAIN per environment (a visible sheet, right after Global).
+    Global holds no ``Environment``: a workbook with an environment table has no default one, every run picks it.  Refuses to overwrite a
+    file."""
     path = Path(path)
     if path.exists():
         raise BuildError(f"{path.name} already exists.", "exists", 409)
@@ -1620,8 +1808,6 @@ def new_workbook(path: str | Path, environments: list[dict]) -> SaveResult:
     editor = WorkbookEditor(path, buf.getvalue(), None)
     for c, h in enumerate(("Parameter", "Value", "Comments"), start=1):
         editor.set("Global", 1, c, h)
-    editor.set("Global", 2, 1, "Environment")
-    editor.set("Global", 2, 2, str(envs[0]["name"]).strip())
     ops = _Ops(editor)
     ops._datasheets_sheet()
     names = [str(e["name"]).strip() for e in envs]

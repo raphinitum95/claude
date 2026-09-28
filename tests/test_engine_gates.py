@@ -32,12 +32,12 @@ def css(selector: str, **cols) -> dict:
     return {"FindBy": "CSS_SELECTOR", "FindBy_Value": selector, "Index": 0, **cols}
 
 
-async def run(make_cfg, wb: Path, tests: list[str], **cfg):
+async def run(make_cfg, wb: Path, tests: list[str], env: str = "UAT", **cfg):
     cfg = make_cfg(**{"timeouts.element_s": 2, "timeouts.optional_s": 1.5, "output.match_timeout_s": 1.5, **cfg})
     events: list[dict] = []
     bus = EventBus()
     bus.subscribe(events.append)
-    result = await execute(RunOptions(workbook=wb, tests=tests, seed=1), cfg, bus)
+    result = await execute(RunOptions(workbook=wb, tests=tests, seed=1, environment=env), cfg, bus)     # (its own table: the run picks one)
     return result, events, cfg.path(cfg.runs_dir) / result.run_id
 
 
@@ -176,7 +176,7 @@ async def test_a_side_effect_step_is_blocked_on_production_and_stops_the_test_bu
             ("WAIT_UNTIL", "paid", css("#paid", Output_Property="TEXT", Expected_Value="paid 1", Exact_Match="Y"))]
     live = [["Variable", "Required", "Secret", "UAT", "LIVE"], ["#PRODUCTION", "", "", "", "Y"], ["DOMAIN", "Y", "", site.rstrip("/"), site.rstrip("/")]]
     prod = book(tmp_path / "prod.xlsx", {"T": rows}, environments=live, environment="LIVE")    # (production because the table says so: the mock site)
-    result, events, _ = await run(make_cfg, prod, ["T"])
+    result, events, _ = await run(make_cfg, prod, ["T"], env="LIVE")
     (test,) = result.tests
     assert test.status == "FAILED" and [s.name for s in test.steps] == ["open the page", "pay"]
     assert "Blocked" in test.steps[1].error and "production" in test.error and test.skipped == 1

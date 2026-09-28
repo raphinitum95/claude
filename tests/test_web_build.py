@@ -54,12 +54,18 @@ async def test_the_build_tab_shows_the_workbook_map_and_a_test_opens_its_editor(
         await js_until(page, "document.querySelectorAll('main a.disp').length >= 2")           # FlowA, FlowB cards
         names = await page.locator('main a.disp').evaluate_all("els => els.map(e => e.textContent)")
         assert set(names) >= {"FlowA", "FlowB"}
-        await page.locator('main a.disp', has_text="FlowA").click()
+        card = page.locator('.tcard', has_text="FlowA").first
+        box = await card.bounding_box()
+        await page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] - 8)        # anywhere on the card, not only its name
         await js_until(page, "location.hash.includes('/test/FlowA')")
         await js_until(page, "document.querySelectorAll('.scard').length > 0")
         await page.get_by_role("button", name=re.compile("^Grid$")).click()
         await js_until(page, "document.querySelector('table.mono thead') != null")
         assert "Method" in await page.locator("table.mono thead").inner_text()
+        assert await page.evaluate("getComputedStyle(document.querySelector('table.gtable tbody td')).display") == "table-cell"
+        assert await page.locator("table.gtable tbody tr").first.locator("td").first.inner_text() == "2"     # Excel row numbers
+        header_cells = await page.locator("table.gtable thead th").count()
+        assert await page.locator("table.gtable tbody tr").first.locator("td").count() == header_cells    # every row lines up with the header
         assert not page.errors, page.errors
     finally:
         await browser.close()
@@ -221,6 +227,125 @@ async def test_the_selected_bar_wraps_inside_a_narrow_window(web, build_copy):
         column = await page.locator(".bulk-bar").evaluate("el => el.offsetParent.getBoundingClientRect().toJSON()")
         assert bar["x"] >= column["x"] and bar["x"] + bar["width"] <= column["x"] + column["width"] + 1      # nothing cut off at the sides
         assert await page.evaluate("document.documentElement.scrollWidth") <= page_width                      # the bar never widens the page
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_the_build_tab_button_always_opens_all_workbooks(web, build_copy):
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 0")
+        await page.locator('.tab-btn', has_text="Run").click()
+        await js_until(page, "!location.hash.startsWith('#/build')")
+        await page.locator('.tab-btn', has_text="Build").click()
+        await js_until(page, "location.hash === '#/build/all' && document.querySelectorAll('.wb-card').length >= 2")
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def steps_of(web, name: str, test: str = "FlowA") -> list[dict]:
+    async with web.aclient() as c:
+        model = (await c.get(f"/api/build/workbooks/{name}")).json()
+    return next(t for t in model["tests"] if t["id"] == test)["steps"]
+
+
+async def model_until(web, name: str, check, timeout: float = 10):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while True:
+        steps = await steps_of(web, name)
+        if check(steps):
+            return steps
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError(f"the workbook did not get there: {[(s['n'], s['block'], s['name']) for s in steps][:12]}")
+        await asyncio.sleep(0.2)
+
+
+async def test_move_to_block_puts_the_steps_at_the_end_of_that_block_not_at_the_end_of_the_test(web, build_copy):
+    before = await steps_of(web, build_copy)
+    first_block = before[0]["block"]
+    moving = next(s for s in before if s["block"] != first_block and s["n"] > 10)
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 0")
+        page.on("dialog", lambda d: asyncio.ensure_future(d.accept(first_block)))
+        await page.locator('[data-act="build-pick-block"]').nth(1).click()
+        await page.locator(f'.scard input[data-act="build-toggle-multi"][data-row="{moving["row"]}"]').click()
+        await page.locator('.bulk-bar [data-act="build-move-block"]').click()
+        steps = await model_until(web, build_copy, lambda st: any(s["name"] == moving["name"] and s["block"] == first_block for s in st))
+        moved = next(s for s in steps if s["name"] == moving["name"])
+        in_first = [s["n"] for s in steps if s["block"] == first_block]
+        assert moved["n"] == max(in_first) and moved["n"] < len(steps)                         # the end of that block, not of the test
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_a_step_can_start_a_new_page_and_a_new_page_can_be_added_at_the_end(web, build_copy):
+    before = await steps_of(web, build_copy)
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 0")
+        answers = iter(["Cookies page", "Wrap up"])
+        page.on("dialog", lambda d: asyncio.ensure_future(d.accept(next(answers))))
+        second = before[1]
+        await page.locator(f'.scard [data-act="build-pick-step"][data-row="{second["row"]}"]').click()
+        await page.locator(f'aside [data-act="build-start-page"][data-row="{second["row"]}"]').click()
+        steps = await model_until(web, build_copy, lambda st: st[1]["block"] == "Cookies page")
+        assert steps[0]["block"] != "Cookies page"                                              # the steps before it keep their page
+        await page.locator('[data-act="build-new-page"]').first.click()
+        await js_until(page, "document.body.textContent.includes('starts the new page')")
+        await js_until(page, "document.querySelectorAll('[data-act=\"build-insert\"]').length > 0")
+        await page.locator('[data-act="build-insert"][data-method="CLICK"]').first.click()
+        steps = await model_until(web, build_copy, lambda st: st[-1]["block"] == "Wrap up")
+        assert steps[-1]["method"] == "CLICK" and len(steps) == len(before) + 1
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_dragging_a_step_card_moves_the_step(web, build_copy):
+    before = await steps_of(web, build_copy)
+    first, third = before[0], before[2]
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 2")
+        target = page.locator(f'.scard[data-row="{first["row"]}"]')
+        await page.locator(f'.scard[data-row="{third["row"]}"] .sgrip').drag_to(target, target_position={"x": 40, "y": 4})   # top half: before it
+        steps = await model_until(web, build_copy, lambda st: st[0]["name"] == third["name"])
+        assert [s["name"] for s in steps[:3]] == [third["name"], first["name"], before[1]["name"]]
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_the_selected_bar_sits_under_the_lowest_ticked_card_and_can_be_dragged_away_and_back(web, build_copy):
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 2")
+        boxes = page.locator('.scard input[data-act="build-toggle-multi"]')
+        await boxes.nth(0).click()
+        await boxes.nth(1).click()                                                              # (the bar never covers the next box)
+        await js_until(page, "!!document.querySelector('.bulk-anchor .bulk-bar')")
+        above = await page.evaluate("document.querySelector('.bulk-anchor').previousElementSibling.dataset.row")
+        rows = await page.locator(".scard").evaluate_all("els => els.map((e) => e.dataset.row)")
+        assert above == rows[1]                                                                 # right under the lowest ticked card
+        grip = await page.locator(".bulk-grip").bounding_box()
+        await page.mouse.move(grip["x"] + 3, grip["y"] + 5)
+        await page.mouse.down()
+        await page.mouse.move(300, 600, steps=6)
+        await page.mouse.up()
+        await js_until(page, "!!document.querySelector('.bulk-bar.moved') && !document.querySelector('.bulk-anchor')")
+        box = await page.locator(".bulk-bar.moved").bounding_box()
+        assert abs(box["y"] - 595) < 30                                                         # it stays where it was put
+        await page.locator('[data-act="build-bulk-home"]').click()
+        await js_until(page, "!!document.querySelector('.bulk-anchor .bulk-bar')")
         assert not page.errors, page.errors
     finally:
         await browser.close()

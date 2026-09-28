@@ -16,12 +16,15 @@ import * as AB from './views/build/actions.js';
 import * as BS from './views/build/session.js';
 import * as BA from './views/build/api_editor.js';
 import * as SC from './views/build/scenario.js';
+import * as BV from './views/build/variables.js';
+import './views/build/dragsort.js';                       // (drag a step card / the selected bar: document listeners)
 import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
-const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...AR.acts };
-const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes };
-const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...SC.inputs, ...AR.inputs };
+const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...BV.acts, ...AR.acts };
+const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes, ...BV.changes };
+const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...SC.inputs, ...BV.inputs, ...AR.inputs };
+const enters = { ...A.enters, ...BV.enters };
 
 const baseTitle = document.title;
 const appEl = () => document.getElementById('app');
@@ -61,7 +64,7 @@ ${S.online ? html`<div class="skel" style="height: 30px; width: 260px; margin-to
   if (S.route.name === 'build') {
     morph(appEl(), html`${buildHeader(S)}${buildView(S)}`);
   } else if (S.route.name === 'results') {
-    morph(appEl(), html`${resultsHeader()}${resultsTabView(S)}`);
+    morph(appEl(), html`${resultsHeader()}${resultsTabView(S, runScreen)}`);
   } else {
     const content = S.route.name === 'new' ? newRunView(S) : runScreen();
     morph(appEl(), html`${header(S)}<div class="app-body">${sidebar(S)}<main class="main"><div class="gridbg"></div>${content}</main></div>`);
@@ -101,6 +104,7 @@ function route() {
   const resultsBatch = location.hash.match(/^#\/results\/batch\/([A-Za-z0-9._-]+)$/);
   const resultsTest = location.hash.match(/^#\/results\/test\/([A-Za-z0-9._-]+)\/([^/]+)$/);
   const resultsCompare = location.hash === '#/results/compare';
+  const resultsRun = location.hash.match(/^#\/results\/run\/([A-Za-z0-9._-]+)$/);
   if (mRun) {
     S.route = { name: 'run', id: mRun[1] };
     A.openRun(mRun[1]);
@@ -115,7 +119,11 @@ function route() {
     else if (buildVars) AB.openBuild(decodeURIComponent(buildVars[1]), 'variables');
     else if (buildScenario) AB.openBuild(decodeURIComponent(buildScenario[1]), 'scenario', decodeURIComponent(buildScenario[2]));
     else if (buildWb) AB.openBuild(decodeURIComponent(buildWb[1]), 'map');
-    else { const name = AB.defaultBuildName(); if (name) AB.openBuild(name, 'map'); else AB.openWorkbookList(); }
+    else AB.openWorkbookList();                              // (plain #/build: the list of every workbook, like the Build tab button)
+  } else if (resultsRun) {
+    S.route = { name: 'results', id: null };
+    AR.openResults('run', resultsRun[1]);
+    A.openRun(resultsRun[1]);
   } else if (resultsBatch || resultsTest || resultsCompare || location.hash === '#/results') {
     S.route = { name: 'results', id: null };
     A.closeRun();
@@ -156,7 +164,7 @@ document.addEventListener('keydown', (ev) => {
   }
   if (ev.key === 'Enter' && ev.target instanceof Element && ev.target.hasAttribute('data-enter')) {
     ev.preventDefault();
-    const fn = A.enters[ev.target.getAttribute('data-enter')];
+    const fn = enters[ev.target.getAttribute('data-enter')];
     if (fn) fn(ev.target);
   }
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.target instanceof Element && ev.target.matches('.shot.zoom')) {

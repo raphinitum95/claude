@@ -13,6 +13,7 @@ export function resultsUrl(screen, a, b) {
   if (screen === 'batch') return `#/results/batch/${enc(a)}`;
   if (screen === 'test') return `#/results/test/${enc(a)}/${enc(b)}`;
   if (screen === 'compare') return '#/results/compare';
+  if (screen === 'run') return `#/results/run/${enc(a)}`;
   return '#/results';
 }
 
@@ -23,6 +24,7 @@ export function openResults(screen, a, b) {
   if (screen === 'batch') return loadBatch(a);
   if (screen === 'test') return loadTest(a, b);
   if (screen === 'compare') return loadCompare();
+  if (screen === 'run') return null;                      // (main.js opens the run itself: the same page as Run's, shown in this tab)
   return loadHistory();
 }
 
@@ -67,7 +69,7 @@ async function rerunBatchFailed(id) {
     const res = await api.rerunFailed(id);
     await loadRuns();
     if (res.skipped_no_failures && res.skipped_no_failures.length) toast(`Nothing of ${res.skipped_no_failures.join(', ')} failed: not re-run.`, 5000);
-    location.hash = res.batch_id ? resultsUrl('batch', res.batch_id) : `#/run/${res.run_ids[0]}`;
+    location.hash = res.batch_id ? resultsUrl('batch', res.batch_id) : resultsUrl('run', res.run_ids[0]);
   } catch (e) { toast(e.message, 6000); }
 }
 

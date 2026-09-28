@@ -1,7 +1,7 @@
 # Workbook Builder: the user's feedback after trying it (2026-09-28)
 
 The user tried the Build tab after P11 and listed what got in the way. They asked for it as a running tally, actioned in batches.
-Batch 1 (items 1-8) is done on branch `claude/adoring-dijkstra-hcvotu`; items 9-17 are next. Each line says what the user asked for and
+Batch 1 (items 1-8) and batch 2 (items 9-25) are done; item 26 is open. Each line says what the user asked for and
 what was found in the code, so the next session does not have to re-derive it.
 
 ## Batch 1: done
@@ -23,7 +23,7 @@ what was found in the code, so the next session does not have to re-derive it.
    Open step; none set = blank page + a notice with a link to Environments. Recording an empty test starts it with `OPEN {DOMAIN}`.
 8. **"Selected" bar** wraps inside its column (`.bulk-bar` in app.css) instead of overflowing a narrow window.
 
-## Batch 2: to do (items 9-19)
+## Batch 2: done 2026-09-28 (items 9-25; how each was built: `dev/claude/AGENTS.md` section 9 and the commit messages)
 
 9. **Run plan Timeline** (Run tab, `views/newrun.js` `timelineView`): cut off and unreadable on small screens. Scroll sideways at least, test
    names stay readable.
@@ -47,10 +47,53 @@ what was found in the code, so the next session does not have to re-derive it.
     open as API tests with their XML Content-Type.
 17. **Test map cards clickable as a whole** (`views/build/workbook.js` `testCard`): today only the title opens the test; the run toggle and
     other buttons on the card keep doing only their own job.
-18. **Run tab environment picker for builder workbooks**: no "Workbook default" choice; offer the environments the workbook's own
-    `_rr_environments` table defines (today `views/newrun.js` `envDefs` is a fixed Workbook default / QA / UAT / PROD list).
+18. **No "default" environment for builder workbooks: the run picks it.** The user was clear: no "Workbook default" choice and no
+    Global `Environment` value to fall back on. The Run tab's environment choice lists exactly the environments the workbook's
+    `_rr_environments` defines, one must be picked, and the run uses that one. Today `views/newrun.js` `envDefs` is a fixed Workbook
+    default / QA / UAT / PROD list, and `new_workbook` (`workbook/builder.py`) writes Global `Environment` = the first environment.
+    To settle when building it: what `regrunner run` does for such a workbook without `--env` (refuse with a clear message, like the
+    `env_missing` check, rather than guess); the Build tab's environment switch and the scenario board's "Run it on ..." (which fall back to
+    the workbook's default today); legacy workbooks (no `_rr_environments`) keep today's behaviour.
 19. **Results tab stays the Results tab**: a solo run opened from the Results history (`views/results/history.js` `itemUrl`, also
     `results/batch.js` and `results/test.js` links, `results/actions.js` after a re-run) goes to `#/run/<id>`, which switches to the Run
     tab. Show that run inside the Results tab instead.
+20. **Drag to reorder steps** in the test editor's step cards (and across blocks). The `move_steps` op already takes `before` (and `block`),
+    so this is UI work in `views/build/editor.js` / `actions.js`; today steps only move through "Move to block..." (which, without
+    `before`, sends them to the end of the test: see item 11).
+21. **"Selected" bar next to the selection**: show it just below the last ticked step card (above it when there is no room below) instead
+    of pinned to the bottom of the column, and let it be dragged by a grip like the build window's pill (`build/overlay.js` `drawPill`,
+    `st.pos`); remember where it was dragged for the session. The bar is `bulkBar` in `views/build/editor.js`, `.bulk-bar` in app.css
+    (made to wrap in batch 1, item 8).
+22. **Grid view is not a readable table**: `.gcell` (app.css) sets `display: flex` on every `<th>`/`<td>` of `gridView`
+    (`views/build/editor.js`), so the cells stop being table cells and the columns do not line up. Make them real table cells again
+    (fixed height via line-height/padding, borders, sticky header), plus what makes a sheet readable: a row-number column that matches the
+    step's Excel row, the selected step's row highlighted, zebra rows, wide columns (FindBy_Value, Value) truncated with the full text on
+    hover. Check it with a screenshot.
+23. **The Build tab button always opens All workbooks** (`#/build/all`), never the last workbook/test edited. Today `goBuildTab` in
+    `views/build/actions.js` goes to `defaultBuildName()`'s map (and plain `#/build` in `main.js` does the same). Links that name a
+    workbook or step (Fix in builder, jumpToStep, a workbook card) keep going straight there.
+24. **Environments visible in the downloaded file**: `_rr_environments` is a hidden sheet, so someone opening a downloaded workbook in Excel
+    only sees Global (`Environment = QA`) and thinks the other environments are gone. Make it visible (maybe renamed so it is obvious,
+    e.g. "Environments (builder)": every reader of `_rr_environments` must follow the rename, including `engine/gates.py` and
+    `workbook/variables.py`), and have Download say when the workbook uses `{SECRET:NAME}` values, which live in secrets.env, not in the
+    file.
+25. **API tests wait for every website test even when they are independent.** `engine/order.py` (`plan_order`, `order.after_ui`): an
+    API test that no chain names and that no UI test reads from gets a dependency on *every* UI test of the run ("an API test reads what
+    those tests produce"), so with 3 workers the user's test-functionality workbook runs the website test first and the API/XML tests
+    after it. The real links are already detected separately (an API row's formula reading another sheet's cell, `{NAME}` Needs/Provides).
+    Make an API test wait only for the tests it actually reads from; otherwise it runs at once like any other test. Check first why the
+    blanket rule was added (legacy runner order? `~/Downloads/TG_Testing_Framework_py3_v4.2.zip` is only on the user's Mac) and whether
+    the real workbooks (Qantas PolicySearch reads `AgentPortal_Params` cells) still get their wait from the detected links. Update the
+    "starts after every UI test" note, the Run plan Order/Timeline views follow `deps`. Tests: `test_run_order.py`, `test_api_tests.py`.
+
+## Open
+
+26. **A formula pointing into another workbook evaluates to `#NAME?`.** In `UAT DT_Qantas StandAlone_Staff Daily Regression_v1.1.xlsx`,
+    AgentStandAlone's payment branch is switched by `blnExecute` formulas like `=IF([4]Global!$B$2="PROD","N",A397)`; `[4]` is an external
+    workbook, which `workbook/formula.py` cannot evaluate, so the branch (rows ~398-414 and copies) probably never runs and never captures
+    `DT_Policy_Out`. Since item 25, PolicySearch then says "Not run: ... AgentStandAlone should have set it" instead of asking for the value.
+    Likely fix: read Excel's cached values of external references from `xl/externalLinks/externalLink4.xml`. Check against the legacy runner.
+    Also: the server's own PROD confirmation still only looks at an environment literally named PROD (the UI also asks for one the table marks
+    production).
 
 Also told the user: `workbooks/qantas-test 2.xlsx` is saved with Global Environment = PROD.

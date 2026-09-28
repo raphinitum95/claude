@@ -40,7 +40,7 @@ function filteredItems() {
     (!h.status || it.verdict === h.status));
 }
 
-function itemUrl(it) { return it.kind === 'batch' ? resultsUrl('batch', it.id) : `#/run/${it.id}`; }
+function itemUrl(it) { return it.kind === 'batch' ? resultsUrl('batch', it.id) : resultsUrl('run', it.id); }
 
 function itemRow(S, it) {
   const on = (S.results.screen === 'batch' && S.results.batch.id === it.id) || (S.route.name === 'run' && S.route.id === it.id);

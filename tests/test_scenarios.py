@@ -188,10 +188,10 @@ def test_lanes_wait_for_what_any_of_them_waits_for_but_never_for_each_other():
     ids = [f"{SC} · A", f"{SC} · B"]
     plan = E.ScenarioPlan(SC, [E.LaneCase(id=i, sheet="Edit", param_sheet=None, param_row=2, title=i) for i in ids], S.Resolved(SC, 60, ["A", "B"]))
     order = Order(deps={ids[0]: ["Login"], ids[1]: [ids[0]], "Login": [], "After": [ids[1]]}, data={ids[1]: {"POLICY": [ids[0]]}},
-                  after_ui=[ids[0]])
+                  after_stream={ids[0]: ["Login"]})
     E.adjust_order(order, [plan])
     assert order.deps[ids[0]] == order.deps[ids[1]] == ["Login"]
-    assert ids[1] not in order.data and order.after_ui == []
+    assert ids[1] not in order.data and order.after_stream == {}
     assert set(order.deps["After"]) == set(ids)
 
 

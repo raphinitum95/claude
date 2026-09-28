@@ -9,7 +9,7 @@ import { selectedStep } from './actions.js';
 
 const NEEDS_EXPECTED = new Set(['text_is', 'text_contains', 'value', 'ticked', 'selected', 'enabled', 'gt', 'lt', 'between', 'regex', 'date_format', 'count', 'wait_text']);
 const CHOICE_WORDS = { keep: 'Keep as variable', fixed: 'Use fixed text', rename: 'Rename…', raw: 'Keep raw clicks', gate: 'Save fingerprint + add gate',
-  edit: 'Edit', unflag: 'Not a side effect', dismiss: 'OK' };
+  edit: 'Edit', unflag: 'Not a side effect', dismiss: 'OK', ungate: 'Remove the check', regate: 'Save the fingerprint' };
 
 // What is being typed in the card (module state: the card is rebuilt on every poll).
 const ui = { cardId: null, kind: '', expected: '', token: '', alsoSave: '', fp: {} };
@@ -70,7 +70,7 @@ async function answer(el) {
     if (!token || !token.trim()) return;
     body.token = token.trim().toUpperCase();
   }
-  if (choice === 'gate' && ui.fp[id]) body.fields = ui.fp[id];
+  if ((choice === 'gate' || choice === 'regate') && ui.fp[id]) body.fields = ui.fp[id];
   await edit('prompt', body);
   delete ui.fp[id];
 }
@@ -112,14 +112,16 @@ ${[['check', 'Check'], ['save', 'Save'], ['wait', 'Wait until']].map(([mode, lab
 
 function promptCard(p) {
   const fp = ui.fp[p.id];
-  const tone = p.kind === 'secret' || p.kind === 'side' ? 'warn' : p.kind === 'fingerprint' ? 'pass' : 'acc';
-  const ico = p.kind === 'secret' ? 'lock' : p.kind === 'fingerprint' ? 'gate' : p.kind === 'widget' ? 'bolt' : p.kind === 'side' ? 'bolt' : 'braces';
+  const page = p.kind === 'fingerprint' || p.kind === 'gate_added';
+  const tone = p.kind === 'secret' || p.kind === 'side' ? 'warn' : page ? 'pass' : 'acc';
+  const ico = p.kind === 'secret' ? 'lock' : page ? 'gate' : p.kind === 'widget' ? 'bolt' : p.kind === 'side' ? 'bolt' : 'braces';
   return html`<div class="card sess-card" data-key="rp-${p.id}"><div style="display: flex; gap: 8px; align-items: flex-start">${icon(ico, 14, `color: var(--${tone}); margin-top: 2px; flex: none`)}
 <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0"><b style="font-size: 12.5px">${p.text}</b>${p.detail ? html`<span style="font-size: 11.5px; color: var(--tx3)">${p.detail}</span>` : ''}
 ${p.n ? html`<span class="mono" style="font-size: 10.5px; color: var(--tx3)">step ${p.n}${p.tag ? ` · ${p.tag}` : ''}</span>` : ''}</div></div>
 ${fp ? html`<div style="display: flex; flex-direction: column; gap: 6px">${[['name', 'Name'], ['urlContains', 'URL contains'], ['landmark', 'Landmark'], ['landmarkText', 'Landmark text']].map(([k, label]) => html`<label style="display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--tx3)">${label}
 <input class="fld mono" style="height: 28px; font-size: 11.5px" value="${fp[k] || ''}" data-input="build-rec-fp" data-id="${p.id}" data-field="${k}"></label>`)}</div>` : ''}
-<div style="display: flex; flex-wrap: wrap; gap: 6px">${(p.choices || []).map((c) => html`<button class="btn btn-sm ${c === 'keep' || c === 'gate' ? 'btn-pri' : ''}" data-act="${c === 'edit' ? 'build-rec-fp-edit' : 'build-rec-prompt'}" data-id="${p.id}" data-choice="${c}" data-token="${p.token || ''}">${c === 'edit' && fp ? 'Close editor' : c === 'dismiss' && p.kind === 'fingerprint' ? 'Not now' : CHOICE_WORDS[c] || c}</button>`)}</div></div>`;
+<div style="display: flex; flex-wrap: wrap; gap: 6px">${(p.choices || []).map((c) => html`<button class="btn btn-sm ${c === 'keep' || c === 'gate' ? 'btn-pri' : ''}" data-act="${c === 'edit' ? 'build-rec-fp-edit' : 'build-rec-prompt'}" data-id="${p.id}" data-choice="${c}" data-token="${p.token || ''}">${c === 'edit' && fp ? 'Close editor' : c === 'dismiss' && p.kind === 'fingerprint' ? 'Not now' : CHOICE_WORDS[c] || c}</button>`)}
+${fp && p.kind === 'gate_added' ? html`<button class="btn btn-sm btn-pri" data-act="build-rec-prompt" data-id="${p.id}" data-choice="regate">${CHOICE_WORDS.regate}</button>` : ''}</div></div>`;
 }
 
 function checkForm(st) {

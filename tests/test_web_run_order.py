@@ -99,6 +99,12 @@ async def test_the_run_plan_has_an_order_view_and_a_timeline_view(web):
         await js_until(page, "document.querySelectorAll('[data-key^=tl-]').length > 0")            # one lane per worker
         assert "worker 1" in await page.locator("main").inner_text()
         assert "No run history yet" in await page.locator("main").inner_text()                     # this workbook has never actually run
+        await page.set_viewport_size({"width": 700, "height": 900})                                 # a small screen: the plan scrolls sideways
+        await js_until(page, "!!document.querySelector('.tl-scroll')")                              # instead of squashing every bar
+        widths = await page.locator(".tl-bar").evaluate_all("els => els.map((e) => e.getBoundingClientRect().width)")
+        assert widths and min(widths) >= 80, widths
+        assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")        # the page itself does not scroll sideways
+        await page.set_viewport_size({"width": 1440, "height": 1000})
 
         await order_btn.click()
         await js_until(page, "!!document.getElementById('run-order')")

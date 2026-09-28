@@ -11,7 +11,7 @@ import { buildRail } from './rail.js';
 import { applyOps, bm, buildUrl } from './actions.js';
 
 const enc = encodeURIComponent;
-const KIND_ICON = { web: 'grid', api: 'api', xml: 'xml' };
+const KIND_ICON = { web: 'grid', api: 'xml', xml: 'xml' };            // (an API test gets the <> icon, JSON or XML alike)
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 // UI-only state: what is selected on the board and the scenario's last runs (reset when another scenario opens)

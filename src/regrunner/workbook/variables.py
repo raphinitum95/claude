@@ -181,6 +181,22 @@ def declared_variables(data: WorkbookData) -> dict[str, dict[str, bool]]:
     return out
 
 
+def env_choice_problem(table: EnvironmentTable, environment: str | None) -> str:
+    """Why a run of a workbook with its own environment table (``_rr_environments``) cannot use ``environment`` ("" when it can).  Such a workbook
+    has no default environment (no ``Global!Environment`` to fall back on): the run must name one of the table's environments.  A workbook
+    without the table (legacy ``Environments`` sheet, or none) keeps its default: nothing to say."""
+    if table.source != "rr":
+        return ""
+    names = ", ".join(table.names) or "(none: add one in the Build tab, Environments)"
+    chosen = str(environment or "").strip()
+    if not chosen:
+        return (f"Pick the environment to run on: this workbook has no default one. Its environments: {names} "
+                "(regrunner run --env NAME, or the Run tab's Environment).")
+    if not table.has(chosen):
+        return f"This workbook has no environment called {chosen}. Its environments: {names}."
+    return ""
+
+
 def env_missing_message(environment: str, missing: list[str]) -> str:
     names = ", ".join(missing)
     return (f"The run cannot start: {'this variable has' if len(missing) == 1 else 'these variables have'} no value for the environment "

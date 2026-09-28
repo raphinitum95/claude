@@ -18,8 +18,30 @@ export const allChosen = (S) => S.nr.books.flatMap((name) => chosenTests(S, name
 export const checkName = (S) => (S.nr.books.includes(S.nr.checkWb) ? S.nr.checkWb : S.nr.books[0] || null);
 export const shortName = (name) => String(name).replace(/\.(xlsx|xlsm)$/i, '');
 
-/** The environments the run will use: the one picked, else what each chosen workbook says (`Global!Environment`). */
+/** How the Environment setting works for the chosen workbooks.  A workbook the Build tab made has its own environment table and no default
+ *  environment (`info.environments.required`): the choice is exactly its environments, and one must be picked.  With several such workbooks,
+ *  only the environments every one of them defines are offered (a run of each is started in the same one); `missing` says why the others are
+ *  not.  Workbooks without a table (legacy) keep the old choice: Workbook default / QA / UAT / PROD (`mode: 'legacy'`). */
+export function envChoice(S) {
+  const f = S.nr;
+  const own = f.books.filter((n) => f.bk[n] && f.bk[n].info && f.bk[n].info.environments && f.bk[n].info.environments.required);
+  if (!own.length) return { mode: 'legacy', names: [], production: [], picked: '', missing: [], own: [] };
+  const envsOf = (n) => f.bk[n].info.environments.names || [];
+  const up = (xs) => xs.map((x) => String(x).toUpperCase());
+  const every = [];
+  for (const n of own) for (const e of envsOf(n)) if (!up(every).includes(e.toUpperCase())) every.push(e);
+  const names = every.filter((e) => own.every((n) => up(envsOf(n)).includes(e.toUpperCase())));
+  const missing = every.filter((e) => !names.includes(e)).map((e) => ({ env: e, lacking: own.filter((n) => !up(envsOf(n)).includes(e.toUpperCase())) }));
+  const production = [...new Set(own.flatMap((n) => up(f.bk[n].info.environments.production || [])))];
+  const picked = names.find((e) => e.toUpperCase() === String(f.env || '').toUpperCase()) || '';
+  return { mode: 'own', names, production, picked, missing, own, legacy: f.books.filter((n) => !own.includes(n)) };
+}
+
+/** The environments the run will use: the one picked, else what each chosen workbook says (`Global!Environment`).  A workbook with its own
+ *  environment table has no default, so until one of its environments is picked this is empty. */
 export function envList(S) {
+  const choice = envChoice(S);
+  if (choice.mode === 'own') return choice.picked ? [choice.picked.toUpperCase()] : [];
   if (S.nr.env) return [S.nr.env.toUpperCase()];
   const out = [];
   for (const name of S.nr.books) {
@@ -30,7 +52,9 @@ export function envList(S) {
   return out;
 }
 export const effEnv = (S) => envList(S).join(' + ');
-export const hasProd = (S) => envList(S).includes('PROD');
+export const hasProd = (S) => { const c = envChoice(S); return envList(S).includes('PROD') || (!!c.picked && c.production.includes(c.picked.toUpperCase())); };
+/** A workbook with its own environment table is chosen and none of its environments is picked yet: the run cannot start. */
+export const envMissing = (S) => { const c = envChoice(S); return c.mode === 'own' && !c.picked; };
 export const booksReady = (S) => S.nr.books.length > 0 && S.nr.books.every((n) => S.nr.bk[n].load === 'ok');
 
 /** The exact request the Run button sends (and the command preview is built from).  One workbook: the plain form; several: one entry each.
@@ -140,7 +164,12 @@ export function preflightItems(S) {
     items.push({ kind: 'warn', label: problems.some((x) => x.kind === 'missing') ? 'A test uses an empty parameter' : 'A chain contradicts the data',
       detail: `${problems.map((x) => (multi ? `${shortName(x.wb)}: ` : '') + x.message).join(' ')} An empty parameter is asked for on the run screen when the step is reached (used for this run only); if nobody answers, the step fails instead of typing the parameter's name.` });
   }
-  if (envs.includes('PROD')) items.push({ kind: 'err', label: 'PROD is locked', detail: 'Needs your explicit confirmation before it starts (--allow-prod).' });
+  const choice = envChoice(S);
+  if (choice.mode === 'own' && !choice.picked) {
+    items.push({ kind: 'err', label: 'Environment', detail: choice.names.length ? `Pick the environment to run on (${choice.names.join(', ')}): ${choice.own.length > 1 ? 'these workbooks have' : 'this workbook has'} no default one.`
+      : 'These workbooks share no environment: run them one at a time.' });
+  }
+  if (hasProd(S)) items.push({ kind: 'err', label: `${envList(S)[0] || 'PROD'} is locked`, detail: 'Needs your explicit confirmation before it starts (--allow-prod).' });
   if (S.cfg) {
     for (const env of envs) {
       const set = S.cfg.tokens && S.cfg.tokens[env];
@@ -256,12 +285,12 @@ ${warned.map((n) => { const info = f.bk[n].info; return html`<div style="margin-
     html`<b>${multi ? `${n}: ` : ''}${info.warnings.length} workbook warning${info.warnings.length === 1 ? '' : 's'}.</b> The run can still start.`, '',
     html`<ul style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--tx2)">${info.warnings.slice(0, 6).map((w) => html`<li>${w}</li>`)}${info.warnings.length > 6 ? html`<li>… ${info.warnings.length - 6} more (see Lint)</li>` : ''}</ul>`)}</div>`; })}
 ${!multi && loaded.length === 1 ? (() => { const info = f.bk[loaded[0]].info; return html`<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px">
-${stat(info.sheets, 'test sheets')}${stat(info.flagged, 'flagged Y in DataSheets')}${stat(info.environment || '–', 'Global!Environment')}
+${stat(info.sheets, 'test sheets')}${stat(info.flagged, 'flagged Y in DataSheets')}${info.environments && info.environments.required ? stat(info.environments.names.length, 'environments: pick one to run') : stat(info.environment || '–', 'Global!Environment')}
 ${stat(info.warnings.length, 'workbook warnings', info.warnings.length ? 'var(--warn)' : 'var(--pass)')}</div>`; })()
   : multi && loaded.length ? html`<div style="margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden" role="table" aria-label="Chosen workbooks">
 <div style="display: grid; grid-template-columns: minmax(0, 1fr) 84px 84px 84px 72px; gap: 12px; padding: 9px 14px; background: var(--surface2)"><span class="lbl">Workbook</span><span class="lbl">Sheets</span><span class="lbl">Flagged Y</span><span class="lbl">Env</span><span class="lbl">Warn</span></div>
 ${loaded.map((n) => { const info = f.bk[n].info; return html`<div style="display: grid; grid-template-columns: minmax(0, 1fr) 84px 84px 84px 72px; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 12.5px" data-key="sum-${n}">
-<span style="overflow-wrap: anywhere; font-weight: 600">${n}</span><span class="mono">${info.sheets}</span><span class="mono">${info.flagged}</span><span class="mono">${info.environment || '–'}</span><span class="mono" style="${info.warnings.length ? 'color: var(--warn)' : ''}">${info.warnings.length}</span></div>`; })}</div>` : ''}
+<span style="overflow-wrap: anywhere; font-weight: 600">${n}</span><span class="mono">${info.sheets}</span><span class="mono">${info.flagged}</span><span class="mono">${info.environments && info.environments.required ? info.environments.names.join(' ') : info.environment || '–'}</span><span class="mono" style="${info.warnings.length ? 'color: var(--warn)' : ''}">${info.warnings.length}</span></div>`; })}</div>` : ''}
 ${loading.length && !loaded.length ? html`<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px">${[1, 2, 3, 4].map(() => html`<div class="skel" style="height: 68px"></div>`)}</div>` : ''}`;
 }
 
@@ -329,7 +358,7 @@ ${tests.map((t) => {
     const on = !!b.sel[t.id];
     return html`<label class="trow" data-key="${t.id}" style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 118px 92px; gap: 16px; align-items: center; padding: 12px 22px; border-top: 1px solid var(--line); cursor: ${t.runnable ? 'pointer' : 'not-allowed'}; background: ${on ? 'var(--acc-soft)' : 'transparent'}">
 <input type="checkbox" class="cb" ${on ? raw('checked') : ''} ${t.runnable ? '' : raw('disabled')} data-change="toggle-test" data-id="${t.id}" ${w} aria-label="Run ${t.id}${multi ? ` in ${name}` : ''}">
-<div style="min-width: 0"><div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap"><span class="mono" style="font-weight: 600; font-size: 13.5px">${t.id}</span>${t.kind === 'api' ? html`<span class="tag" title="An API test: sends a request and checks the JSON answer; no browser">API</span>` : ''}${t.kind === 'scenario' ? html`<span class="tag tag-acc" title="A concurrency scenario: its lanes run at the same time, on one worker, and wait for each other at its sync points">${icon('sync', 11)} scenario · ${(t.lanes || []).length} lanes</span>` : ''}<span class="mono" style="font-size: 11px; color: var(--tx3)">${t.scenario}</span>${waitChip(S, name, t.id)}</div>
+<div style="min-width: 0"><div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap"><span class="mono" style="font-weight: 600; font-size: 13.5px">${t.id}</span>${t.kind === 'api' ? html`<span class="tag" title="An API test: sends a request and checks the answer (JSON or XML); no browser">API</span>` : ''}${t.kind === 'scenario' ? html`<span class="tag tag-acc" title="A concurrency scenario: its lanes run at the same time, on one worker, and wait for each other at its sync points">${icon('sync', 11)} scenario · ${(t.lanes || []).length} lanes</span>` : ''}<span class="mono" style="font-size: 11px; color: var(--tx3)">${t.scenario}</span>${waitChip(S, name, t.id)}</div>
 <div style="color: var(--tx2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.description}</div></div>
 <div><div class="mono" style="font-size: 13px">${t.steps}</div><div class="bar" style="height: 4px; margin-top: 6px"><div style="width: ${Math.round((100 * t.steps) / maxSteps)}%"></div></div></div>
 <div style="display: flex; flex-direction: column; gap: 5px; align-items: flex-start">
@@ -373,7 +402,7 @@ function orderGroup(S, name) {
   if (b.load !== 'ok' || !o) return '';
   const multi = f.books.length > 1;
   const streams = o.streams || [];
-  const hints = (o.notes || []).filter((x) => x.kind === 'parallel' || x.kind === 'chain_unknown' || x.kind === 'after_ui');
+  const hints = (o.notes || []).filter((x) => x.kind === 'parallel' || x.kind === 'chain_unknown' || x.kind === 'after_stream');
   if (!streams.length && !hints.length && !b.chains.length) return '';
   const w = html`data-wb="${name}"`;
   const arrow = (id, dir, glyph, label, off) => html`<button class="stp" style="width: 30px; height: 28px" data-act="order-move" data-id="${id}" data-dir="${dir}" ${w} aria-label="${label} ${id}${multi ? ` in ${name}` : ''}" ${off ? raw('disabled') : ''}>${glyph}</button>`;
@@ -395,7 +424,7 @@ ${st.tests.map((t, k) => {
 <div style="min-width: 0"><b class="mono" style="font-size: 13px">${t}</b>${(formTests(S, name).find((x) => x.id === t) || {}).kind === 'api' ? html` <span class="tag">API</span>` : ''}<div class="mono" style="font-size: 11.5px; color: var(--tx3)">${waits.length ? `waits for ${waits.join(', ')}` : 'starts first'}</div></div>
 <div style="display: flex; gap: 4px">${arrow(t, -1, '↑', 'Run earlier:', k === 0)}${arrow(t, 1, '↓', 'Run later:', k === st.tests.length - 1)}</div></div>`;
   })}</div>`)}
-${hints.map((x) => html`<div style="display: flex; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--tx2)" data-key="hint-${x.test}"><span style="color: var(--warn); display: inline-flex; margin-top: 1px">${icon('warn', 16)}</span><span>${x.message}</span></div>`)}
+${hints.map((x) => html`<div style="display: flex; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--tx2)" data-key="hint-${x.kind}-${x.test}"><span style="color: var(--warn); display: inline-flex; margin-top: 1px">${icon('warn', 16)}</span><span>${x.message}</span></div>`)}
 </div>`;
 }
 
@@ -470,13 +499,16 @@ function timelineView(S) {
   });
   const { lanes, end } = planTimeline(nodes, Math.max(1, S.nr.workers));
   const scale = end || 1;
+  // wide enough that the shortest bar still shows its name (~96 px): on a small screen the plan scrolls sideways instead of squashing
+  const shortest = Math.min(...lanes.flatMap((l) => l.bars.map((b) => b.dur / scale)).filter((f) => f > 0), 1);
+  const trackPx = Math.min(Math.ceil(96 / shortest), 8000);
   return html`<div style="padding: 12px 22px 6px; display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--tx2); flex-wrap: wrap">
 <span>${est.unit === 'seconds' ? 'Estimated from each test’s last run.' : 'No run history yet: laid out by step count instead of time.'} Longest chains start first.</span>
 <span style="flex-grow: 1"></span><b style="color: var(--tx)">${est.unit === 'seconds' ? `≈ ${dur(end)}` : `${num(end)} steps, longest lane`}</b><span style="color: var(--tx3)">on ${lanes.length} worker${lanes.length === 1 ? '' : 's'}</span></div>
-<div style="padding: 6px 22px 18px; display: flex; flex-direction: column; gap: 5px">
-${lanes.map((l) => html`<div style="display: flex; align-items: center; gap: 8px" data-key="tl-${l.n}"><span class="mono" style="width: 64px; font-size: 11px; color: var(--tx3)">worker ${l.n}</span>
-<div style="flex: 1; position: relative; height: 26px; border-radius: 6px; background: var(--track)">
-${l.bars.map((b) => html`<span title="${shortName(b.wb)} · ${b.label}" style="position: absolute; left: ${(100 * b.start / scale).toFixed(2)}%; width: ${Math.max((100 * b.dur / scale) - 0.4, 0.6).toFixed(2)}%; top: 2px; bottom: 2px; border-radius: 5px; padding: 0 6px; display: flex; align-items: center; font-size: 11px; font-weight: 600; color: var(--acc-tx); background: ${b.color}; overflow: hidden; white-space: nowrap">${(b.dur / scale) > 0.06 ? b.label : ''}</span>`)}
+<div class="tl-scroll scroll" style="--tl-width: ${trackPx}px">
+${lanes.map((l) => html`<div class="tl-row" data-key="tl-${l.n}"><span class="tl-worker mono">worker ${l.n}</span>
+<div class="tl-track">
+${l.bars.map((b) => html`<span class="tl-bar" title="${shortName(b.wb)} · ${b.label}" style="left: ${(100 * b.start / scale).toFixed(2)}%; width: ${Math.max((100 * b.dur / scale) - 0.4, 0.6).toFixed(2)}%; background: ${b.color}">${b.label}</span>`)}
 </div></div>`)}
 </div>`;
 }
@@ -536,22 +568,45 @@ ${cur && cur.approximate ? html`<div style="display: flex; gap: 9px; margin-top:
 ${missing.map((k) => html`<div style="font-size: 12px; color: var(--tx3); margin-top: 6px; line-height: 1.5" data-key="missing-${k.id}"><b style="color: var(--tx2)">${k.short}:</b> ${withCommand(opt(k.id).detail)}</div>`)}</div>`;
 }
 
+/** Under the Environment choice of workbooks with their own environment table: pick one (there is no default), and why an environment some
+ *  of them define is not offered when several are chosen. */
+function envChoiceNotes(choice) {
+  const plural = choice.own.length > 1;
+  const lines = [];
+  if (!choice.names.length) {
+    lines.push(html`<div class="bn bn-fail" id="env-none" style="margin-top: 10px">${icon('warn', 15, 'color: var(--fail)')}<span><b>These workbooks share no environment.</b> Each is run in one of its own environments: run them one at a time.</span></div>`);
+  } else if (!choice.picked) {
+    lines.push(html`<div id="env-pick" style="font-size: 12.5px; color: var(--warn); margin-top: 9px; display: flex; gap: 7px; align-items: center">${icon('warn', 13)}<span><b>Pick one.</b> ${plural ? 'These workbooks have' : 'This workbook has'} no default environment: ${plural ? 'their' : 'its'} own table lists ${choice.names.length === 1 ? 'the one above' : `these ${choice.names.length}`}.</span></div>`);
+  } else {
+    lines.push(html`<div style="font-size: 12px; color: var(--tx3); margin-top: 9px">${plural ? `Every workbook runs in ${choice.picked}.` : `From the workbook's own environment table.`}${choice.legacy.length ? ` ${choice.legacy.join(', ')} ${choice.legacy.length === 1 ? 'has' : 'have'} no table and ${choice.legacy.length === 1 ? 'runs' : 'run'} in ${choice.picked} too.` : ''}</div>`);
+  }
+  if (choice.missing.length) {
+    lines.push(html`<div id="env-missing" style="font-size: 12px; color: var(--tx3); margin-top: 6px; line-height: 1.5">Only environments every chosen workbook defines are listed. ${choice.missing.map((m) => `${m.env}: not in ${m.lacking.map(shortName).join(', ')}`).join('; ')}.</div>`);
+  }
+  return lines;
+}
+
 function settingsCard(S) {
   const f = S.nr;
   const cfg = S.cfg || {};
   const envs = envList(S);
+  const choice = envChoice(S);
   const own = [...new Set(f.books.map((n) => (f.bk[n].info && f.bk[n].info.environment) || '').filter(Boolean))];
-  const envDefs = [['', `Workbook default${own.length ? ' · ' + own.join(' + ') : ''}`, '', 2.1], ['QA', 'QA', 'qa', 1], ['UAT', 'UAT', 'uat', 1], ['PROD', 'PROD', 'prod', 1]];
+  const toneOf = (e) => (choice.production.includes(e.toUpperCase()) || e.toUpperCase() === 'PROD' ? 'prod' : e.toUpperCase() === 'QA' ? 'qa' : e.toUpperCase() === 'UAT' ? 'uat' : '');
+  const envDefs = choice.mode === 'own' ? choice.names.map((e) => [e, e, toneOf(e), 1])
+    : [['', `Workbook default${own.length ? ' · ' + own.join(' + ') : ''}`, '', 2.1], ['QA', 'QA', 'qa', 1], ['UAT', 'UAT', 'uat', 1], ['PROD', 'PROD', 'prod', 1]];
+  const current = choice.mode === 'own' ? choice.picked : f.env;
   const pool = poolState(S);
   const shots = [['every_step', 'Every step'], ['on_failure', 'Failures'], ['off', 'Off']];
   const max = cfg.max_workers || 8;
   return html`<section class="card" style="padding: 22px">
 <div style="display: flex; align-items: center; gap: 12px"><div class="step-n">3</div><h2 class="ttl">Run settings</h2><span class="chip mono" style="margin-left: auto">defaults from config.yaml</span></div>
 <div style="margin-top: 22px"><div style="display: flex; align-items: baseline; margin-bottom: 9px"><span class="lbl" id="lbl-env">Environment</span><span class="flag" style="margin-left: auto">--env</span></div>
-<div class="seg" role="group" aria-labelledby="lbl-env">${envDefs.map(([val, label, tone, flex]) => html`<button class="${cx(f.env === val && 'on', f.env === val && tone)}" style="flex: ${flex}" aria-pressed="${String(f.env === val)}" data-act="set" data-field="env" data-val="${val}">${label}</button>`)}</div>
+${envDefs.length ? html`<div class="seg" role="group" aria-labelledby="lbl-env" id="env-choice">${envDefs.map(([val, label, tone, flex]) => html`<button class="${cx(current === val && 'on', current === val && tone)}" style="flex: ${flex}" aria-pressed="${String(current === val)}" data-act="set" data-field="env" data-val="${val}">${label}</button>`)}</div>` : ''}
+${choice.mode === 'own' ? envChoiceNotes(choice) : ''}
 ${envs.length ? html`<div style="display: flex; align-items: center; gap: 10px; margin-top: 11px; font-size: 12.5px; color: var(--tx2); flex-wrap: wrap">
 ${envs.map((env) => { const tokenSet = cfg.tokens && cfg.tokens[env]; return html`<span class="${cx('tag', !tokenSet && 'tag-warn')}" data-key="tok-${env}">${icon('key', 11)} ${cfg.cookie_name} · ${env}: ${tokenSet ? 'set' : 'missing'}</span>`; })}<span>Read from secrets.env. The value is never typed into this page.</span></div>` : ''}
-${f.books.length > 1 ? html`<div style="font-size: 12px; color: var(--tx3); margin-top: 9px">${f.env ? `All ${f.books.length} workbooks run in ${f.env}.` : 'Each workbook uses its own Global!Environment unless one is picked here.'}</div>` : ''}</div>
+${f.books.length > 1 && choice.mode !== 'own' ? html`<div style="font-size: 12px; color: var(--tx3); margin-top: 9px">${f.env ? `All ${f.books.length} workbooks run in ${f.env}.` : 'Each workbook uses its own Global!Environment unless one is picked here.'}</div>` : ''}</div>
 ${browserControl(S)}
 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 24px">
 <div><div style="display: flex; align-items: baseline; margin-bottom: 9px"><span class="lbl">Workers</span><span class="flag" style="margin-left: auto">--workers</span></div>
@@ -606,9 +661,10 @@ function launchCard(S) {
   const bc = browserCheck(S);
   const pool = poolState(S);
   const emptyBook = f.books.some((name) => f.bk[name].load === 'ok' && !chosenTests(S, name).length);
-  const blocked = n === 0 || !booksReady(S) || emptyBook || runningNow(S).length > 0 || pool.kind === 'mismatch' || f.starting || (S.pre && !bc) || (bc && bc.status === 'err');       // the picked browser must have been checked, and be ready
+  const noEnv = booksReady(S) && envMissing(S);                  // a workbook with its own environment table: one must be picked, there is no default
+  const blocked = n === 0 || !booksReady(S) || emptyBook || noEnv || runningNow(S).length > 0 || pool.kind === 'mismatch' || f.starting || (S.pre && !bc) || (bc && bc.status === 'err');       // the picked browser must have been checked, and be ready
   const joining = f.joinBatch;
-  const label = f.starting ? 'Starting…' : !f.books.length ? 'Pick a workbook' : n === 0 || emptyBook ? 'Select tests to run' : isProd ? 'Review and run on PROD…'
+  const label = f.starting ? 'Starting…' : !f.books.length ? 'Pick a workbook' : n === 0 || emptyBook ? 'Select tests to run' : noEnv ? 'Pick an environment' : isProd ? 'Review and run on PROD…'
     : joining ? `Add ${n} test${n === 1 ? '' : 's'} to batch ${joining.id}` : `Run ${n} test${n === 1 ? '' : 's'}${multi ? ` in ${f.books.length} workbooks` : ''}`;
   const tone = isProd ? ['var(--fail-soft)', 'var(--fail-line)', 'var(--fail)'] : ['var(--warn-soft)', 'var(--warn-line)', 'var(--warn)'];
   return html`<section class="card" style="padding: 22px; display: flex; flex-direction: column; gap: 18px; box-shadow: var(--glow); border-color: var(--acc-line)">

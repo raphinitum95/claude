@@ -239,7 +239,6 @@ details.more > summary::-webkit-details-marker { display: none }
 .var.env { color: var(--k-nav); background: color-mix(in srgb, var(--k-nav) 13%, transparent) }
 .scard { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 40px; padding: 5px 10px 5px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface) }
 .scard:hover { border-color: var(--line2) }
-.gcell { padding: 0 9px; height: 28px; display: flex; align-items: center; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: nowrap }
 .pdot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block }
 .menu { background: var(--surface); border: 1px solid var(--line2); border-radius: 12px; box-shadow: var(--pop) }
 .mitem { display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 13px; color: var(--tx) }
@@ -273,3 +272,41 @@ details.more > summary::-webkit-details-marker { display: none }
 .bulk-bar .bulk-count { font-size: 13px; padding: 0 6px; white-space: nowrap }
 .bulk-bar .bulk-sep { width: 1px; height: 20px; background: var(--line2) }
 @media (max-width: 900px) { .bulk-bar .bulk-sep { display: none } .bulk-bar .bulk-count { flex-basis: 100%; text-align: center } }
+
+/* --- Build tab: the Excel grid (a real table) and whole-card test cards on the workbook map --------------------------------------- */
+.gcell { padding: 0 9px; height: 28px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: nowrap }
+.gwrap { flex: 1; overflow: auto; margin: 0 16px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface) }
+.gtable { border-collapse: separate; border-spacing: 0; font-size: 11.5px; min-width: 100% }
+.gtable th, .gtable td { padding: 5px 10px; text-align: left; vertical-align: middle; white-space: nowrap; max-width: 280px; overflow: hidden;
+  text-overflow: ellipsis; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); line-height: 18px }
+.gtable thead th { position: sticky; top: 0; z-index: 2; background: var(--surface2); font-weight: 650; color: var(--tx2) }
+.gtable tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface2) 55%, transparent) }
+.gtable tbody tr:hover td { background: var(--surface2) }
+.gtable tbody tr.on td { background: var(--acc-soft) }
+.gtable .gnum { position: sticky; left: 0; z-index: 1; min-width: 42px; text-align: right; color: var(--tx3); background: var(--surface2) }
+.gtable thead .gnum { z-index: 3 }
+.gtable tbody tr.on .gnum { color: var(--acc); font-weight: 700 }
+.tcard { position: relative; cursor: pointer }
+.tcard:hover { border-color: var(--line2) }
+.tcard-open::after { content: ''; position: absolute; inset: 0; border-radius: inherit }      /* the title's link covers the whole card... */
+.tcard button, .tcard input, .tcard .tag { position: relative; z-index: 1 }                    /* ...and the card's own controls stay on top */
+
+/* --- Run tab: the Run plan's Timeline (scrolls sideways when the bars would be too narrow to read) -------------------------------- */
+.tl-scroll { padding: 6px 22px 18px; display: flex; flex-direction: column; gap: 5px; overflow-x: auto }
+.tl-row { display: flex; align-items: center; gap: 8px; width: max(100%, calc(var(--tl-width) + 72px)) }
+.tl-worker { position: sticky; left: 0; z-index: 1; flex: none; width: 64px; font-size: 11px; color: var(--tx3); background: var(--surface) }
+.tl-track { flex: 1; position: relative; height: 26px; border-radius: 6px; background: var(--track) }
+.tl-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 5px; padding: 0 6px; display: block; line-height: 22px; font-size: 11px;
+  font-weight: 600; color: var(--acc-tx); overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
+
+/* --- Build tab: dragging step cards, the "selected" bar beside the selection (or where it was dragged) ---------------------------- */
+.sgrip { flex: none; width: 12px; color: var(--tx3); cursor: grab; font-size: 13px; line-height: 1; user-select: none; opacity: .55 }
+.scard:hover .sgrip { opacity: 1 }
+.scard.dragging { opacity: .45 }
+.scard.drop-before { box-shadow: 0 -3px 0 0 var(--acc) }
+.scard.drop-after { box-shadow: 0 3px 0 0 var(--acc) }
+.drop-into { outline: 2px dashed var(--acc); outline-offset: 1px }
+.bulk-anchor { display: flex; justify-content: center; padding: 2px 0 4px }
+.bulk-anchor .bulk-bar { position: static; transform: none; max-width: 100% }
+.bulk-grip { cursor: grab; color: var(--tx3); padding: 0 2px; user-select: none; touch-action: none }
+.bulk-bar.moved { box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)), 0 0 0 1px var(--acc-line) }

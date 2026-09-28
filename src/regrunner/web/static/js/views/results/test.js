@@ -63,7 +63,7 @@ ${banner('fail', 'failc', t.error.message)}</div>`;
   const testSheet = test.sheet || t.testId;
   return html`<div class="page">
 <div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--tx3)">
-<a href="#/run/${t.runId}">${t.runId}</a>${icon('chevr', 12)}<span style="color: var(--tx)">${t.testId}</span></div>
+<a href="${resultsUrl('run', t.runId)}">${t.runId}</a>${icon('chevr', 12)}<span style="color: var(--tx)">${t.testId}</span></div>
 <div style="display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap">
 <div style="display: flex; flex-direction: column; gap: 4px">
 <h1 class="disp" style="font-size: 28px; font-weight: 700; margin: 0">${test.status === 'PASSED' ? `${t.testId} passed` : `${t.testId} ${test.status.toLowerCase()}${failedSteps.length ? ` at step ${failedSteps[0].seq}` : ''}`}</h1>

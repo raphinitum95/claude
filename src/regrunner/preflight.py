@@ -152,6 +152,13 @@ async def run_preflight(cfg: Config, *, deep: bool = False, browser: str | None 
             "browser": launch.as_dict(), "browsers": options, "folders": [c.as_dict() for c in folder_checks(cfg)], "publish": shared}
 
 
+def environment_choice_problem(workbook, environment: str | None) -> str:
+    """Why ``environment`` cannot be the run's environment ("" when it can): a workbook with its own environment table has no default, so a run
+    must name one of its environments (runner, web server and CLI say the same thing)."""
+    from .workbook.variables import env_choice_problem
+    return env_choice_problem(workbook.environment_table(), environment)
+
+
 def environment_problem(workbook, environment: str) -> tuple[str, list[str]]:
     """``(message, missing variables)`` when the workbook's environment table (``_rr_environments``) has a *required* variable with no value for
     ``environment``: such a run must not start (CONTRACT.md 1.4).  ``("", [])`` when it may.  Used by the runner and by the web server; the message

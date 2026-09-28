@@ -417,7 +417,7 @@ request the button sends**, so they cannot disagree:
 |---|---|
 | Tests ticked / *All* (per workbook) | `--tests A,B` / `--all` after that workbook's name (tag chips just tick their tests) |
 | Several workbooks ticked | `regrunner run A.xlsx --tests X B.xlsx --all ...` (each workbook keeps its own tests and `--chain`s; the settings below are shared) |
-| Environment | `--env QA\|UAT\|PROD` (default: the workbook's own) |
+| Environment | `--env QA\|UAT\|PROD` (default: the workbook's own). A workbook made in the Build tab (it has an `_rr_environments` table) has **no default**: the choice lists its own environments, one must be picked, and `regrunner run` without `--env` refuses and lists them |
 | PROD confirmation dialog (type `PROD`) | `--allow-prod` |
 | Workers | `--workers N` |
 | Screenshots | `--screenshots every_step\|on_failure\|off` |
@@ -466,19 +466,23 @@ formatting is lost. Undo/redo and an autosaved draft (`runs/.build/<stem>/`) mea
 **Save** writes the real file (a timestamped backup first, `workbooks/.backups/`); a change made outside the builder
 while it is open (someone else's edit, or Excel) is offered as reload, save-anyway, or a per-row merge.
 
-**All workbooks.** The grid button at the top (or *All workbooks* at the top of the left panel) lists every workbook in
-the folder; click anywhere on a card to open it. The download button (on each card, and beside **Save to Excel**) gives
+**All workbooks.** The **Build** tab always opens on every workbook in the folder (so does the grid button at the top, or
+*All workbooks* at the top of the left panel); click anywhere on a card to open it. The download button (on each card, and beside **Save to Excel**) gives
 you the workbook as a `.xlsx` file to share; with unsaved changes it offers to save them first.
 
 **Workbook map.** Every test as a card - kind, step count, a **last-run pill** (Passed/Failed/Not run), needs/provides,
-tags, its parameter sheet - tick a test on or off from here, open **Templates**, workbook-wide **Find & replace** (skips
+tags, its parameter sheet - click anywhere on it to open the test, tick a test on or off from here, open **Templates**, workbook-wide **Find & replace** (skips
 row 1, formulas and result columns), **Duplicate** (previews "what changes?" before it copies), or start a **New test**.
-A **Variable map** alongside it lists every `{TOKEN}` - from a Params column, the environment table, or a step that
-saves one - with what sets it, what uses it, and flags one that is used but nothing ever sets.
+The **Variables** screen lists every `{TOKEN}` - from a Params column, the environment table, or a step that saves one -
+with what sets it, what uses it, and flags one that is used but nothing ever sets; it is also where they are **added,
+edited, renamed and deleted**: test data (a value per data row), per-environment values, and secrets (their value goes to
+`secrets.env` only, never the workbook, and is never shown back). A rename shows every cell it will change first and is
+one undo step. The environment table is a normal visible sheet (right after Global), so a downloaded workbook shows every
+environment; Download also says when the workbook uses secrets, which are not in the file.
 
 **Test editor.** A block strip (the workbook's own section headings, or the `BLOCK` column once a block has been split)
-with a gate icon on a block that opens behind an `ASSERT_PAGE`; step cards below it (or the same rows as an Excel-like
-**Grid**) show kind, name, side-effect and legacy flags, a problem dot, and a **failed last run** badge in place of the
+with a gate icon on a block that opens behind an `ASSERT_PAGE`; step cards below it (or the sheet itself as a
+**Grid**: Excel row numbers, the header row stuck to the top, the selected step's row marked) show kind, name, side-effect and legacy flags, a problem dot, and a **failed last run** badge in place of the
 plain dot once a step has broken, so it stands out before you open it. The **inspector** on the right edits the
 selected step's name, value/expected/match, save-as, timeout, on-fail and side-effects, and, for every step that
 acts on an element, **On which element**: how it is found (XPath, id, CSS...), the locator itself (type or paste one),
@@ -488,8 +492,12 @@ builder** for computed values (date ± N, unique, a list, math, text join) that 
 screenshot (click to enlarge, or **Open that run** for the full page), and - when it looks like the element could not
 be found - a nudge to pick it again or replay up to it with the tools below (once the build window is open). The
 **Problems** panel lists every lint finding (a missing locator, an unclosed IF, a variable nothing sets...) and jumps
-straight to the step. Select more than one card for a floating bar: bulk enable/disable, stop-on-fail, move to another
-block, copy/paste, or save the selection as a template.
+straight to the step. Select more than one card and a bar opens right under the lowest one: bulk enable/disable,
+stop-on-fail, move to another block (it lands at the end of that block), copy/paste, or save the selection as a template;
+drag the bar by its grip to put it anywhere (it stays there for the session, **put it back** returns it). **Drag a card**
+by its grip to move the step (the ticked ones move together) between two cards, or onto a page in the strip.
+**Start a new page here** (the inspector, or the add-step menu) makes the selected step and the rest of its page a new
+page; **New page** (end of the strip) puts the next step you add on a new page at the end of the test.
 
 **Build window.** **Open the site** opens it in a browser window of its own (Chrome/Edge, visible), on the test's first
 Open step, or else on the environment's **Domain** (the `DOMAIN` row under *Environments*; with none set it opens blank
@@ -515,11 +523,20 @@ list is recognised as PICK_DATE / CHOOSE_SUGGESTION. **Check / Save / Wait until
 an OUTPUT/EXIST/CHECK_*/WAIT_UNTIL step, prefilled from what is actually on the page. **Done** on the pill stops picking
 and recording; the Build tab then says what was recorded (*Recorded 8 steps (steps 4-11)*), jumps to the first one, and
 offers **Remove them** (Undo brings them back). Recording a test that has no steps yet starts it with `OPEN {DOMAIN}`, since
-an address typed in the browser's own address bar is not recorded.
+an address typed in the browser's own address bar is not recorded. When a recorded click lands on another page, the
+test gets a check that it arrived there (ASSERT_PAGE with the page's fingerprint: URL part + main heading, saved under
+*Page fingerprints*) and the steps from there on go on a new page named after it, straight away; a redirect right after it
+moves that same check to where it ended. The card beside it can **Remove the check** or edit the fingerprint.
 
-**API / XML tests.** Their own editor - steps, a request form or paste-a-cURL/Postman/template, and a response tree you
-turn into a JSONPath/XPath check with a click - with **Send now** against the draft; `{NAME}`/`{SECRET:NAME}` work the
-same as in UI steps, and a production send needs the same typed confirmation as a UI one.
+**API tests.** One kind of test for JSON and XML (SOAP) alike: `Content-Type` is an ordinary header row
+(`application/json` for a new test) and decides how the answer is read. Their own editor - steps, a request form or
+paste-a-cURL/Postman/template (headers are rows you type into, names included), and a response tree you turn into a
+JSONPath/XPath check with a click, or a check typed by hand without sending anything. A **whole-response check** compares
+the entire answer with an expected one, with an *ignore these fields* list (a bare name, a JSONPath or an XPath) for what
+changes every time, such as timestamps and ids. **Send now** sends a real request to the chosen environment (it says so)
+against the draft; `{NAME}`/`{SECRET:NAME}` work the same as in UI steps (*Insert variable* can create a new one), and a
+production send needs the same typed confirmation as a UI one. A test that expects a status (`RES_STATUS_CD_EXP`) that
+nothing checks gets a warning with a one-click fix.
 
 **Concurrency scenarios.** A board of lanes (a test, or the same test twice with its own data row) laid out across
 sync-line columns ("all wait here", "A before B"). Every lane of a scenario runs together on one worker, so a sync can
@@ -535,7 +552,8 @@ replays, and only the draft you are editing, never the saved file.
 **History** lists every batch and solo run, newest first, with a text/environment/failed-only filter. A **batch page**
 groups its failures by cause (a page gate, an unmet dependency, an element that could not be found, an infra crash...),
 shows what changed since the batch before it, and lists every test with a last-10-runs trend
-(new/flaky/fixed/failing/stable). **Re-run failed** starts a fresh, separately labelled batch of only the workbooks
+(new/flaky/fixed/failing/stable). A single run opened from here shows its full run page without leaving the Results tab.
+**Re-run failed** starts a fresh, separately labelled batch of only the workbooks
 that had a failure (refused on a still-running batch, nothing failed, or PROD - that goes through New run's own
 confirmation instead). A **test page** (opened from any test, in a batch or on its own) shows where the run stopped on
 the workbook's own block map - read fresh from the file, so it always matches what is there now, not what ran - every
@@ -604,7 +622,7 @@ the expected and actual value.
 * **Secrets.** Header values are never written to any file, report or log (`tests/<id>/request.txt` shows `••••••`). Instead of keeping the API key and bearer
   token in the sheet, put `RR_VAR_DT_APIKEY=…` / `RR_VAR_DT_BEARERTOKEN=…` (`RR_VAR_<COLUMN>`) in `secrets.env`; when set they win over the cell.
 * **Order.** An API test reads what UI tests of the run produced (`=AgentStandAlone_Params!E2`, the policy number a UI test captured): it waits for the test that sets that cell, and unless
-  chained it starts after every UI test of the run (see *Tests that depend on each other*). Run only the API test and such a cell is empty: you are asked for the value.
+  chained for the other UI tests of that same stream (see *Tests that depend on each other*); an API test that reads nothing a UI test produces starts at once. Run only the API test and such a cell is empty: you are asked for the value.
 * **HTTP status.** An answer is an answer: a 500 does not fail step 1 by itself, the checks then show what came back. **401 / 403 from the API itself** (its own JSON
   answer, e.g. API Gateway's `{"message": "Invalid key=value pair ... Authorization header"}`) **fail step 1 at once** with what the API said, which headers were sent
   and from which columns, where `RR_VAR_<COLUMN>` can override them, and the usual cause (an expired token; a URL that ends in `/` because the policy number is empty)
@@ -638,8 +656,10 @@ Tests run side by side, but one may need what another produces: `Purchase` write
   (a test before the one that sets its value) is reported and the person's order wins.
 * **API tests are part of it.** An API row that reads a cell of another sheet (`policyNumber_IN` = `=AgentPortal_Params!R3`, the `DT_Policy_Out` of its stream) waits for the UI test that
   sets that cell, appears in that stream on the Run order card (tagged *API*), and can be moved with the arrows or put in a chain like any other test
-  (`Purchase#1, PolicySearch#1, Cancellation#1`). An API test nobody chained still starts after **every** UI test of the run (the card says so), because what it checks - a policy's
-  final status, say - is what the whole stream leaves behind; put it in a chain to choose where it runs. If the test that should set its cell fails, it is not run either.
+  (`Purchase#1, PolicySearch#1, Cancellation#1`). An API test nobody chained also waits for the other UI tests of **its own stream** (the card says so), because what it checks - a
+  policy's final status, say - is what the whole stream leaves behind; put it in a chain to choose where it runs. A step that may set its cell counts even when
+  the dry run cannot tell whether it will run (a flag that depends on the page). An API test linked to nothing (no cell, no `{NAME}` it reads) is in no stream
+  and runs at once, beside the website tests. If the test that should set its cell fails, it is not run either.
 * **The order is always current.** The Run order card and the *Run order* line under Preflight are worked out the moment the page shows a workbook, from the tests selected *at that
   moment* (the defaults included), and again whenever the workbook, the selection or the chains change - whichever control changed them - and when you come back to the New run screen.
   While it is being worked out Preflight says so.

@@ -4,6 +4,7 @@ import { S, rerender, freshBuild, freshEditor } from '../../state.js';
 import * as buildApi from './api.js';
 import { toast, debounce } from '../../util.js';
 import { loadWorkbooks } from '../../actions.js';
+import { api } from '../../api.js';
 
 const enc = encodeURIComponent;
 
@@ -23,6 +24,10 @@ export function buildUrl(name, screen, testId) {
 }
 
 function ensureSelection() {
+  const m = S.build.model;
+  // A workbook with its own environment table has no default environment: the Build tab works in the one the model says (the one picked,
+  // else the table's first) and every later call names it, so the build window, Send now and "Run it on" never fall back to Global.
+  if (m && m.environments && m.environments.source === 'rr' && m.environment && S.build.env !== m.environment) S.build.env = m.environment;
   const t = currentTest();
   const ed = S.build.ed;
   if (!t) return;
@@ -38,8 +43,6 @@ function ensureSelection() {
 }
 
 // ---- loading ----------------------------------------------------------------------------------------------------
-function remember(name) { try { localStorage.setItem('rr.build.workbook', name); } catch (e) { /* storage unavailable */ } }
-export function rememberedBuildWorkbook() { try { return localStorage.getItem('rr.build.workbook') || ''; } catch (e) { return ''; } }
 
 /** Open (or switch screen within) a workbook. Called by main.js on every #/build... route. */
 export async function openBuild(name, screen = 'map', testId = null) {
@@ -53,7 +56,6 @@ export async function openBuild(name, screen = 'map', testId = null) {
   b.scenario = screen === 'scenario' ? testId : null;       // (P12: the scenario board's scenario name)
   if (screen === 'test' && testId !== prevTest) b.ed = freshEditor();
   b.error = null;
-  remember(name);
   const wasLoaded = !switching && b.model;
   b.loading = !wasLoaded;
   rerender();
@@ -83,6 +85,14 @@ export async function downloadWorkbook(name) {
       if (S.build.model && S.build.model.status && S.build.model.status.modified) return;       // (the save did not go through: it said why)
     }
   }
+  let secrets = [];
+  try { secrets = (await api(`/api/workbooks/${enc(name)}/download-info`)).secrets || []; } catch (e) { /* (an older server: download as before) */ }
+  if (secrets.length) { S.modal = { kind: 'build-download-secrets', name, secrets }; rerender(); return; }        // say it first: the file has no secret values
+  startDownload(name);
+}
+
+/** Hand the saved file to the browser as a download. */
+export function startDownload(name) {
   const a = document.createElement('a');
   a.href = `/api/workbooks/${encodeURIComponent(name)}/download`;
   a.download = name;
@@ -91,12 +101,6 @@ export async function downloadWorkbook(name) {
   a.remove();
 }
 
-/** Where the "Build" tab goes: the workbook last open there, else the newest workbook in the folder. */
-export function defaultBuildName() {
-  const remembered = S.build.name || rememberedBuildWorkbook();
-  if (remembered && S.workbooks.some((w) => w.name === remembered)) return remembered;
-  return S.workbooks[0] ? S.workbooks[0].name : null;
-}
 
 export async function refreshModel() {
   const b = S.build;
@@ -217,9 +221,13 @@ export async function loadGrid() {
   const t = currentTest();
   const b = S.build;
   if (!t) return;
-  b.ed.grid = 'loading'; rerender();
-  try { const g = await buildApi.sheet(b.name, t.sheet); if (currentTest() === t) b.ed.grid = g; }
+  if (b.ed.gridLoading) return;
+  b.ed.gridLoading = true;
+  if (!b.ed.grid || b.ed.grid === 'loading') { b.ed.grid = 'loading'; rerender(); }      // (a reload after an edit keeps showing the old one)
+  const version = b.model ? b.model.version : null;
+  try { const g = await buildApi.sheet(b.name, t.sheet); if (currentTest() === t) b.ed.grid = { ...g, version }; }
   catch (e) { if (currentTest() === t) b.ed.grid = null; }
+  b.ed.gridLoading = false;
   rerender();
 }
 export function effectiveBuildingWith(t) { return S.build.ed.buildingWith != null ? S.build.ed.buildingWith : t.buildingWith; }
@@ -253,8 +261,14 @@ export async function insertStep(method, opts = {}) {
   const ed = S.build.ed;
   if (!t) return;
   const b = t.blocks[ed.block];
-  const after = ed.sel != null ? ed.sel : (b ? (t.steps.find((s) => s.n === b.end) || {}).row : undefined);
-  const applied = await applyOps([{ op: 'insert_step', test: t.id, after, step: { method, ...opts } }]);
+  let after = ed.sel != null ? ed.sel : (b ? (t.steps.find((s) => s.n === b.end) || {}).row : undefined);
+  const step = { method, ...opts };
+  if (ed.pendingBlock) {                                          // the first step of a new page: at the end of the test, on that page
+    step.block = ed.pendingBlock;
+    after = t.steps.length ? t.steps[t.steps.length - 1].row : undefined;
+  }
+  const applied = await applyOps([{ op: 'insert_step', test: t.id, after, step }]);
+  if (applied) ed.pendingBlock = null;
   if (applied && applied[0] && applied[0].row != null) selectStep(applied[0].row);
   ed.menu = false;
 }
@@ -283,7 +297,55 @@ export function moveToBlock(title) {
   const ed = S.build.ed;
   const rows = ed.multi.length ? ed.multi : (ed.sel != null ? [ed.sel] : []);
   if (!t || !rows.length) return;
-  applyOps([{ op: 'move_steps', test: t.id, rows, block: title }]);
+  // into an existing block: land at its end (before the next block's first step), not at the end of the test
+  const target = t.blocks.find((b) => b.title === title);
+  const next = target ? t.steps.find((s) => s.n === target.end + 1 && !rows.includes(s.row)) : null;
+  applyOps([{ op: 'move_steps', test: t.id, rows, block: title, ...(next ? { before: next.row } : {}) }]);
+}
+
+/** Where the "selected" bar was dragged to, kept for the browser session (per viewer; nothing to lose if storage is off). */
+export function rememberBulkPos(pos) { try { sessionStorage.setItem('rr.build.bulkPos', JSON.stringify(pos)); } catch (e) { /* storage unavailable */ } }
+export function forgetBulkPos() { try { sessionStorage.removeItem('rr.build.bulkPos'); } catch (e) { /* storage unavailable */ } }
+export function rememberedBulkPos() {
+  try { const p = JSON.parse(sessionStorage.getItem('rr.build.bulkPos') || 'null'); return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null; }
+  catch (e) { return null; }
+}
+
+/** Drag and drop (dragsort.js): ``rows`` go before ``before`` (null = after the test's last step); ``block`` = the block they land in, when
+ * that is not the block they come from. */
+export function moveSteps(rows, before, block) {
+  const t = currentTest();
+  if (!t || !rows.length) return;
+  const from = new Set(t.steps.filter((s) => rows.includes(s.row)).map((s) => s.block));
+  const op = { op: 'move_steps', test: t.id, rows };
+  if (before != null) op.before = before;
+  if (block && (from.size !== 1 || !from.has(block))) op.block = block;
+  applyOps([op]);
+}
+
+/** "Start a new page at this step": the step and the rest of its block become a new block (the split_block op). */
+export function startPageAt(row) {
+  const t = currentTest();
+  const s = t && t.steps.find((x) => x.row === row);
+  if (!s) return;
+  const b = t.blocks.find((x) => s.n >= x.start && s.n <= x.end);
+  if (b && b.start === s.n) { toast(`Step ${s.n} already starts the page “${b.title}”. Rename that page instead (the pencil next to its name).`, 6000); return; }
+  const title = window.prompt(`A name for the new page starting at step ${s.n}:`, '');
+  if (!title || !title.trim()) return;
+  applyOps([{ op: 'split_block', test: t.id, row, title: title.trim() }]).then((applied) => { if (applied) selectStep(row); });
+}
+
+/** "New page": the next step added goes on a new page at the end of the test (a block exists only through its steps). */
+export function newPage() {
+  const t = currentTest();
+  if (!t) return;
+  const title = window.prompt('A name for the new page (its first step comes next):', '');
+  if (!title || !title.trim()) return;
+  const ed = S.build.ed;
+  ed.pendingBlock = title.trim();
+  ed.menu = true; ed.menuQuery = '';
+  if (!S.build.keywords) buildApi.keywords().then((k) => { S.build.keywords = k; rerender(); }).catch(() => {});
+  rerender();
 }
 export function renameBlock(row, title) { const t = currentTest(); if (t) applyOps([{ op: 'rename_block', test: t.id, row, title }]); }
 function firstRowOfBlock(t, b) { const s = t.steps.find((x) => x.n >= b.start && x.n <= b.end); return s ? s.row : null; }
@@ -630,7 +692,7 @@ async function createTest() {
   m.busy = true; m.error = ''; rerender();
   const before = bm().tests.map((t) => t.id);
   const k = m.testKind || 'web';
-  const applied = await applyOps([k === 'web' ? { op: 'add_test', name, kind: 'web' } : { op: 'api_add_test', name, format: k === 'xml' ? 'xml' : 'json' }]);
+  const applied = await applyOps([k === 'web' ? { op: 'add_test', name, kind: 'web' } : { op: 'api_add_test', name }]);
   if (!applied) { m.busy = false; rerender(); return; }
   S.modal = null;
   const added = bm().tests.map((t) => t.id).find((id) => !before.includes(id));
@@ -644,10 +706,8 @@ function goResults() {
   else toast('No results yet. Run a test first.');
 }
 
-function goBuildTab() {
-  const name = defaultBuildName();
-  location.hash = name ? buildUrl(name, 'map') : '#/build';
-}
+/** The Build tab button always starts from every workbook (a link that names a workbook or a step still goes straight there). */
+function goBuildTab() { location.hash = '#/build/all'; }
 
 // ---- environments dialog: local edits, applied together on Done -------------------------------------------------
 function envAddColumn() {
@@ -695,6 +755,7 @@ export const acts = {
   'build-redo': redo,
   'build-save'() { saveToExcel(false); },
   'build-download'(el) { downloadWorkbook(el.dataset.name || S.build.name); },
+  'build-download-go'(el) { const name = el.dataset.name; S.modal = null; rerender(); startDownload(name); },
   'build-history': openHistory,
   'build-toggle-problems': toggleProblems,
   'build-new-workbook': openNewWorkbook,
@@ -734,6 +795,10 @@ export const acts = {
   'build-clear-multi': clearMulti,
   'build-insert'(el) { const method = el.dataset.method; if (method) insertStep(method); },
   'build-add-here'(el) { selectStep(Number(el.dataset.row)); toggleMenu(); },
+  'build-start-page'(el) { S.build.ed.menu = false; startPageAt(Number(el.dataset.row) || S.build.ed.sel); },
+  'build-new-page'() { newPage(); },
+  'build-new-page-cancel'() { S.build.ed.pendingBlock = null; rerender(); },
+  'build-bulk-home'() { forgetBulkPos(); rerender(); },
   'build-delete-selected': deleteSelected,
   'build-toggle-enabled-step'(el) { const s = currentTest().steps.find((x) => x.row === Number(el.dataset.row)); updateStep(s.row, { enabled: !s.enabled }); },
   'build-toggle-side'(el) { const s = currentTest().steps.find((x) => x.row === Number(el.dataset.row)); updateStep(s.row, { sideEffects: !s.sideEffects }); },
@@ -787,6 +852,7 @@ export const acts = {
 };
 
 export const changes = {
+  'build-env-select'(el) { setEnv(el.value); },
   'build-nw-env-prod'(el) { S.modal.envs[Number(el.dataset.i)].production = el.checked; rerender(); },
   'build-env-prod'(el) { const n = el.dataset.env; const m = S.modal; m.production = el.checked ? [...new Set([...m.production, n])] : m.production.filter((x) => x !== n); rerender(); },
   'build-env-required'(el) { S.modal.rows[Number(el.dataset.i)].required = el.checked; rerender(); },

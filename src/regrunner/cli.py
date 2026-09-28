@@ -402,7 +402,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--tests", help="comma-separated test ids/sheet names (overrides the workbook's Y/N flags)")
     r.add_argument("--all", action="store_true", help="run every UI test in the workbook")
     r.add_argument("--tag", help="comma-separated tags (DataSheets 'Tags' column or config.yaml tags:)")
-    r.add_argument("--env", help="QA | UAT | PROD (overrides Global!Environment)")
+    r.add_argument("--env", help="QA | UAT | PROD (overrides Global!Environment). Required for a workbook with its own environment table "
+                                  "(_rr_environments, made by the Build tab): one of its environments")
     r.add_argument("--workers", type=int, help="concurrent tests (default from config, max 8)")
     r.add_argument("--browser", choices=browsers.choices(), help="chrome | msedge (Edge) | safari (Playwright's WebKit, the engine Safari uses) | chromium "
                                                                    "(the download); default: browser.name in config.yaml, else chromium")

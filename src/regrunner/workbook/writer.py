@@ -946,6 +946,67 @@ class WorkbookEditor:
     def rr_sheets(self) -> list[str]:
         return [n for n in self._order if n.upper().startswith(RR_PREFIX.upper())]
 
+    def set_hidden(self, name: str, hidden: bool) -> None:
+        """Show or hide a sheet: only the ``state`` attribute of its ``<sheet>`` entry in workbook.xml changes.  Hiding the last visible sheet is
+        refused (Excel will not open a workbook whose every sheet is hidden)."""
+        s = self._sheet(name)
+        if (s.state in ("hidden", "veryHidden")) == bool(hidden):
+            return
+        if hidden and not any(o.state not in ("hidden", "veryHidden") for o in self._sheets.values() if o is not s):
+            raise WriterError(f"{s.name!r} is the only visible sheet: it cannot be hidden")
+
+        def fix(m: re.Match) -> str:
+            tag = m.group(0)
+            return _set_attr(tag, "state", "hidden" if hidden else None) if _attrs(tag).get("name") == s.name else tag
+        self._write_text(self._wb_part, re.sub(r"<sheet\b[^>]*>", fix, self._read_text(self._wb_part)))
+        s.state = "hidden" if hidden else None
+        self._touch()
+
+    def move_sheet(self, name: str, *, after: str) -> None:
+        """Put sheet ``name`` right after sheet ``after`` in the tab order.  Defined names scoped to a sheet (``localSheetId``) and the workbook
+        view's ``activeTab`` / ``firstSheet`` count sheets by position, so they are renumbered to follow.  Refuses (``WriterError``, nothing
+        changed) when workbook.xml's sheet list holds anything but plain ``<sheet .../>`` entries."""
+        s, anchor = self._sheet(name), self._sheet(after)
+        if s is anchor:
+            return
+        wb = self._read_text(self._wb_part)
+        m = re.search(r"(<sheets\b[^>]*>)(.*?)(</sheets>)", wb, re.S)
+        if m is None:
+            raise WriterError("workbook.xml has no sheet list")
+        tags = re.findall(r"<sheet\b[^>]*/>", m.group(2))
+        if re.sub(r"<sheet\b[^>]*/>", "", m.group(2)).strip():
+            raise WriterError("workbook.xml's sheet list is not plain <sheet/> entries: the tab order is left as it is")
+        names = [_attrs(t).get("name") for t in tags]
+        old_at, anchor_at = names.index(s.name), names.index(anchor.name)
+        if old_at == anchor_at + 1:
+            return
+        order = [i for i in range(len(tags)) if i != old_at]
+        order.insert(order.index(anchor_at) + 1, old_at)
+        new_index = {old: new for new, old in enumerate(order)}
+        wb = wb[:m.start(2)] + "".join(tags[i] for i in order) + wb[m.end(2):]
+
+        def renumber(attr: str):
+            def fix(mm: re.Match) -> str:
+                old = int(mm.group(2))
+                return f'{mm.group(1)}"{new_index.get(old, old)}"'
+            return re.compile(r'(\b' + attr + r'=)"(\d+)"'), fix
+        for attr in ("localSheetId", "activeTab", "firstSheet"):
+            pattern, fix = renumber(attr)
+            wb = pattern.sub(fix, wb)
+        self._write_text(self._wb_part, wb)
+        by_name = {n.upper(): n for n in self._order}
+        self._order = [by_name[n.upper()] for n in (names[i] for i in order) if n and n.upper() in by_name]
+        self._touch()
+
+    def find_in_text(self, pattern: re.Pattern) -> set[str]:
+        """Every first group of ``pattern`` found in the workbook's text: shared strings and every worksheet (inline strings, formulas).  A quick
+        way to ask "does this workbook mention X anywhere" without reading every cell."""
+        texts = [s.render() if s.dirty else s.xml for s in self._sheets.values()]           # (a sheet edited in memory: its current text)
+        for rel in self._relationships(self._wb_part):
+            if rel.get("Type", "").endswith("/sharedStrings") and self._has_part(self._resolve(self._wb_part, rel["Target"])):
+                texts.append(self._read_text(self._resolve(self._wb_part, rel["Target"])))
+        return {g for text in texts for g in pattern.findall(html.unescape(text)) if g}
+
     def read_table(self, sheet: str) -> list[list[Any]]:
         return self.rows(sheet)
 

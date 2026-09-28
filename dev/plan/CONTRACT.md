@@ -82,6 +82,10 @@ byte-for-byte (the writer never re-renders an untouched cell).
 
 ### 1.4 Hidden runner sheets (`_rr_` prefix, created on first write, `state="hidden"`)
 
+(All but one: `_rr_environments` is a **visible** sheet placed right after `Global`, so someone who opens a downloaded workbook in Excel sees
+every environment. The builder makes it visible and moves it there whenever it writes the table (`set_environments`, a rename or delete of
+one of its rows, `new_workbook`); files saved before stay as they were until then. Its name does not change: every reader looks for it.)
+
 Each is a plain table: row 1 = headers (exactly these, case-insensitive on read), one row per item. Written with `WorkbookEditor.write_table`.
 
 **`_rr_variables`**: `Token | Label | Secret | EnvSpecific | Notes`
@@ -96,6 +100,13 @@ Each is a plain table: row 1 = headers (exactly these, case-insensitive on read)
 - `Secret = Y`: the cell holds `{SECRET:NAME}`, never a value.
 - Workbooks without this sheet: the builder shows the legacy `Environments` sheet (`Environment | Parameter | Value`) read-only as the table
   (`environments.source = "legacy"`), with no required rows. The engine keeps reading the legacy sheet for API tests as today.
+- **No default environment** (builder feedback item 18): a workbook that has this table is run in one of **its** environments, named by the run
+  (`regrunner run --env`, the Run tab's Environment, `env` of `POST /api/runs`). `Global!Environment` is not a fallback for it (a new workbook
+  does not write one). With no environment named, or one the table does not list, the runner raises `SelectionError` ("Pick the environment
+  to run on ... Its environments: QA, UAT, PROD"; the CLI prints it and exits 2) and the server answers 422 `env_required` / `env_unknown`
+  with `environments: [...]`, before anything starts. The Build tab works in the environment asked for (`?env=`), else the table's first one
+  (the header shows which). Workbooks without the table keep `Global!Environment` as their default, exactly as before.
+- Environment names are letters, digits, `-` and `_`, up to 16 (what `--env` / the server accept); `set_environments` refuses others.
 
 **`_rr_fingerprints`** (Q53): `Name | UrlContains | Landmark | LandmarkText | Notes`
 - `Name`: what `ASSERT_PAGE` names ("Payment page"). Unique, case-insensitive.
@@ -150,6 +161,27 @@ sheet (`Function | Parameter | Value`), as `workbook/api.py` reads it. The build
 - A column an `output_json` / `Output` row fills, that the sheet has, also goes into the run's pool (`{COLUMN}` in later tests: the API
   test Provides it); `{NAME}`s only the pool can give are its Needs. Column names the builder makes: `H_<header>`, `<name>_OUT` / `<name>_EXP`,
   a save's own variable name, `RES_STATUS_CD_EXP` / `ELAPSEDTIME_EXP` for the status / time checks.
+- **One kind of API test** (feedback item 16): the model's `kind` is `"api"` for every API sheet (`"xml"` is no longer produced; the engine's
+  `TestCase.kind` was always `"api"`). JSON or XML is the test's `Content-Type` header, an ordinary `addHeader` row (`H_Content_Type`),
+  `application/json` on a new test. `JSON_FORMAT` stays the runner's switch (default Content-Type, body escaping, output function of a
+  clicked value) and the builder writes it: `json` in the Content-Type = `Y`, `xml` = `N`; with no Content-Type row (or another type), from
+  the response the value was clicked in (`responseFormat`), else from the typed body (`{`/`[` = Y, `<` = N), else unchanged. A legacy row
+  with no Content-Type row shows the one the runner sends as an implied header (`implied`: why; JSON_FORMAT = Y, or the Environments
+  sheet's `<prefix>_ContentHeader`): typing a value there writes a real row.
+- **Whole-response check** (feedback item 14): `compare_response | <EXP column> | RESPONSE_OUT` + the expected body in the data row's
+  `<EXP column>` (`RESPONSE_EXP`, made unique per workbook: check rows are shared) + optionally `ignore_in_response | <EXP column> |
+  timestamp; $.meta.id; /Envelope/Body/Quote/@id` (`;`, `,` or new lines between). An ignore entry is a field name (anywhere, any depth;
+  `@attr` too), a JSONPath (`$.a.b`, `$.items[*].id`, `$.items.id` = every item, `[2]`) or an XPath (`/a/b[2]/@c`, `//name`), and covers
+  that node and everything under it. JSON is compared as data (key order ignored, list order kept, `1` = `1.0`), XML as elements
+  (namespaces dropped; tag, attributes, trimmed text, children in order), anything else as squeezed text (`workbook/api_compare.py`).
+  `{NAME}`s in the expected body are filled in (escaped for the response's format). The body is never written into a cell
+  (`RESPONSE_OUT` is only the check's name: `DisableCheckpoint` can name it). Report: step `Check the whole response`, action
+  `COMPARE_RESPONSE`, expected `the whole response in RESPONSE_EXP (ignoring ...)`, actual `the same` / `N differences: <first>`, every
+  difference in the notes (first 50). Both functions are unknown to the legacy runner, which skips them.
+- **Status never checked** (feedback item 15): an API sheet whose enabled data row has a `RES_STATUS_CD_EXP` value but no check row names
+  that column (a `compareX` row is "switched off") is the `status_never_checked` warning; `DisableCheckpoint` of `RES_STATUS_CD_OUT` for the
+  row's test name is respected. The fix (`api_add_status_check`) switches the `compareX` row back to `compare`, else adds
+  `compare | RES_STATUS_CD_EXP | RES_STATUS_CD_OUT` (shared: every API sheet with that column is checked from then on).
 
 ---
 
@@ -160,7 +192,8 @@ number within the test (section rows and empty rows are not steps). Rows are the
 
 ### 2.1 `Workbook`
 ```
-{ name: "qantas.xlsx", version: 7, environment: "UAT",          // environment the problems were computed for (?env= or Global!Environment)
+{ name: "qantas.xlsx", version: 7, environment: "UAT",          // environment the problems were computed for: ?env=, else Global!Environment;
+                                                                  // with an _rr_environments table: ?env= when the table has it, else its first (1.4)
   globals: { Environment: "UAT", ... },                           // Global sheet as written (formulas as "=...")
   sheets: [ { name, hidden, role } ],                             // role: test | params | datasheets | global | environments | inputoutput | runner | other
   tests: [Test], variables: [Variable], environments: Environments, fingerprints: [Fingerprint],
@@ -171,7 +204,7 @@ number within the test (section rows and empty rows are not steps). Rows are the
 
 ### 2.2 `Test`
 ```
-{ id: "Purchase", sheet: "Purchase", kind: "web" | "api" | "xml" | "other",
+{ id: "Purchase", sheet: "Purchase", kind: "web" | "api" | "other",    // ("xml" is no longer produced: one kind of API test, 1.6)
   listed: true,                  // has a DataSheets row (false: a keyword sheet nobody runs)
   dataSheetsRow: 3 | null, enabled: true, paramSheet: "AgentPortal_Params" | null, tags: ["smoke"], comment: "",
   dataRows: [ { row: 2, enabled: true, label: "NE · Basic" } ],   // Params rows (web) or data rows (api); label from Notes/Scenario/TC_Name
@@ -255,7 +288,7 @@ Fingerprint  { name: "Payment page", urlContains: "/purchase/payment", landmark:
 ```
 `kind` is one of: `unset_variable`, `missing_expected`, `last_run_locator_miss`, `unmapped_template_variable`, `side_effect_on_prod`,
 `side_effect_suggested`, `missing_environment_value`, `unknown_method`, `missing_locator`, `unknown_test`, `unknown_fingerprint`,
-`bad_condition`, `unbalanced_flow`. Legacy rows are not problems (their card says why they are locked). New kinds may be added (the UI shows unknown kinds by severity and message).
+`bad_condition`, `unbalanced_flow`, `status_never_checked` (an API test, `row: null`, 1.6). Legacy rows are not problems (their card says why they are locked). New kinds may be added (the UI shows unknown kinds by severity and message).
 
 ### 2.8 `Status`
 ```
@@ -307,6 +340,19 @@ Same security as every route: localhost Host; POST/PUT/DELETE need header `X-Req
 | `GET /api/build/workbooks/{name}/fingerprints` | | `[Fingerprint]` |
 | `GET /api/build/workbooks/{name}/sheets/{sheet}` | | `{name, headers, rows}` raw cells as written (formulas `"=..."`) for the Excel-grid view |
 
+**Variables screen** (`web/variables_api.py`, `register_variables_routes`; builder feedback item 12). Adding, a label, a data value, an
+environment value and delete are ordinary ops through `/edit` (`add_variable`, `set_variable`, `set_cell`, `set_environments`,
+`delete_variable`). A secret's value is only ever written to `secrets.env` and never sent back: the answers carry `true` / `false` per
+environment.
+
+| Method + path | Body | Answer |
+|---|---|---|
+| `GET /api/build/workbooks/{name}/variables/{token}/values` | | `{token, sources: [{sheet, column, tests, rows: [{row, label, enabled, value, formula}]}], environment: {variable, required, secret, values, typedIn?} \| null, environments: {source, names, production}, secret: {name, environments: {ENV: bool}, perEnvironment: {ENV: bool}, everywhere} \| null}` (a secret row's typed-in values come back as `••••••`, listed in `typedIn`) |
+| `POST /api/build/workbooks/{name}/variables/rename-preview` | `{from, to}` | `{changes: [{sheet, row, column, header, before, after}], secrets: [new secrets.env keys]}`; nothing changes. 409 `exists` when `to` is taken; 400 `domain` for DOMAIN |
+| `POST /api/build/workbooks/{name}/variables/rename` | `{from, to, version}` | `{model, applied, secretsCopied}`: the `rename_variable` op (one undo step) + every `RR_SECRET_<ENV>_FROM` / `RR_SECRET_FROM` / `RR_VAR_FROM` entry of secrets.env copied to the new name (the old ones stay, so an undo still works) |
+| `POST /api/build/workbooks/{name}/variables/secret` | `{name, environment?: "" = every environment, value}` | `{key, name, environments, perEnvironment, everywhere}`: `RR_SECRET_<ENV>_<NAME>` (or `RR_SECRET_<NAME>`) in secrets.env, replacing what it held; never the value |
+| `GET /api/workbooks/{name}/download-info` | | `{name, secrets: [NAME]}`: the secrets the **saved** file uses (`{SECRET:NAME}` anywhere, `Secret = Y` rows); Download says their values are not in the file |
+
 **Build session** (`register_session_routes`, P08; `build/session.py`'s `BuildSession`/`SessionStore`): the Build tab's own headed browser, one
 per workbook. Every route below 409s `closed` (`{error, kind: "closed"}`) when the window is not open, except `start`, which opens it.
 
@@ -328,7 +374,7 @@ per workbook. Every route below 409s `closed` (`{error, kind: "closed"}`) when t
 | `POST /api/build/session/{name}/record` | `{on, after?}` | state (P09, `web/record_api.py`): recording on (new steps after row `after`, default the last step) / off. `state.record` = `{on, cursor, count, prompts, widget}` |
 | `POST /api/build/session/{name}/check` | `{kind, expected?, token?, after?}` | `{applied, model, session}`: a check / wait of the element picked in `check` / `wait` mode (`/pick {mode}`; `state.pick.card.form` lists the kinds, prefilled). `kind`: `text_is text_contains shown gone value ticked selected enabled gt lt between regex date_format count wait_shown wait_gone wait_text`; `token` = also save (text checks) |
 | `POST /api/build/session/{name}/save` | `{token, after?}` | `{applied, model, session}`: an `OUTPUT` step saving the picked element's text (a field's value) as `{token}` |
-| `POST /api/build/session/{name}/prompt` | `{id, choice, token?, fields?}` | `{applied, model, session}`: answers `state.record.prompts[id]`: `keep` / `fixed` / `rename` (typed value), `raw` (widget), `gate` (fingerprint; `fields` overrides name/urlContains/landmark/landmarkText), `unflag` (side effect), `dismiss` |
+| `POST /api/build/session/{name}/prompt` | `{id, choice, token?, fields?}` | `{applied, model, session}`: answers `state.record.prompts[id]`: `keep` / `fixed` / `rename` (typed value), `raw` (widget), `gate` (fingerprint; `fields` overrides name/urlContains/landmark/landmarkText), `unflag` (side effect), `dismiss`. A recorded page change adds its ASSERT_PAGE + fingerprint + new block by itself (prompt kind `gate_added`): `ungate` removes that check, `regate` saves edited fingerprint `fields` (a rename follows into the step) |
 
 `/pick {mode}` also takes `check`, `save`, `wait` (P09). The overlay's own calls carry the session's key; without it the page can only say hello,
 switch a mode and report a pick (never record or add a step).
@@ -337,7 +383,7 @@ API / XML editor (P10, `web/build_apitest.py`; edits are `api_*` ops through `/e
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET /api/build/api/{name}/tests/{test}?row=&env=` | | `ApiTest`: `{test, row, dataRows, format: json\|xml, method, url, urlFormula, headers: [{name, column, value, secret, ioRow}], body: {kind: typed\|template\|none, text, template: {location, file, replace, updates}}, checks: [{ioRow, kind, label, expected, expectedValue, actual, path, what, outputRow}], saves: [{ioRow, function, path, column}], steps, columns, rowValues, needs, provides, environment, environmentVariables, production}` (a key typed in the sheet shows as `••••••`) |
+| `GET /api/build/api/{name}/tests/{test}?row=&env=` | | `ApiTest`: `{test, row, dataRows, format: json\|xml, method, url, urlFormula, headers: [{name, column, value, secret, ioRow, implied?}], body: {kind: typed\|template\|none, text, template: {location, file, replace, updates}}, checks: [{ioRow, kind, label, expected, expectedValue, actual, path, what: ""\|status\|time\|whole, outputRow, ignore?, ignoreIoRow?}], saves: [{ioRow, function, path, column}], steps, checkKinds (value checks only), statusUnchecked: {expected, row, offRow, offFunction, sharedWith} \| null, columns, rowValues, needs, provides, environment, environmentVariables, production}` (a key typed in the sheet shows as `••••••`; a header this row leaves out, `[BLANK]`, is not listed). `POST /api/build/api/send` answers each check with `differences` too (a whole-response check's list) |
 | `POST /api/build/api/send` | `{workbook, test, row?, env?, values?: {NAME: v}, confirmProd?}` | `{request, response: {status, ms, format, headers, text, tree, treeCut}, outputs, checks: [{expected, actual, kind, expectedValue, actualValue, passed}], notes, missing}`; the **draft** is sent, nothing is written; `missing` (no `response`) = `{NAME}`s only a run would give (send again with `values`); production 400s `prod_confirm` without `confirmProd: "PROD"`. Tree node: `{id, depth, key, type, path, value?, text?, count?, array?: {path, index, count, thisItem, rest, where: [{field, value, unique, path, variable?, variablePath?}]}}` |
 | `POST /api/build/api/curl` | `{workbook, text, test?, row?, env?}` | `{request: {method, url, headers, body, format}, found: [{kind: domain\|secret\|values, text}]}` (not applied) |
 | `POST /api/build/api/postman` | `{workbook, collection, env?}` | `{requests: [{name, folder, request, found}]}` (not applied) |
@@ -396,11 +442,12 @@ Each op is `{op: "...", ...}`; `test` is the sheet name; rows are current sheet 
 | `rename_block` | `test, row, title` | row = any step of the block |
 | `split_block` | `test, row, title` | the block splits above `row`; `row..end` becomes `title` |
 | `merge_blocks` | `test, row` | the block of `row` joins the block before it |
-| `rename_variable` | `from, to` | every Params header, whole-cell token, `{TOKEN}`, `{SECRET:TOKEN}` (also inside formulas' text), `_rr_variables`, `_rr_environments` |
+| `rename_variable` | `from, to` | every Params header, whole-cell token, `{TOKEN}`, `{SECRET:TOKEN}` (also inside formulas' text), `_rr_variables`, `_rr_environments`; in API sheets and `_rr_fingerprints` only the `{...}` forms. 409 `exists` when `to` is already a variable. `builder.rename_preview(editor, from, to)` lists the same cells without writing |
+| `delete_variable` | `token` | empties its Params column(s) (header and values; the column stays so nothing shifts), removes its `_rr_variables` and `_rr_environments` rows; steps that use it are left (problems list them), secrets.env is left. Refused for `DOMAIN`; 404 when nothing stores it |
 | `set_variable` | `token, label?, secret?, envSpecific?, notes?` | upsert in `_rr_variables` |
-| `add_variable` | `token, label?, sheet: paramsSheet, value?` | new Params column (+ label); `value` goes in every data row |
+| `add_variable` | `token, label?, sheet: paramsSheet \| test: test id, value?` | new Params column (+ label); `value` goes in every data row. With `test` instead of `sheet`: that test's Params sheet, made (`<test>_Params`, `blnExecute` + one `Y` row, linked in DataSheets) when it has none |
 | `set_cell` | `sheet, row, column: header \| number, value` | grid view and data drawer; `=` starts a formula |
-| `set_environments` | `names, production, rows` (the `Environments` shape) | rewrites `_rr_environments` |
+| `set_environments` | `names, production, rows` (the `Environments` shape) | rewrites `_rr_environments` (visible, after Global: 1.4); names must be run-nameable (1.4) |
 | `set_fingerprint` | `name, urlContains, landmark, landmarkText?, notes?, rename?: old name` | upsert |
 | `delete_fingerprint` | `name` | |
 | `set_test` | `test, enabled?, paramSheet?, tags?, comment?` | DataSheets row (added when the sheet is not listed) |
@@ -410,11 +457,14 @@ API / XML ops (P10, `build/api_builder.OPS`, added through `builder.EXTRA_OPS`; 
 
 | op | fields | effect |
 |---|---|---|
-| `api_add_test` | `name, format?: json\|xml, method?, url?, headers?: [[name, value]], body?, comment?` | new API sheet (`blnExecute TCID TC_Name WEBSERVICE_METHOD WEBSERVICE_URL JSON_FORMAT REQUEST_BODY`), data row 2, DataSheets row |
+| `api_add_test` | `name, format?: json\|xml, method?, url?, headers?: [[name, value]], body?, comment?` | new API sheet (`blnExecute TCID TC_Name WEBSERVICE_METHOD WEBSERVICE_URL JSON_FORMAT REQUEST_BODY`), data row 2, DataSheets row; every header (Content-Type included) is a header row, and `Content-Type: application/json` is added when none is given and the test is JSON (`format` is only a hint for a body with no Content-Type) |
 | `api_set_request` | `test, row, method?, url?, format?, body?` | the row's request cells (`url` cannot be a formula: the grid edits those) |
-| `api_set_header` / `api_remove_header` | `test, row, name, value?, previous?` | `addHeader` row (reused, else `H_<name>`) + the cell; remove = delete the row when no other API sheet has the column, else `[BLANK]` |
-| `api_add_check` | `test, row, path \| "status" \| "time", function?, kind, expected, name?` | output row (reused for the same path) + `<name>_EXP` column holding `expected` + the check row; answers `{actual, expected, reused}` |
-| `api_add_save` | `test, row, path, function?, variable` | output row into a column named `variable` (or the column that path already has: `reused`) |
+| `api_set_header` / `api_remove_header` | `test, row, name, value?, previous?` | `addHeader` row (reused, else `H_<name>`) + the cell (no `value`: the cell this sheet has stays); remove = delete the row when no other API sheet has the column, else `[BLANK]`. `previous` = a rename: the row is renamed in place when no other API sheet has its column (409 `exists` when `name` already has a row), else this sheet moves to the new name with the same value. A Content-Type set / renamed / removed rewrites `JSON_FORMAT` (1.6) |
+| `api_add_check` | `test, row, path \| "status" \| "time", function?, responseFormat?, kind, expected, name?` | output row (reused for the same path) + `<name>_EXP` column holding `expected` + the check row; answers `{actual, expected, reused}`. Typed by hand: a path starting `$` reads with `output_json`, `/` with `Output`. `"status"` / `"time"` on a sheet that already has `RES_STATUS_CD_EXP` / `ELAPSEDTIME_EXP` and no check on it uses that column (and switches a `compareX` row back on). `kind: compare_response` = `api_add_response_check` |
+| `api_add_response_check` | `test, row, expected?, ignore?: [..] \| "a; b", name?` | `RESPONSE_EXP` (unique) holding `expected` + `compare_response` row + `ignore_in_response` row when `ignore` is given (1.6) |
+| `api_set_response_ignore` | `expected, ignore` | the `ignore_in_response` row of that whole-response check: added / changed / removed when empty |
+| `api_add_status_check` | `test` | the fix of `status_never_checked`: answers `{added, ioRow, sharedWith}` (`added: false` when nothing was missing) |
+| `api_add_save` | `test, row, path, function?, responseFormat?, variable` | output row into a column named `variable` (or the column that path already has: `reused`) |
 | `api_update_io` / `api_delete_io` | `ioRow, function?, parameter?, value?` / `ioRows` | edit / delete `InputOutput` rows (the path stays editable) |
 | `api_set_value` | `test, row, column, value` | one cell of the row (column added when missing) |
 | `api_use_template` | `test, row, location, file, format?, mappings: [{placeholder, column? \| value?}]` | template cells + `Replace` rows; a placeholder another sheet already maps keeps its row, and this row's cell for that column becomes `=<column><row>` or the value |

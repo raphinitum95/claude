@@ -4,7 +4,7 @@ import { icon } from '../../icons.js';
 import { runFileUrl } from '../../api.js';
 import { buildRail } from './rail.js';
 import {
-  bm, currentTest, selectedStep, buildUrl, effectiveBuildingWith,
+  bm, currentTest, selectedStep, buildUrl, effectiveBuildingWith, loadGrid, rememberedBulkPos,
 } from './actions.js';
 import { sessionBar, sessionMark, pickPanel, sessionOpen } from './session.js';
 import { apiEditor } from './api_editor.js';
@@ -77,12 +77,13 @@ function blockStrip(S, t) {
 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px"><span class="lbl">Test map</span>
 <span style="font-size: 11.5px; color: var(--tx3)">${t.blocks.length} blocks</span></div>
 <div class="scroll" style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px">
-${t.blocks.map((b, i) => html`<button data-key="blk-${b.id}" data-act="build-pick-block" data-i="${i}" style="flex: none; min-width: 128px; padding: 7px 10px; border-radius: 10px; border: 1px solid ${i === ed.block ? 'var(--acc)' : 'var(--line2)'}; background: ${i === ed.block ? 'var(--sel-bg, var(--acc-soft))' : 'var(--surface)'}; display: flex; flex-direction: column; gap: 4px; text-align: left">
+${t.blocks.map((b, i) => html`<button data-key="blk-${b.id}" data-act="build-pick-block" data-i="${i}" data-block-title="${b.title}" style="flex: none; min-width: 128px; padding: 7px 10px; border-radius: 10px; border: 1px solid ${i === ed.block ? 'var(--acc)' : 'var(--line2)'}; background: ${i === ed.block ? 'var(--sel-bg, var(--acc-soft))' : 'var(--surface)'}; display: flex; flex-direction: column; gap: 4px; text-align: left">
 <span style="display: flex; align-items: center; gap: 5px"><span class="badge k-${b.kind === 'page' ? 'nav' : b.kind === 'call' ? 'api' : b.kind === 'loop' ? 'flow' : 'wait'}" style="height: 16px; font-size: 9px; padding: 0 5px">${BLOCK_KIND_LABEL[b.kind] || b.kind}</span>
 ${b.gate ? html`<span style="color: var(--pass); display: inline-flex" title="Page gate: ${b.gate}">${icon('gate', 11)}</span>` : ''}
 <span class="mono" style="font-size: 10px; color: var(--tx3); margin-left: auto">${b.count}</span>
 ${b.dot ? html`<span class="pdot" style="background: var(--${b.dot})"></span>` : ''}</span>
 <span class="trunc" style="font-size: 12.5px; font-weight: 600">${b.title}</span></button>`)}
+<button class="btn btn-ghost" style="flex: none; align-self: stretch; border: 1px dashed var(--line2); padding: 0 12px" data-act="build-new-page" title="A new page at the end of the test: the next step you add starts it">${icon('plus', 13)} New page</button>
 </div></div>`;
 }
 
@@ -108,7 +109,8 @@ function stepCard(S, t, s) {
   const sel = ed.sel === s.row;
   const mm = ed.multi.includes(s.row);
   const border = sel ? 'border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc-line)' : mm ? 'border-color: var(--acc-line)' : '';
-  return html`<div class="scard" data-key="s-${s.row}" style="${border}${s.enabled === false ? '; opacity: .6' : ''}${s.legacy ? '; border-style: dashed' : ''}">
+  return html`<div class="scard" data-key="s-${s.row}" data-row="${s.row}" draggable="true" style="${border}${s.enabled === false ? '; opacity: .6' : ''}${s.legacy ? '; border-style: dashed' : ''}">
+<span class="sgrip" aria-hidden="true" title="Drag to move (onto a page above to move it there)">⠿</span>
 <input type="checkbox" class="cb" ${mm ? raw('checked') : ''} data-act="build-toggle-multi" data-row="${s.row}" aria-label="Select step ${s.n}">
 <button data-act="build-pick-step" data-row="${s.row}" style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; min-height: 30px">
 <span class="mono" style="width: 26px; flex: none; font-size: 11px; color: var(--tx3); text-align: right">${s.n}</span>
@@ -126,9 +128,10 @@ ${lastRunMark(s.lastResult)}
 
 function cardsView(S, t, b) {
   const steps = t.steps.filter((s) => s.n >= b.start && s.n <= b.end);
+  const anchor = bulkAnchorRow(S, steps);
   return html`<div class="scroll" style="flex: 1; overflow: auto; padding: 0 16px 16px">
-<div style="display: flex; flex-direction: column; gap: 5px">
-${steps.map((s) => stepCard(S, t, s))}
+<div class="scards" style="display: flex; flex-direction: column; gap: 5px">
+${steps.map((s) => html`${stepCard(S, t, s)}${s.row === anchor ? bulkAnchor(S) : ''}`)}
 <button class="btn btn-ghost" style="justify-content: center; border: 1px dashed var(--line2); height: 34px; margin-top: 2px" data-act="build-add-here" data-row="${steps.length ? steps[steps.length - 1].row : ''}">${icon('plus', 13)} Add step here</button>
 </div>
 ${b.returnsTo ? html`<div style="margin-top: 12px; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--line2); font-size: 12.5px; color: var(--tx2)">${icon('arrowl', 13)} Then carries on at <b style="color: var(--tx)">${b.returnsTo}</b></div>` : ''}
@@ -136,18 +139,56 @@ ${b.returnsTo ? html`<div style="margin-top: 12px; display: flex; align-items: c
 }
 
 // ---- Excel grid view -----------------------------------------------------------------------------------------
+// The test's sheet as it is in Excel: a real table (row numbers = Excel rows, header row stuck to the top), the selected step's row marked,
+// long cells cut short with the whole text on hover. Read-only: edits go through the cards and the inspector. Reloads after an edit.
 function gridView(S, t) {
   const ed = S.build.ed;
   if (ed.grid === 'loading' || !ed.grid) return html`<div style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--tx3)">Loading the sheet…</div>`;
   const g = ed.grid;
-  return html`<div class="scroll" style="flex: 1; overflow: auto; margin: 0 16px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface)">
-<table class="mono" style="border-collapse: collapse; font-size: 11.5px; white-space: nowrap">
-<thead><tr>${g.headers.map((h) => html`<th class="gcell" style="position: sticky; top: 0; background: var(--surface2); font-weight: 600; color: var(--tx3)">${h}</th>`)}</tr></thead>
-<tbody>${g.rows.map((row, i) => html`<tr data-key="grow-${i}">${row.map((c) => html`<td class="gcell">${c == null ? '' : String(c)}</td>`)}</tr>`)}</tbody>
+  const m = bm();
+  if (m && g.version !== m.version) setTimeout(loadGrid, 0);                    // (an edit since it was read: read it again, show this meanwhile)
+  const text = (c) => (c == null ? '' : String(c));
+  return html`<div class="scroll gwrap">
+<table class="mono gtable">
+<thead><tr><th class="gnum">1</th>${g.headers.map((h) => html`<th title="${text(h)}">${text(h)}</th>`)}</tr></thead>
+<tbody>${g.rows.map((row, i) => html`<tr data-key="grow-${i}" class="${cx(ed.sel === i + 2 && 'on')}"><td class="gnum">${i + 2}</td>
+${g.headers.map((_h, j) => html`<td title="${text(row[j])}">${text(row[j])}</td>`)}</tr>`)}</tbody>
 </table></div>`;
 }
 
 // ---- bulk bar + add-step menu ---------------------------------------------------------------------------------
+// The "selected" bar: right under the lowest ticked step card of this page, in the list itself (it pushes the cards below it down, so it never
+// covers one you may want to tick next), or where the person dragged it (kept for the browser session; "put it back" returns it here).
+// Only the paste bar stays at the bottom of the column.
+function bulkAnchorRow(S, steps) {
+  const ed = S.build.ed;
+  if (!ed.multi.length || rememberedBulkPos()) return null;
+  const ticked = steps.filter((s) => ed.multi.includes(s.row));
+  return ticked.length ? ticked[ticked.length - 1].row : null;
+}
+
+function bulkAnchor(S) {
+  return html`<div class="bulk-anchor" data-key="bulk-anchor">${bulkBarBody(S, '')}</div>`;
+}
+
+function bulkBarBody(S, style) {
+  const ed = S.build.ed;
+  const moved = !!rememberedBulkPos();
+  return html`<div class="bulk-bar ${moved ? 'moved' : ''}" style="${style}" role="toolbar" aria-label="Selected steps">
+<span class="bulk-grip" data-bulk-grip="1" title="Drag to move this bar${moved ? ' (double-click: back next to the selection)' : ''}" aria-hidden="true">⠿</span>
+<b class="bulk-count">${ed.multi.length} selected</b><span class="bulk-sep"></span>
+<button class="btn btn-sm btn-ghost" data-act="build-bulk-enable">On</button><button class="btn btn-sm btn-ghost" data-act="build-bulk-disable">Off</button>
+<button class="btn btn-sm btn-ghost" data-act="build-bulk-stop">Stop on fail</button><button class="btn btn-sm btn-ghost" data-act="build-bulk-continue">Keep going</button>
+<button class="btn btn-sm btn-ghost" data-act="build-move-block">Move to block…</button>
+<button class="btn btn-sm btn-ghost" data-act="build-copy-steps">${icon('copy', 13)} Copy</button>
+<button class="btn btn-sm btn-ghost" data-act="build-save-template">${icon('layers', 13)} Save as template</button>
+<button class="btn btn-sm btn-ghost" style="color: var(--fail)" data-act="build-delete-selected">${icon('trash', 13)} Delete</button>
+${moved ? html`<button class="icon-btn" style="width: 26px; height: 26px" data-act="build-bulk-home" aria-label="Put the bar back next to the selection" title="Put it back next to the selection">${icon('undo', 12)}</button>` : ''}
+<button class="icon-btn" style="width: 26px; height: 26px" data-act="build-clear-multi" aria-label="Clear selection">${icon('x', 12)}</button></div>`;
+}
+
+/** The bar when it is not beside a card: where it was dragged to (fixed on the screen), or at the bottom when the selection is on another page
+ * of the test (and the paste bar). */
 function bulkBar(S) {
   const ed = S.build.ed;
   const clip = S.build.clip;
@@ -156,15 +197,12 @@ function bulkBar(S) {
     return html`<div class="bulk-bar" style="bottom: ${ed.drawer ? 260 : 16}px">
 <button class="btn btn-sm btn-ghost" data-act="build-paste-steps">${icon('copy', 13)} Paste ${clip.steps.length} step${clip.steps.length === 1 ? '' : 's'}</button></div>`;
   }
-  return html`<div class="bulk-bar" style="bottom: ${ed.drawer ? 260 : 16}px" role="toolbar" aria-label="Selected steps">
-<b class="bulk-count">${ed.multi.length} selected</b><span class="bulk-sep"></span>
-<button class="btn btn-sm btn-ghost" data-act="build-bulk-enable">On</button><button class="btn btn-sm btn-ghost" data-act="build-bulk-disable">Off</button>
-<button class="btn btn-sm btn-ghost" data-act="build-bulk-stop">Stop on fail</button><button class="btn btn-sm btn-ghost" data-act="build-bulk-continue">Keep going</button>
-<button class="btn btn-sm btn-ghost" data-act="build-move-block">Move to block…</button>
-<button class="btn btn-sm btn-ghost" data-act="build-copy-steps">${icon('copy', 13)} Copy</button>
-<button class="btn btn-sm btn-ghost" data-act="build-save-template">${icon('layers', 13)} Save as template</button>
-<button class="btn btn-sm btn-ghost" style="color: var(--fail)" data-act="build-delete-selected">${icon('trash', 13)} Delete</button>
-<button class="icon-btn" style="width: 26px; height: 26px" data-act="build-clear-multi" aria-label="Clear selection">${icon('x', 12)}</button></div>`;
+  const pos = rememberedBulkPos();
+  if (pos) return bulkBarBody(S, `position: fixed; left: ${pos.x}px; top: ${pos.y}px; transform: none; bottom: auto`);
+  const t = currentTest();
+  const b = t && t.blocks[Math.min(ed.block, t.blocks.length - 1)];
+  const onThisPage = t && ed.mode === 'cards' && (!b || t.steps.some((s) => ed.multi.includes(s.row) && s.n >= b.start && s.n <= b.end));
+  return onThisPage ? '' : bulkBarBody(S, `bottom: ${ed.drawer ? 260 : 16}px`);
 }
 
 function addStepMenu(S) {
@@ -174,7 +212,11 @@ function addStepMenu(S) {
   const groups = (S.build.keywords && S.build.keywords.groups) || [];
   return html`<div class="menu" style="position: absolute; right: 16px; top: 8px; width: 320px; padding: 6px; z-index: 6" role="menu">
 <div class="field" style="margin-bottom: 6px">${icon('search', 14)}<input class="fld" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Search actions…" value="${ed.menuQuery || ''}" data-input="build-menu-query" autocomplete="off"></div>
+${ed.pendingBlock ? html`<div class="bn bn-acc" style="padding: 8px 10px; margin-bottom: 6px">${icon('layers', 13, 'color: var(--acc)')}<span style="flex: 1">The step you pick starts the new page <b>${ed.pendingBlock}</b>, at the end of the test.</span>
+<button class="icon-btn" style="width: 22px; height: 22px" data-act="build-new-page-cancel" aria-label="Not a new page">${icon('x', 11)}</button></div>` : ''}
 <button class="mitem" data-act="build-open-insert-template">${icon('layers', 14)}<span style="flex: 1">Insert a template</span></button>
+${ed.sel != null && !ed.pendingBlock ? html`<button class="mitem" data-act="build-start-page" data-row="${ed.sel}">${icon('grid', 14)}<span style="flex: 1">Start a new page at the selected step…</span></button>` : ''}
+${!ed.pendingBlock ? html`<button class="mitem" data-act="build-new-page">${icon('plus', 14)}<span style="flex: 1">Add a new page at the end…</span></button>` : ''}
 ${sessionOpen() ? html`<button class="mitem" data-act="build-rec-here">${icon('rec', 14)}<span style="flex: 1">Record from here in the browser</span></button>`
   : html`<button class="mitem" disabled style="opacity: .5; cursor: default" title="Open the site first (the button under the test's header)">${icon('rec', 14)}<span style="flex: 1">Record from here in the browser</span></button>`}
 ${sessionOpen() ? html`<button class="mitem" data-act="build-sess-pick">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>`
@@ -264,7 +306,8 @@ ${s.legacy ? html`<div class="bn">${icon('lock', 14, 'color: var(--tx3)')}<span>
   : html`
 <div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Name</span>
 <input class="fld" value="${s.nameAuto ? '' : s.name}" placeholder="${s.autoName}" data-input="build-step-name" data-row="${s.row}">
-<div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx3)">${s.nameAuto ? 'Auto name' : html`<button class="lnk" data-act="build-name-auto" data-row="${s.row}">Use automatic name</button>`}</div></div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx3)">${s.nameAuto ? 'Auto name' : html`<button class="lnk" data-act="build-name-auto" data-row="${s.row}">Use automatic name</button>`}
+<span style="flex: 1"></span><button class="lnk" data-act="build-start-page" data-row="${s.row}" title="This step and the ones after it on this page become a new page">Start a new page here</button></div></div>
 ${s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Runs this test, then carries on</span>
 <div class="field" style="min-height: 40px">${icon('api', 15, 'color: var(--k-api)')}<b>${s.call}</b><span style="flex: 1"></span><a href="${buildUrl(S.build.name, 'test', s.call)}">Open</a></div></div>` : ''}
 ${s.element || (s.locator && (s.locator.value || s.locator.findBy)) ? elementSection(s) : ''}

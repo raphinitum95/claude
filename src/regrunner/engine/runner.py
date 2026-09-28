@@ -210,6 +210,10 @@ def _load_and_plan(options: RunOptions, cfg: Config, headless: bool) -> RunPlan:
     cases += [lane for plan in scenarios for lane in plan.lanes]
     if not cases:
         raise SelectionError("No tests selected (all DataSheets rows are 'N'? use --tests or --all)")
+    from ..preflight import environment_choice_problem, environment_problem
+    choice = environment_choice_problem(workbook, options.environment)      # a workbook with its own environment table has no default
+    if choice:
+        raise SelectionError(f"{Path(str(options.workbook)).name}: {choice}")
     environment = (options.environment or workbook.global_settings().get("Environment") or "").upper() \
         if not isinstance(options.environment, str) else options.environment.upper()
     environment = environment or str(workbook.global_settings().get("Environment", "")).upper()
@@ -217,7 +221,6 @@ def _load_and_plan(options: RunOptions, cfg: Config, headless: bool) -> RunPlan:
         raise SelectionError(
             "Refusing to run against PROD: these flows place real transactions (purchases, emails). "
             "Pass --allow-prod (or set runner.allow_prod: true) if that is really what you want.")
-    from ..preflight import environment_problem
     problem, missing = environment_problem(workbook, environment)
     if problem:
         raise EnvironmentMissing(problem, environment, missing)
@@ -292,10 +295,10 @@ async def open_run(plan: RunPlan, bus: EventBus | None, browser_info: dict[str, 
             result.warnings.append(f"The shared folder {cfg.path(cfg.publish.dir)} cannot be written to right now ({problem}). The run "
                                    "goes ahead and stays in runs/; it is copied to the shared folder after a later run.")
     # Tests others read from first (an API purchase whose policy number a UI test types), then the longest UI test (shortest wall-clock), the API tests
-    # that read what the UI tests produce last; a test that has to wait for others is held back until they are done.
+    # that wait for the rest of their stream last; a test that has to wait for others is held back until they are done.
     feeds = {p for named in plan.order.data.values() for producers in named.values() for p in producers}
     from .scenario import groups_of
-    schedule = Schedule(sorted(plan.cases, key=lambda c: (c.id in plan.order.after_ui, c.id not in feeds, -len(plan.plans[c.id]))), plan.order.deps,
+    schedule = Schedule(sorted(plan.cases, key=lambda c: (c.id in plan.order.after_stream, c.id not in feeds, -len(plan.plans[c.id]))), plan.order.deps,
                         groups=groups_of(plan.scenarios))        # a scenario is handed to one worker as a whole
     asker = Asker(run_dir, bus, cancel, mode=ask_mode, default_timeout_s=cfg.ask.timeout_s)           # ASK_USER: who can answer
     return RunCtx(plan=plan, run_id=run_id, run_dir=run_dir, bus=bus, jsonl=jsonl, schedule=schedule, cancel=cancel, asker=asker,

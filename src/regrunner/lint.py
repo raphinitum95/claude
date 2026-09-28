@@ -41,8 +41,6 @@ def lint_api(workbook: Workbook, case, seen_io: set[int]) -> list[Finding]:
         add("error", f"WEBSERVICE_URL {request.url!r} is not an http(s) address")
     if request.method not in METHODS:
         add("error", f"WEBSERVICE_METHOD {request.method!r} is not one of {', '.join(METHODS)}")
-    if not request.json_format:
-        add("warning", "JSON_FORMAT is not Y: regrunner's API tests send and read JSON only (XML / SOAP sheets are not supported)")
     for header, column in runtime.io.add_header.items():
         if column.upper() not in runtime.values:
             add("warning", f"addHeader {header}: the row has no column {column!r}, so the header is not sent")
@@ -154,7 +152,7 @@ def builder_problems(model: dict) -> list[dict]:
         out.append({"id": pid, "severity": severity, "kind": kind, "message": message, "test": test, "row": row,
                     "n": step["n"] if step else None, "variable": variable})
 
-    env = model.get("environment", "")
+    env = str(model.get("environment", "")).upper()                 # (a workbook with its own table: spelt as the table spells it)
     envs = model.get("environments") or {"names": [], "production": [], "rows": [], "source": "none"}
     production = {n.upper() for n in envs.get("production", [])}
     on_prod = env in production
@@ -178,6 +176,14 @@ def builder_problems(model: dict) -> list[dict]:
 
     for t in model.get("tests", []):
         tid = t["id"]
+        unchecked = t.get("_statusUnchecked")
+        if unchecked:                                              # (API tests: the status is expected but never compared - feedback item 15)
+            others = unchecked.get("sharedWith") or []
+            add("warning", "status_never_checked",
+                f"expects HTTP status {unchecked['expected']} (RES_STATUS_CD_EXP) but InputOutput has no check for it"
+                + (f" (its row says {unchecked['offFunction']}, which switches it off)" if unchecked.get("offRow") else "")
+                + ", so any status passes. Add the check in the API editor" + (f"; it also checks {', '.join(others)}, which have that column"
+                                                                                 if others else ""), tid)
         needs = t.get("_needs", {})
         stack: list[tuple[str, dict]] = []
         for s in t.get("steps", []):
