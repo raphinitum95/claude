@@ -192,12 +192,16 @@ def test_the_last_run_marks_steps_and_a_locator_miss_is_a_passive_warning(tmp_pa
         (runs / run_id).mkdir(parents=True)
         (runs / run_id / "results.json").write_text(json.dumps({
             "run_id": run_id, "workbook": ("C:\\QA\\workbooks\\" + path.name) if run_id.endswith("new") else str(path), "started_at": run_id, "tests": [{"id": "Buy", "sheet": "Buy", "status": status, "steps": [
-                {"row": 2, "status": status, "error": "" if status == "PASSED" else "Object was not found"},
+                {"row": 2, "status": status, "error": "" if status == "PASSED" else "Object was not found",
+                 "screenshot": None if status == "PASSED" else "tests/Test#1/002.jpg", "screenshot_full": None if status == "PASSED" else "tests/Test#1/002_full.jpg"},
                 {"row": 3, "status": "PASSED", "error": ""}]}]}))
         time.sleep(0.01)
     model = model_of(path, runs_dir=runs)
     buy = find_test(model, "Buy")
-    assert step_at(buy, 2)["lastResult"]["runId"] == "20260102-new" and step_at(buy, 2)["lastResult"]["locatorMiss"] is True
+    last = step_at(buy, 2)["lastResult"]
+    assert last["runId"] == "20260102-new" and last["locatorMiss"] is True
+    assert last["screenshot"] == "tests/Test#1/002.jpg" and last["screenshotFull"] == "tests/Test#1/002_full.jpg"
+    assert step_at(buy, 3)["lastResult"]["screenshot"] is None
     assert buy["lastRun"]["status"] == "FAILED"
     assert [(p["kind"], p["row"]) for p in model["problems"]] == [("last_run_locator_miss", 2)]
 

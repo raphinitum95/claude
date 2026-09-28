@@ -45,7 +45,8 @@ export function rememberedBuildWorkbook() { try { return localStorage.getItem('r
 export async function openBuild(name, screen = 'map', testId = null) {
   const b = S.build;
   const switching = b.name !== name;
-  if (switching) { const kw = b.keywords; Object.assign(b, freshBuild(), { name, keywords: kw }); }
+  const stagedSel = b.pendingSel;                            // jumpToStep may have staged this just before the workbook switched
+  if (switching) { const kw = b.keywords; Object.assign(b, freshBuild(), { name, keywords: kw, pendingSel: stagedSel }); }
   const prevTest = b.testId;
   b.screen = screen; b.testId = screen === 'scenario' ? null : testId;
   b.scenario = screen === 'scenario' ? testId : null;       // (P12: the scenario board's scenario name)

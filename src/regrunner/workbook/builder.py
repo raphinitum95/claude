@@ -431,7 +431,8 @@ def _last_results(runs_dir: Path | None, workbook_name: str) -> tuple[dict[tuple
                     continue
                 error = str(s.get("error") or "")
                 steps[(sheet, row)] = {"status": s.get("status", ""), "error": error[:300], "runId": run_id, "when": when,
-                                       "locatorMiss": s.get("status") == "FAILED" and bool(re.search(r"not (be )?found|no element|waiting for locator", error, re.I))}
+                                       "locatorMiss": s.get("status") == "FAILED" and bool(re.search(r"not (be )?found|no element|waiting for locator", error, re.I)),
+                                       "screenshot": s.get("screenshot"), "screenshotFull": s.get("screenshot_full")}
         if seen >= 20:
             break
     return steps, tests

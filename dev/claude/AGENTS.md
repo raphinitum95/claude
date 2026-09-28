@@ -299,8 +299,8 @@ but the page did not react usually means an unanswered/blocked call), compare wi
 ## 8. README headings (jump straight to one; `grep -n '^##' README.md` for line numbers)
 
 Quick start · Set up · Which browser a run uses · Before the first real run · How the workbook is interpreted (Actions, Captchas) ·
-Speed, precision and staying out of the way · Selectors · Web UI (API) · Evidence (API tests, Tests that depend on each other,
-Values set by the tests, publish, Event stream) · Configuration · Extending · Known limits · Tests
+Speed, precision and staying out of the way · Selectors · Web UI (Run tab, Build tab, Results tab, API) · Evidence (API tests,
+Tests that depend on each other, Values set by the tests, publish, Event stream) · Configuration · Extending · Known limits · Tests
 
 ---
 
@@ -435,6 +435,19 @@ blocks on the board (order markers are chips on both ends, like P04's cards-not-
 per-lane "after <block>" selects do it), a scenario section in the HTML report (results.json has `lane` + `syncs`; the report lists lanes as
 tests), re-running a whole scenario automatically after a crash. Unverified: two headed lanes on the work computer (one Chrome, two contexts).
 
+P13 (fix-in-builder loop, last-run overlay, docs, full suite) closes out the Workbook Builder plan. **Fix in builder**
+(Results test page) now opens the Build tab **on the exact failed step**, not just the test: `jumpToStep` (already used
+by the variable map) drives it, and `build/actions.js`'s `openBuild` was fixed to keep a staged `pendingSel` across a
+workbook switch (it used to be wiped by `freshBuild()` when the Build tab was on a different, or no, workbook - the bug
+that made the old header-only link land on the test but never the step). A step that failed on its last run now shows a
+passive **"failed last run" badge** on its card (replacing the plain fail-coloured dot) and an evidence card at the top
+of its inspector: the error, a screenshot thumbnail (`builder._last_results` now carries `screenshot`/`screenshotFull`
+from that run's `results.json`, CONTRACT.md 2.3), and a link to the full Results test page. README gained `### Run tab`
+/ `### Build tab` / `### Results tab` under `## Web UI`, documenting the whole Workbook Builder feature set (map,
+editor, recorder, build session, API/XML editor, templates, scenarios, results history/batch/test/compare) that had
+never been written up outside `dev/plan/`; the endpoint list grew to match. Full suite run: see the PR body for the
+count and any listed failures.
+
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
@@ -461,6 +474,9 @@ Gotchas:
   worker cards.
 - `tests/test_web_workbook_search.py::test_enter_picks_the_best_match...` can flake under load: Playwright's `.uncheck(force=True)` races a
   checkbox whose row is removed (filtered out) the instant it unchecks. Confirmed pre-existing (identical on the pre-P04 tree); a solo re-run passes.
+- `tests/test_web_multi_run.py::test_a_new_run_joins_the_workers_that_are_going_and_the_same_workbook_cannot_run_twice` can flake in the full
+  suite (one `pool_changed` event missed a `run_id` under load): failed once in P13's full-suite run, passed alone and unrelated to anything P13
+  touched (same pattern as the other documented timing flakes above).
 - Mock pages: an element's `id` is also a `window` global (`id="paid"` makes `window.paid` the element), so name JS counters differently.
 - `runner.allow_prod` / `--allow-prod` only guards an environment literally named PROD; one the workbook's `_rr_environments` marks production
   (`#PRODUCTION` row) is not guarded there, but its SIDE_EFFECTS steps are still blocked by the engine (`engine/gates.py`).
