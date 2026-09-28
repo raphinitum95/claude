@@ -23,7 +23,7 @@ what was found in the code, so the next session does not have to re-derive it.
    Open step; none set = blank page + a notice with a link to Environments. Recording an empty test starts it with `OPEN {DOMAIN}`.
 8. **"Selected" bar** wraps inside its column (`.bulk-bar` in app.css) instead of overflowing a narrow window.
 
-## Batch 2: to do (items 9-21)
+## Batch 2: to do (items 9-22)
 
 9. **Run plan Timeline** (Run tab, `views/newrun.js` `timelineView`): cut off and unreadable on small screens. Scroll sideways at least, test
    names stay readable.
@@ -59,5 +59,10 @@ what was found in the code, so the next session does not have to re-derive it.
     of pinned to the bottom of the column, and let it be dragged by a grip like the build window's pill (`build/overlay.js` `drawPill`,
     `st.pos`); remember where it was dragged for the session. The bar is `bulkBar` in `views/build/editor.js`, `.bulk-bar` in app.css
     (made to wrap in batch 1, item 8).
+22. **Grid view is not a readable table**: `.gcell` (app.css) sets `display: flex` on every `<th>`/`<td>` of `gridView`
+    (`views/build/editor.js`), so the cells stop being table cells and the columns do not line up. Make them real table cells again
+    (fixed height via line-height/padding, borders, sticky header), plus what makes a sheet readable: a row-number column that matches the
+    step's Excel row, the selected step's row highlighted, zebra rows, wide columns (FindBy_Value, Value) truncated with the full text on
+    hover. Check it with a screenshot.
 
 Also told the user: `workbooks/qantas-test 2.xlsx` is saved with Global Environment = PROD.
