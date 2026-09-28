@@ -1,6 +1,6 @@
 """Recording in the build window (build/recorder.py, P09) on the mock site: a person's clicks, typing, choices and ticks become steps at the cursor;
 typed text becomes a variable (a password a secret); windows, frames and Back get their switch steps; calendars and suggestions collapse into one
-step; a new page gets a proposed fingerprint and gate; Check / Save / Wait until from the live element.  What is recorded replays with the
+step; a new page gets its page check (fingerprint + ASSERT_PAGE) and a page (block) of its own; Check / Save / Wait until from the live element.  What is recorded replays with the
 runner's own actions.  Headless (``build.headless`` is for tests only)."""
 from __future__ import annotations
 
@@ -89,15 +89,17 @@ async def test_clicks_typing_choices_and_ticks_become_steps_at_the_cursor_and_no
     await page.click("#continue")
     await page.wait_for_url("**/build_record2.html")
     await quiet(s, 5)
-    assert steps(s) == [("SET", "{FIRST_NAME}"), ("SET", "{LAST_NAME}"), ("SELECT", "{PLAN_VALUE}"), ("TICK", ""), ("CLICK", "")]
+    await until(lambda: asyncio.sleep(0, len(steps(s)) == 6))                  # the page it landed on gets its check straight away
+    assert steps(s) == [("SET", "{FIRST_NAME}"), ("SET", "{LAST_NAME}"), ("SELECT", "{PLAN_VALUE}"), ("TICK", ""), ("CLICK", ""),
+                        ("ASSERT_PAGE", "Payment details page")]
     assert not any(m in ("WAIT", "WAIT_UNTIL") for m, _ in steps(s))
     assert step_at(s, 2)["locator"]["value"] == "firstName" and step_at(s, 6)["locator"]["value"] == "continue"
     assert params(s)["FIRST_NAME"] == ["Jane"] and params(s)["PLAN_VALUE"] == ["Plus"] and params(s)["LAST_NAME"] == ["Doe"]
     tags = {p["token"]: p["tag"] for p in s.recorder.prompts if p["kind"] == "variable"}
     assert tags == {"FIRST_NAME": "new", "LAST_NAME": "reused", "PLAN_VALUE": "new"}   # (PLAN would replace the locator "plan" at run time)
     events = [e for e in s.log if e["type"] == "build_session_step_recorded"]
-    assert [e["method"] for e in events] == ["SET", "SET", "SELECT", "TICK", "CLICK"] and "Jane" not in json.dumps(events)
-    assert s.state()["cursor"]["n"] == 6 and not s.state()["stale"]  # the window is past the recorded steps: nothing to replay
+    assert [e["method"] for e in events] == ["SET", "SET", "SELECT", "TICK", "CLICK", "ASSERT_PAGE"] and "Jane" not in json.dumps(events)
+    assert s.state()["cursor"]["n"] == 7 and not s.state()["stale"]  # the window is past the recorded steps and the page check: nothing to replay
 
 
 async def test_steps_go_after_the_step_recording_started_from_and_follow_each_other(session):
@@ -183,37 +185,60 @@ async def test_windows_frames_and_back_get_their_switch_steps_and_the_recording_
     await page.wait_for_url("**/build_record.html")
     await quiet(s, 10)
     assert [m for m, _ in steps(s)] == ["SWITCHTOFRAME", "CLICK", "SWITCHTODEFAULT", "TICK", "CLICK", "SWITCHTOWINDOW", "CLICK",
-                                         "SWITCHTOMAINWINDOW", "CLICK", "BACK"]
+                                         "SWITCHTOMAINWINDOW", "CLICK", "ASSERT_PAGE", "BACK"]        # (a new window's first page gets no check)
     assert steps(s)[0] == ("SWITCHTOFRAME", "inner") and steps(s)[5] == ("SWITCHTOWINDOW", "-1")
     await s.recorder.stop()
     s.run("to", row=s._steps()[-1]["row"])                        # the whole recording, from the start, in a fresh window
     state = await settled(s, timeout=60)
-    assert [st for _, st in results(state)] == ["PASSED"] * 11, state["replay"]
+    assert [st for _, st in results(state)] == ["PASSED"] * 12, state["replay"]
 
 
-async def test_a_new_page_gets_a_proposed_fingerprint_and_its_gate_passes_on_replay(session):
+async def test_a_new_page_gets_its_check_and_its_own_page_straight_away_and_the_check_passes_on_replay(session):
     s = session
     await s.recorder.start(after=2)
     page = s._page()
     await page.click("#continue")
     await page.wait_for_url("**/build_record2.html")
     await quiet(s, 1)
-    prompt = await until(lambda: asyncio.sleep(0, next((p for p in s.recorder.prompts if p["kind"] == "fingerprint"), None)))
+    prompt = await until(lambda: asyncio.sleep(0, next((p for p in s.recorder.prompts if p["kind"] == "gate_added"), None)))
     assert prompt["name"] == "Payment details page" and prompt["urlContains"] == "/build_record2.html"
     assert prompt["landmark"] == "id=pay-heading" and prompt["landmarkText"] == "Payment details"
-    await s.recorder.answer(prompt["id"], "gate")
-    assert steps(s) == [("CLICK", ""), ("ASSERT_PAGE", "Payment details page")]
+    assert steps(s) == [("CLICK", ""), ("ASSERT_PAGE", "Payment details page")]              # added without asking
     with s.doc.lock:
         assert [f["name"] for f in read_fingerprints(s.doc.editor)] == ["Payment details page"]
-    await s._page().fill("#card", "4111")                         # recording carries on after the gate
+    await s._page().fill("#card", "4111")                         # recording carries on after the check...
     await s._page().evaluate("document.getElementById('card').blur()")
     await quiet(s, 2)
     assert [m for m, _ in steps(s)] == ["CLICK", "ASSERT_PAGE", "SET"]
+    blocks = [st["block"] for st in s._steps()]
+    assert blocks[2:] == ["Payment details page", "Payment details page"] and blocks[1] != "Payment details page"   # ...on its own page
     await s.recorder.stop()
     s.run("to", row=s._steps()[-1]["row"])
     state = await settled(s)
     assert [st for _, st in results(state)] == ["PASSED"] * 4, [(r["name"], r["error"]) for r in state["replay"]["results"]]
     assert any(e["type"] == "page_gate" and e.get("passed") for e in state["log"])
+
+
+async def test_an_automatic_page_check_can_be_removed_or_its_fingerprint_renamed_from_its_card(session):
+    s = session
+    await s.recorder.start(after=2)
+    page = s._page()
+    await page.click("#continue")
+    await page.wait_for_url("**/build_record2.html")
+    prompt = await until(lambda: asyncio.sleep(0, next((p for p in s.recorder.prompts if p["kind"] == "gate_added"), None)))
+    await s.recorder.answer(prompt["id"], "regate", fields={"name": "Pay page"})
+    assert steps(s) == [("CLICK", ""), ("ASSERT_PAGE", "Pay page")]
+    with s.doc.lock:
+        assert [f["name"] for f in read_fingerprints(s.doc.editor)] == ["Pay page"]
+    await s._page().go_back()
+    await s._page().wait_for_url("**/build_record.html")
+    await s._page().click("#continue")
+    await s._page().wait_for_url("**/build_record2.html")
+    second = await until(lambda: asyncio.sleep(0, next((p for p in s.recorder.prompts if p["kind"] == "gate_added"), None)))
+    assert second["exists"] and second["name"] == "Pay page"                                  # a page it knows: the same fingerprint
+    count = len(s._steps())
+    await s.recorder.answer(second["id"], "ungate")
+    assert len(s._steps()) == count - 1 and steps(s)[-1] == ("CLICK", "")
 
 
 async def test_the_calendars_clicks_become_one_pick_date_step_and_the_raw_clicks_can_come_back(site, tmp_path):

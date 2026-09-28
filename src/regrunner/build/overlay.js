@@ -35,7 +35,8 @@
   const KIND_WORDS = { button: 'button', link: 'link', field: 'text field', textbox: 'text box', dropdown: 'dropdown', checkbox: 'checkbox', radio: 'option',
     image: 'image', heading: 'heading', label: 'label', item: 'list item', cell: 'cell', text: 'text', element: 'element' };
   const NEEDS_EXPECTED = new Set(['text_is', 'text_contains', 'value', 'ticked', 'selected', 'enabled', 'gt', 'lt', 'between', 'regex', 'date_format', 'count', 'wait_text']);
-  const CHOICE_WORDS = { keep: 'Keep as variable', fixed: 'Use fixed text', rename: 'Rename', raw: 'Keep raw clicks', unflag: 'Not a side effect', dismiss: 'OK' };
+  const CHOICE_WORDS = { keep: 'Keep as variable', fixed: 'Use fixed text', rename: 'Rename', raw: 'Keep raw clicks', unflag: 'Not a side effect', dismiss: 'OK',
+    ungate: 'Remove the check' };
 
   const st = { mode: 'browse', label: '', card: null, which: null, drag: null, pos: null, rec: false, prompts: [], form: null, renaming: null, renameTo: '' };
   let host = null, root = null, picked = null, hoverEl = null, whichEls = [];

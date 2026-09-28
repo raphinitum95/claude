@@ -356,6 +356,7 @@ class Recorder:
         self._last: dict | None = None               # the last step written (for a suggestion to join a typing step)
         self._version = -1                           # the document version right after the recorder's last write
         self.recorded: list[int] = []                # the rows this recording wrote (kept right as rows move), for the summary
+        self._auto_gate: dict | None = None          # the page check added on the last arrival (a redirect right after it retargets it)
         self.summary: dict | None = None             # what the last recording wrote, once it is over (the Build tab shows it and jumps there)
 
     # -- small helpers -----------------------------------------------------------------------------------------------------------------
@@ -430,7 +431,7 @@ class Recorder:
             raise BuildError(f"Row {after} is not a step of {self._test()}.", "step", 400)
         self.cursor = after if after is not None else (steps[-1]["row"] if steps else None)
         self.on, self.count, self._widget, self._last = True, 0, None, None
-        self.recorded, self.summary = [], None
+        self.recorded, self.summary, self._auto_gate = [], None, None
         self.s.mode, self.s.pick_for = "browse", None
         if not steps:
             await self._open_first()
@@ -671,6 +672,8 @@ class Recorder:
             return row + by if isinstance(row, int) and row >= at else row
         self.cursor = moved(self.cursor)
         self.recorded = [moved(r) for r in self.recorded]
+        if self._auto_gate is not None:
+            self._auto_gate["row"] = moved(self._auto_gate["row"])
         for p in self.prompts:
             p["row"] = moved(p.get("row"))
             p["_after"] = moved(p.get("_after"))
@@ -858,11 +861,16 @@ class Recorder:
             return
         if prev is not None and url_path(prev) == url_path(url):
             return
-        if prev is None and page is self._page:
-            return
+        if prev is None:
+            return                          # a window's first page (the one recording started on, or a new window): no page check here - a new
+                                            # window's check would land before its SWITCHTOWINDOW step and look at the wrong window
         await self._propose_fingerprint(frame, page, url, p.get("heading") if isinstance(p.get("heading"), dict) else None)
 
     async def _propose_fingerprint(self, frame, page, url: str, heading: dict | None) -> None:
+        """A recorded action loaded another page: the test gets a check that it arrived there (ASSERT_PAGE with the page's fingerprint: URL
+        part + main heading, saved in ``_rr_fingerprints``, or the one already known for that URL) and the steps from here on go on a new page
+        (block) named after it.  Added straight away, as an ordinary edit (Undo, or "Remove the check" on the card beside it, takes it back);
+        a redirect straight after it (no action recorded in between) moves that same check to the page it ended on instead of adding another."""
         with self.s.doc.lock:
             existing = read_fingerprints(self.s.doc.editor)
         path = url_path(url)
@@ -876,20 +884,85 @@ class Recorder:
                 landmark = self._landmark(loc)
             except BuildError:
                 landmark = ""
-        after = self.cursor
         if known is not None:
-            prompt = {"kind": "fingerprint", "exists": True, "name": known["name"], "urlContains": known.get("urlContains") or "",
-                      "landmark": known.get("landmark") or "", "landmarkText": known.get("landmarkText") or "",
-                      "text": f"Arrived at {known['name']}.", "detail": "Add a gate so the test stops here if it is not on this page?",
-                      "choices": ["gate", "dismiss"]}
+            prompt = {"kind": "gate_added", "exists": True, "name": known["name"], "urlContains": known.get("urlContains") or "",
+                      "landmark": known.get("landmark") or "", "landmarkText": known.get("landmarkText") or ""}
         else:
             name = fingerprint_name(text, path, {f["name"].upper() for f in existing})
-            prompt = {"kind": "fingerprint", "exists": False, "name": name, "urlContains": path, "landmark": landmark, "landmarkText": text,
-                      "text": f"New page: {path}. Save it as “{name}”?",
-                      "detail": f"URL contains {path}" + (f" AND heading “{text}” shows." if landmark else "."),
-                      "choices": ["gate", "edit", "dismiss"]}
+            prompt = {"kind": "gate_added", "exists": False, "name": name, "urlContains": path, "landmark": landmark, "landmarkText": text}
+        again = self._auto_gate
+        if again is not None and again["count"] == self.count and self._step_is(again["row"], "ASSERT_PAGE"):
+            await self._retarget_gate(again, prompt)
+            return
+        after = self.cursor
         prompt.update(row=after, n=self.s._n_of(after) if after else None, _after=after)
+        applied = await self._gate(prompt, {}, new_block=True)
+        row = next(a["row"] for a in reversed(applied) if a.get("op") == "insert_step")
+        self._auto_gate = {"row": row, "count": self.count, "prompt": prompt}
+        await self._advance(row)                    # the window is on that page already: the check counts as done, and starting the new page
+                                                    # (it writes the page column of the steps above) is not an "earlier step that changed"
+        self._gate_prompt(prompt, row)
+
+    def _gate_prompt(self, prompt: dict, row: int) -> None:
+        name = prompt["name"]
+        n = self.s._n_of(row)
+        detail = (f"URL contains {prompt['urlContains']}" + (f" AND heading “{prompt['landmarkText']}” shows." if prompt.get("landmark") else ".")
+                  if not prompt.get("exists") else "The page's fingerprint was already saved.")
+        prompt.update(row=row, n=n, choices=["dismiss", "edit", "ungate"], detail=detail,
+                      text=f"New page: step {n} checks the test arrived at “{name}”, and the steps after it are on the page “{name}”.")
+        self.prompts = [p for p in self.prompts if p is not prompt]
         self._add_prompt(prompt)
+
+    def _step_is(self, row: int | None, method: str) -> bool:
+        step = next((st for st in self._steps() if st["row"] == row), None)
+        return step is not None and step["method"] == method
+
+    async def _retarget_gate(self, gate: dict, prompt: dict) -> None:
+        """A redirect right after the last page check: that check (and its page's name) now follow the page the redirect ended on."""
+        name = prompt["name"]
+        ops = [] if prompt.get("exists") else [{"op": "set_fingerprint", "name": name, "urlContains": prompt["urlContains"],
+                                                "landmark": prompt.get("landmark") or "", "landmarkText": prompt.get("landmarkText") or ""}]
+        ops.append({"op": "update_step", "test": self._test(), "row": gate["row"], "set": {"value": name, "block": name}})
+        await self._apply(ops)
+        await self._advance(gate["row"])
+        old = gate["prompt"]
+        old.clear()
+        old.update(prompt)
+        self._gate_prompt(old, gate["row"])
+
+    async def _ungate(self, prompt: dict) -> list[dict]:
+        """"Remove the check" on an automatic page check: the ASSERT_PAGE step goes (its fingerprint stays saved for later)."""
+        self._expect(prompt["row"], "ASSERT_PAGE")
+        row = prompt["row"]
+        applied = await self._apply([{"op": "delete_steps", "test": self._test(), "rows": [row]}])
+        self._shift(row + 1, -1)
+        self.recorded = [r for r in self.recorded if r != row]
+        if self.cursor == row:
+            self.cursor = row - 1 if row > 2 else None
+        if self._auto_gate is not None and self._auto_gate["row"] == row:
+            self._auto_gate = None
+        s = self.s
+        if s._runner is not None and s.cursor_row is not None and s.cursor_row >= row:
+            await self._advance(s.cursor_row - 1 if s.cursor_row > row else max(row - 1, 2))
+        return applied
+
+    async def _regate(self, prompt: dict, fields: dict) -> list[dict]:
+        """The fingerprint of an automatic page check, edited on its card: saved under its (new) name, and the check follows the name."""
+        self._expect(prompt["row"], "ASSERT_PAGE")
+        name = str(fields.get("name") or prompt["name"]).strip()
+        if not name:
+            raise BuildError("A page fingerprint needs a name.", "fingerprint", 400)
+        ops = [{"op": "set_fingerprint", "name": name, "urlContains": str(fields.get("urlContains", prompt.get("urlContains")) or ""),
+                "landmark": str(fields.get("landmark", prompt.get("landmark")) or ""),
+                "landmarkText": str(fields.get("landmarkText", prompt.get("landmarkText")) or ""),
+                **({"rename": prompt["name"]} if name.upper() != prompt["name"].upper() else {})}]
+        if name != prompt["name"]:
+            ops.append({"op": "update_step", "test": self._test(), "row": prompt["row"], "set": {"value": name}})
+        applied = await self._apply(ops)
+        s = self.s
+        if s._runner is not None and s.cursor_row is not None and s.cursor_row >= prompt["row"]:
+            await self._advance(s.cursor_row)       # (only the check's name changed: the window is where it was)
+        return applied
 
     @staticmethod
     def _landmark(loc: dict) -> str:
@@ -909,7 +982,8 @@ class Recorder:
             prompt = next((p for p in self.prompts if p["id"] == prompt_id), None)
             if prompt is None:
                 raise BuildError("That question has gone (answered already, or too old).", "prompt", 409)
-            if choice not in prompt.get("choices", []) + ["dismiss", "keep"]:
+            allowed = prompt.get("choices", []) + ["dismiss", "keep"] + (["regate"] if "edit" in prompt.get("choices", []) else [])
+            if choice not in allowed:
                 raise BuildError(f"{choice!r} is not an answer to that question.", "prompt", 400)
             applied: list[dict] = []
             if choice in ("fixed", "rename"):
@@ -918,6 +992,10 @@ class Recorder:
                 applied = await self._keep_raw(prompt)
             elif choice == "gate":
                 applied = await self._gate(prompt, fields or {})
+            elif choice == "ungate":
+                applied = await self._ungate(prompt)
+            elif choice == "regate" and prompt.get("kind") == "gate_added":
+                applied = await self._regate(prompt, fields or {})
             elif choice == "unflag":
                 self._expect(prompt["row"], "CLICK")
                 applied = await self._apply([{"op": "update_step", "test": self._test(), "row": prompt["row"], "set": {"sideEffects": False}}])
@@ -988,7 +1066,7 @@ class Recorder:
             self.cursor = row + len(raw) - 1
         return applied
 
-    async def _gate(self, prompt: dict, fields: dict) -> list[dict]:
+    async def _gate(self, prompt: dict, fields: dict, *, new_block: bool = False) -> list[dict]:
         name = str(fields.get("name") or prompt["name"]).strip()
         if not name:
             raise BuildError("A page fingerprint needs a name.", "fingerprint", 400)
@@ -1000,7 +1078,7 @@ class Recorder:
                         "landmarkText": str(fields.get("landmarkText", prompt.get("landmarkText")) or ""),
                         **({"rename": prompt["name"]} if prompt.get("exists") and name.upper() != prompt["name"].upper() else {})})
         after = prompt.get("_after")
-        ops.append(self._insert_op({"method": "ASSERT_PAGE", "value": name}, after))
+        ops.append(self._insert_op({"method": "ASSERT_PAGE", "value": name, **({"block": name} if new_block else {})}, after))
         applied = await self._apply(ops)
         row = applied[-1]["row"]
         self._shift(row)
