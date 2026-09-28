@@ -189,6 +189,7 @@ API/XML tests have `steps: []` and `blocks: []` (their editor reads `GET /api/bu
 ```
 { row: 14, n: 12, method: "SET",           // UPPER, stripped
   kind: "nav" | "act" | "input" | "check" | "save" | "wait" | "call" | "flow" | "legacy" | "other" | "empty",
+  element: true,                           // the method acts on an element (FindBy / FindBy_Value), even when none is set yet
   name: "Enter last name", nameAuto: false, autoName: "Type {DT_LastName_IN} into last name",
   block: "Trip Details", page: "",
   locator: { findBy: "xpath", value: "//input[@name='lastName']", index: 0, name: "", // name = Locator column (selectors.yaml key)

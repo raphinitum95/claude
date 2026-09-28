@@ -939,6 +939,13 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
             task.add_done_callback(lambda t, k=key: (inflight.pop(k, None), t.cancelled() or t.exception()))       # (reading the exception marks it as seen)
         return await asyncio.shield(task)
 
+    @app.get("/api/workbooks/{name}/download")
+    async def download_workbook(name: str):
+        """The workbook file as it is saved on disk, as a download (so nobody has to find it in the workbooks folder to share it).
+        A Build tab draft that is not saved yet is not in it: the Build tab offers to save first."""
+        path = mgr.resolve_workbook(name)
+        return FileResponse(path, filename=path.name, headers={"Cache-Control": "no-store"})
+
     @app.get("/api/workbooks/{name}/tests")
     async def workbook_tests(name: str, env: str | None = None):
         summary, _flows = await cached("tests", name, env, insight.summary_and_flows)

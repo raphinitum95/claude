@@ -253,3 +253,58 @@ async def test_switching_to_another_data_row_starts_the_test_again_in_the_window
     s.run("next", count=1)
     await settled(s)
     assert await s._page().locator("#chosen").inner_text() == "Max"
+    await asyncio.sleep(1.5)                                  # the switch closed the old window and opened another: that is not the person
+    assert s.state()["open"]                                  # closing it (the windowless check waits a moment and sees the new one)
+
+
+def domain_book(path: Path, domain: str) -> Path:
+    """A test with no steps yet (a new test), in a workbook whose UAT Domain is ``domain`` ("" = not set)."""
+    envs = [["Variable", "Required", "Secret", "UAT", "PROD"], ["DOMAIN", "Y", "", domain, domain]]
+    return book(path, {"Blank": []}, params={"Blank": [{"NOTE": "x"}]}, environments=envs)
+
+
+async def open_domain_session(tmp_path: Path, domain: str) -> BuildSession:
+    cfg = Config(base_dir=tmp_path)
+    cfg.timeouts.element_s = 3
+    cfg.build.headless = True
+    cfg.build.idle_close_s = 0
+    doc = BuildDocument(domain_book(tmp_path / "blank.xlsx", domain), tmp_path / "runs")
+    s = BuildSession(doc, cfg, tmp_path / "runs" / ".build" / "blank", environment="UAT", headless=True)
+    await s.start("Blank", None)
+    await settled(s)
+    return s
+
+
+async def test_a_test_without_an_open_step_opens_the_environments_domain_instead_of_a_blank_page(site, tmp_path):
+    s = await open_domain_session(tmp_path, site.rstrip("/") + "/build_pick.html")
+    try:
+        page = s._page()
+        assert page.url == site.rstrip("/") + "/build_pick.html"
+        assert s.state()["notice"] == ""
+    finally:
+        await s.close()
+
+
+async def test_with_no_domain_set_the_window_opens_blank_and_says_where_to_set_it(tmp_path):
+    s = await open_domain_session(tmp_path, "")
+    try:
+        assert s._page().url == "about:blank"
+        notice = s.state()["notice"]
+        assert "No Domain is set for UAT" in notice and "Environments" in notice
+    finally:
+        await s.close()
+
+
+def test_a_domain_without_a_scheme_is_opened_over_https():
+    from regrunner.build.session import site_url
+    assert site_url("agents.uat.example.com") == "https://agents.uat.example.com"
+    assert site_url("http://localhost:8123") == "http://localhost:8123"
+
+
+async def test_closing_the_last_build_window_closes_the_session_so_it_can_be_opened_again(session):
+    s = session
+    for page in s._open_pages():
+        await page.close()                                    # the person closes the window (the browser keeps running, windowless)
+    state = await until(lambda: asyncio.sleep(0, None if s.state()["open"] else s.state()), timeout=10)
+    assert state["error"] == "The build window was closed."
+    assert s.recorder.on is False

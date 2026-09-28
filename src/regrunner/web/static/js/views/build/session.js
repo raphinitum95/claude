@@ -5,14 +5,14 @@ import { S, rerender } from '../../state.js';
 import { html, raw, toast } from '../../util.js';
 import { icon } from '../../icons.js';
 import { api } from '../../api.js';
-import { bm, currentTest, selectedStep, effectiveBuildingWith, applyOps, refreshModel } from './actions.js';
+import { bm, currentTest, selectedStep, selectStep, effectiveBuildingWith, applyOps, refreshModel } from './actions.js';
 import { recordActs, recordInputs, recordButtons, recordPanel } from './record.js';
 
 const enc = encodeURIComponent;
 const NEXT = 5;
 
 // What this page knows about the build window of the workbook being edited (module state: it follows S.build.name).
-const ui = { name: null, st: null, since: 0, timer: null, busy: false, whichText: '', wordMenu: null, log: [] };
+const ui = { name: null, st: null, since: 0, timer: null, busy: false, whichText: '', wordMenu: null, log: [], summarySeen: null, summaryHidden: null };
 
 const path = (name, what = '') => `/api/build/session/${enc(name)}${what ? '/' + what : ''}`;
 export const sess = () => (ui.name === S.build.name ? ui.st : null);
@@ -28,7 +28,20 @@ function take(st) {
   const m = bm();
   if (m && st.modelVersion != null && st.modelVersion > m.version) refreshModel();       // the window changed a step (Use for step N)
   syncQuestion(st.question);
+  followSummary(st.record && st.record.summary, before == null);
   if (!before || before.version !== st.version || before.open !== st.open) rerender();
+}
+
+/** A recording just finished (Done, Rec, or the window closed): jump to the first step it wrote (once per recording). */
+function followSummary(summary, firstLook) {
+  if (!summary || summary.id === ui.summarySeen) return;
+  ui.summarySeen = summary.id;
+  if (firstLook) return;                                   // (an old recording from before this page looked: no jump)
+  const t = currentTest();
+  if (!t || t.id !== summary.test || !summary.rows.length) return;
+  const row = summary.rows[0];
+  S.build.pendingSel = row;
+  refreshModel().then(() => selectStep(row));
 }
 
 function syncQuestion(q) {
@@ -50,7 +63,11 @@ async function poll() {
 export function watchSession() {
   const name = S.build.name;
   if (!name) return;
-  if (ui.name !== name) { ui.name = name; ui.st = null; ui.since = 0; ui.log = []; ui.wordMenu = null; if (ui.timer) clearTimeout(ui.timer); ui.timer = null; }
+  if (ui.name !== name) {
+    ui.name = name; ui.st = null; ui.since = 0; ui.log = []; ui.wordMenu = null; ui.summarySeen = null; ui.summaryHidden = null;
+    if (ui.timer) clearTimeout(ui.timer);
+    ui.timer = null;
+  }
   if (!ui.timer) ui.timer = setTimeout(poll, ui.st ? 800 : 0);
 }
 
@@ -92,6 +109,27 @@ const selRow = () => { const s = selectedStep(); return s ? s.row : null; };
 async function runTo(row) { if (row) { try { await call('run-to-here', { row }); } catch (e) { /* shown */ } } }
 async function runStep() { const row = selRow(); if (row) { try { await call('run-step', { row }); } catch (e) { /* shown */ } } }
 async function runNext() { try { await call('run-next', { count: NEXT }); } catch (e) { /* shown */ } }
+
+/** "Pick on the page" in a step's "On which element": opens the site first when the window is not open, then picks for that step. */
+async function pickFor(row) {
+  if (row) selectStep(row);
+  if (!isOpen()) {
+    await openWindow();
+    if (!isOpen()) return;
+  }
+  try { await call('pick', { mode: 'pick', row: row || selRow() }); } catch (e) { return; }
+  toast('Click the element in the build window.', 3000);
+}
+
+/** Take back the steps the last recording wrote (one edit: Undo brings them back). */
+async function removeRecorded() {
+  const st = sess();
+  const summary = st && st.record && st.record.summary;
+  if (!summary || !summary.rows.length) return;
+  if (!window.confirm(`Remove the ${summary.count} recorded step${summary.count === 1 ? '' : 's'}? (Undo brings them back.)`)) return;
+  const applied = await applyOps([{ op: 'delete_steps', test: summary.test, rows: summary.rows }]);
+  if (applied) { ui.summaryHidden = summary.id; rerender(); }
+}
 
 async function pick() {
   const st = sess();
@@ -151,6 +189,14 @@ export const acts = {
   'build-sess-run-next': runNext,
   async 'build-sess-stop'() { try { await call('stop'); } catch (e) { /* shown */ } },
   'build-sess-pick': pick,
+  'build-sess-pick-for'(el) { pickFor(Number(el.dataset.row) || null); },
+  'build-sess-summary-show'() {
+    const st = sess();
+    const summary = st && st.record && st.record.summary;
+    if (summary && summary.rows.length) selectStep(summary.rows[0]);
+  },
+  'build-sess-summary-remove': removeRecorded,
+  'build-sess-summary-close'() { const st = sess(); ui.summaryHidden = st && st.record && st.record.summary ? st.record.summary.id : null; rerender(); },
   'build-sess-which': findMatches,
   async 'build-sess-choose'(el) { try { await call('choose', { i: Number(el.dataset.i) }); } catch (e) { /* shown */ } },
   async 'build-sess-which-close'() { try { await call('pick', { mode: 'browse', row: selRow() }); } catch (e) { /* shown */ } },
@@ -204,7 +250,8 @@ export function sessionBar(S0) {
   if (!st || !st.open) {
     return html`<div class="sess-bar">
 <button class="btn btn-sm ${ui.busy ? 'busy' : ''}" data-act="build-sess-open">${icon('globe', 13)} Open the site</button>
-<span style="font-size: 12px; color: var(--tx3)">${st && st.error ? st.error + ' ' : ''}A browser window of its own: pick elements on the page and run steps with row ${effectiveBuildingWith(t) || '–'}'s data.</span></div>`;
+<span style="font-size: 12px; color: var(--tx3)">${st && st.error ? st.error + ' ' : ''}A browser window of its own: pick elements on the page and run steps with row ${effectiveBuildingWith(t) || '–'}'s data.</span></div>
+${summaryBanner(st, t)}`;
   }
   const want = effectiveBuildingWith(t);
   const other = st.test !== t.id || (want != null && st.dataRow !== want);          // the window follows another test or data row
@@ -227,7 +274,23 @@ ${recordButtons(st, busy || other)}
 </div>
 ${st.stale && !busy ? html`<div class="bn bn-warn" style="margin: 8px 16px 0; padding: 9px 12px">${icon('warn', 14, 'color: var(--warn)')}<span style="flex: 1"><b>Earlier steps changed since they ran.</b> The window may not be where the next step expects: replay from the start to be sure.</span>
 <button class="btn btn-sm" data-act="build-sess-replay">${icon('refresh', 12)} Replay from the start</button></div>` : ''}
-${st.error ? html`<div class="bn bn-fail" style="margin: 8px 16px 0; padding: 9px 12px">${icon('warn', 14, 'color: var(--fail)')}<span>${st.error}</span></div>` : ''}`;
+${st.error ? html`<div class="bn bn-fail" style="margin: 8px 16px 0; padding: 9px 12px">${icon('warn', 14, 'color: var(--fail)')}<span>${st.error}</span></div>` : ''}
+${st.notice ? html`<div class="bn bn-warn" style="margin: 8px 16px 0; padding: 9px 12px">${icon('globe', 14, 'color: var(--warn)')}<span style="flex: 1">${st.notice}</span>
+<button class="btn btn-sm" data-act="build-open-environments">Environments</button></div>` : ''}
+${summaryBanner(st, t)}`;
+}
+
+/** What the last recording wrote, once it is over: show them, or remove them all (one edit, so Undo brings them back). */
+function summaryBanner(st, t) {
+  const summary = st && st.record && st.record.summary;
+  if (!summary || summary.id === ui.summaryHidden || !t || summary.test !== t.id || (st.record && st.record.on)) return '';
+  const n = summary.count;
+  const where = n === 1 ? `step ${summary.first}` : `steps ${summary.first}–${summary.last}`;
+  return html`<div class="bn ${n ? 'bn-pass' : ''}" style="margin: 8px 16px 0; padding: 9px 12px" data-key="rec-summary-${summary.id}">${icon(n ? 'check' : 'rec', 14, `color: var(--${n ? 'pass' : 'tx3'})`)}
+<span style="flex: 1">${n ? html`<b>Recorded ${n} step${n === 1 ? '' : 's'}</b> (${where}).` : 'Recording stopped: no steps were recorded.'}</span>
+${n ? html`<button class="btn btn-sm" data-act="build-sess-summary-show">Show them</button>
+<button class="btn btn-sm btn-ghost" data-act="build-sess-summary-remove">${icon('trash', 12)} Remove them</button>` : ''}
+<button class="icon-btn" style="width: 26px; height: 26px" data-act="build-sess-summary-close" aria-label="Hide">${icon('x', 12)}</button></div>`;
 }
 
 /** A dot on a step card: how the step went in the build window (and where the window is). */

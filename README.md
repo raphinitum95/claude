@@ -466,6 +466,10 @@ formatting is lost. Undo/redo and an autosaved draft (`runs/.build/<stem>/`) mea
 **Save** writes the real file (a timestamped backup first, `workbooks/.backups/`); a change made outside the builder
 while it is open (someone else's edit, or Excel) is offered as reload, save-anyway, or a per-row merge.
 
+**All workbooks.** The grid button at the top (or *All workbooks* at the top of the left panel) lists every workbook in
+the folder; click anywhere on a card to open it. The download button (on each card, and beside **Save to Excel**) gives
+you the workbook as a `.xlsx` file to share; with unsaved changes it offers to save them first.
+
 **Workbook map.** Every test as a card - kind, step count, a **last-run pill** (Passed/Failed/Not run), needs/provides,
 tags, its parameter sheet - tick a test on or off from here, open **Templates**, workbook-wide **Find & replace** (skips
 row 1, formulas and result columns), **Duplicate** (previews "what changes?" before it copies), or start a **New test**.
@@ -476,7 +480,9 @@ saves one - with what sets it, what uses it, and flags one that is used but noth
 with a gate icon on a block that opens behind an `ASSERT_PAGE`; step cards below it (or the same rows as an Excel-like
 **Grid**) show kind, name, side-effect and legacy flags, a problem dot, and a **failed last run** badge in place of the
 plain dot once a step has broken, so it stands out before you open it. The **inspector** on the right edits the
-selected step's name, locator, value/expected/match, save-as, timeout, on-fail and side-effects, with an ƒ **Value
+selected step's name, value/expected/match, save-as, timeout, on-fail and side-effects, and, for every step that
+acts on an element, **On which element**: how it is found (XPath, id, CSS...), the locator itself (type or paste one),
+and **Pick on the page** (opens the site first if needed), with an ƒ **Value
 builder** for computed values (date ± N, unique, a list, math, text join) that writes a real Excel formula. A step that
 **failed on its last run** gets a card of its own at the top of the inspector: the error, a thumbnail of the failure
 screenshot (click to enlarge, or **Open that run** for the full page), and - when it looks like the element could not
@@ -485,8 +491,10 @@ be found - a nudge to pick it again or replay up to it with the tools below (onc
 straight to the step. Select more than one card for a floating bar: bulk enable/disable, stop-on-fail, move to another
 block, copy/paste, or save the selection as a template.
 
-**Build window.** **Open the site** opens it in a browser window of its own (Chrome/Edge, visible), with a small pill
-on the page: **Pick**, then click an element there (the site never sees that click). The builder works out the most
+**Build window.** **Open the site** opens it in a browser window of its own (Chrome/Edge, visible), on the test's first
+Open step, or else on the environment's **Domain** (the `DOMAIN` row under *Environments*; with none set it opens blank
+and says where to set it). Closing that window yourself is noticed, so **Open the site** is offered again. A small pill
+is on the page: **Pick**, then click an element there (the site never sees that click). The builder works out the most
 stable locator that finds exactly that element (id → test id → a stable attribute → its text → its text inside its
 card → class + position), checks it on the live page, and keeps up to three others as backups; it also describes the
 element in plain words (*button "Choose" inside card "Max"*). Click a word to make it a variable (`{PLAN}`): the
@@ -504,7 +512,10 @@ time. One window per workbook (three at most); it closes itself after `build.idl
 typed text becomes `{VARIABLE}` (a password becomes `{SECRET:NAME}`, kept in `secrets.env`, never in the workbook), a
 click in another window or frame gets its own SWITCHTOWINDOW/SWITCHTOFRAME step first, and a calendar or a suggestions
 list is recognised as PICK_DATE / CHOOSE_SUGGESTION. **Check / Save / Wait until** turn a picked element straight into
-an OUTPUT/EXIST/CHECK_*/WAIT_UNTIL step, prefilled from what is actually on the page.
+an OUTPUT/EXIST/CHECK_*/WAIT_UNTIL step, prefilled from what is actually on the page. **Done** on the pill stops picking
+and recording; the Build tab then says what was recorded (*Recorded 8 steps (steps 4-11)*), jumps to the first one, and
+offers **Remove them** (Undo brings them back). Recording a test that has no steps yet starts it with `OPEN {DOMAIN}`, since
+an address typed in the browser's own address bar is not recorded.
 
 **API / XML tests.** Their own editor - steps, a request form or paste-a-cURL/Postman/template, and a response tree you
 turn into a JSONPath/XPath check with a click - with **Send now** against the draft; `{NAME}`/`{SECRET:NAME}` work the
@@ -543,7 +554,7 @@ escaped. Do not expose the port to a network.
 
 ### API (what the page uses)
 
-`GET /api/config` `GET /api/preflight[?deep=1]` `GET|POST /api/workbooks` `DELETE /api/workbooks/{name}` `GET /api/workbooks/{name}/tests[?env=]`
+`GET /api/config` `GET /api/preflight[?deep=1]` `GET|POST /api/workbooks` `DELETE /api/workbooks/{name}` `GET /api/workbooks/{name}/tests[?env=]` `GET /api/workbooks/{name}/download`
 `POST /api/workbooks/{name}/lint|plan|audit` `GET /api/workbooks/{name}/start-url` `POST /api/runs/command` `POST /api/runs`
 `GET /api/runs` `GET /api/runs/{id}` `POST /api/runs/{id}/cancel|answer|report|reveal` `GET /api/runs/{id}/events|log|selectors`
 `POST /api/runs/{id}/selectors/apply` `GET /api/auth` `POST /api/auth/login|save|cancel` `WS /ws/runs/{id}`

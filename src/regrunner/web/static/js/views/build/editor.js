@@ -153,11 +153,11 @@ function bulkBar(S) {
   const clip = S.build.clip;
   if (!ed.multi.length) {
     if (!clip) return '';
-    return html`<div style="position: absolute; left: 50%; bottom: ${ed.drawer ? 260 : 16}px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 13px; background: var(--surface3); border: 1px solid var(--line2); box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)); z-index: 5">
+    return html`<div class="bulk-bar" style="bottom: ${ed.drawer ? 260 : 16}px">
 <button class="btn btn-sm btn-ghost" data-act="build-paste-steps">${icon('copy', 13)} Paste ${clip.steps.length} step${clip.steps.length === 1 ? '' : 's'}</button></div>`;
   }
-  return html`<div style="position: absolute; left: 50%; bottom: ${ed.drawer ? 260 : 16}px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 14px; border-radius: 13px; background: var(--surface3); border: 1px solid var(--line2); box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)); z-index: 5">
-<b style="font-size: 13px">${ed.multi.length} selected</b><span style="width: 1px; height: 20px; background: var(--line2)"></span>
+  return html`<div class="bulk-bar" style="bottom: ${ed.drawer ? 260 : 16}px" role="toolbar" aria-label="Selected steps">
+<b class="bulk-count">${ed.multi.length} selected</b><span class="bulk-sep"></span>
 <button class="btn btn-sm btn-ghost" data-act="build-bulk-enable">On</button><button class="btn btn-sm btn-ghost" data-act="build-bulk-disable">Off</button>
 <button class="btn btn-sm btn-ghost" data-act="build-bulk-stop">Stop on fail</button><button class="btn btn-sm btn-ghost" data-act="build-bulk-continue">Keep going</button>
 <button class="btn btn-sm btn-ghost" data-act="build-move-block">Move to block…</button>
@@ -226,6 +226,29 @@ ${p.row ? html`<button class="btn btn-sm" data-act="build-pick-step" data-row="$
 </div>`;
 }
 
+// The legacy FindBy vocabulary (selectors/spec.py FINDBY_ALIASES), in the words the inspector shows.
+const FIND_BY = [['BY_XPATH', 'XPath'], ['BY_ID', 'id'], ['BY_CSSSELECTOR', 'CSS'], ['BY_NAME', 'name'], ['BY_LINKTEXT', 'Link text'],
+  ['BY_PARTIALLINKTEXT', 'Part of link text'], ['BY_CLASSNAME', 'Class'], ['BY_TAGNAME', 'Tag']];
+
+/** "On which element": the element's words, how it is found (FindBy) and the locator itself, both editable, and "Pick on the page" (which
+ * opens the site first when needed). Shown for every step whose action works on an element, even before it has one. */
+function elementSection(s) {
+  const loc = s.locator || {};
+  const findBy = (loc.findBy || '').toUpperCase();
+  const known = FIND_BY.some(([k]) => k === findBy);
+  const words = loc.plainWords || [];
+  return html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">On which element</span>
+${words.length ? html`<div style="display: flex; flex-wrap: wrap; gap: 5px; align-items: center">${words.map((w) => (w.role === 'name' || w.role === 'context')
+    ? (w.variable ? html`<span class="var">${icon('braces', 11)} ${w.variable}</span>` : html`<b style="font-size: 12.5px">“${w.text}”</b>`) : html`<span class="tag">${w.text}</span>`)}</div>` : ''}
+<div style="display: flex; gap: 6px; min-width: 0">
+<select class="fld" style="width: 118px; flex: none; font-size: 12px" data-change="build-step-findby" data-row="${s.row}" aria-label="How the element is found">
+${!findBy ? html`<option value="" selected>Find by…</option>` : ''}${findBy && !known ? html`<option value="${loc.findBy}" selected>${loc.findBy}</option>` : ''}
+${FIND_BY.map(([k, label]) => html`<option value="${k}" ${k === findBy ? raw('selected') : ''}>${label}</option>`)}</select>
+<input class="fld mono" style="flex: 1; min-width: 0; font-size: 12px" value="${loc.value || ''}" placeholder="//button[text()='Next'], #id, …" data-input="build-step-locator" data-row="${s.row}" data-findby="${loc.findBy || ''}" aria-label="Locator (FindBy_Value)"></div>
+<button class="btn btn-sm" style="align-self: flex-start" data-act="build-sess-pick-for" data-row="${s.row}" title="Click the element in the build window: its locator is checked on the live page">${icon('target', 13)} ${sessionOpen() ? 'Pick on the page' : 'Open the site and pick'}</button>
+${(loc.backups || []).length ? html`<span style="font-size: 12px; color: var(--tx3)">${loc.backups.length} backup locator${loc.backups.length === 1 ? '' : 's'} stored.</span>` : ''}</div>`;
+}
+
 function inspector(S, t, s) {
   if (!s) return html`<div style="padding: 20px; color: var(--tx3); font-size: 13px">No step selected.</div>`;
   return html`<div style="padding: 14px 16px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 7px">
@@ -244,11 +267,7 @@ ${s.legacy ? html`<div class="bn">${icon('lock', 14, 'color: var(--tx3)')}<span>
 <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx3)">${s.nameAuto ? 'Auto name' : html`<button class="lnk" data-act="build-name-auto" data-row="${s.row}">Use automatic name</button>`}</div></div>
 ${s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Runs this test, then carries on</span>
 <div class="field" style="min-height: 40px">${icon('api', 15, 'color: var(--k-api)')}<b>${s.call}</b><span style="flex: 1"></span><a href="${buildUrl(S.build.name, 'test', s.call)}">Open</a></div></div>` : ''}
-${s.locator && (s.locator.value || s.locator.findBy) ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">On which element</span>
-${(s.locator.plainWords || []).length ? html`<div style="display: flex; flex-wrap: wrap; gap: 5px; align-items: center">${s.locator.plainWords.map((w) => (w.role === 'name' || w.role === 'context')
-    ? (w.variable ? html`<span class="var">${icon('braces', 11)} ${w.variable}</span>` : html`<b style="font-size: 12.5px">“${w.text}”</b>`) : html`<span class="tag">${w.text}</span>`)}</div>` : ''}
-<div class="field mono" style="align-items: flex-start; font-size: 11.5px; color: var(--tx2)"><span class="tag">${s.locator.findBy || '–'}</span><span style="word-break: break-all">${s.locator.value || '–'}</span></div>
-${(s.locator.backups || []).length ? html`<span style="font-size: 12px; color: var(--tx3)">${s.locator.backups.length} backup locator${s.locator.backups.length === 1 ? '' : 's'} stored.</span>` : ''}</div>` : ''}
+${s.element || (s.locator && (s.locator.value || s.locator.findBy)) ? elementSection(s) : ''}
 ${!s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><div style="display: flex; align-items: center; gap: 8px"><span class="lbl">Value</span><span style="flex: 1"></span>
 <button class="btn btn-ghost btn-sm" style="height: 22px; font-size: 11px; padding: 0 6px" data-act="build-open-value-builder" data-row="${s.row}" title="Value builder: writes a formula">ƒ Value builder</button></div>
 <div class="field">${s.value ? html`<span style="flex-wrap: wrap; display: flex; gap: 3px">${tokenHtml(s.value)}</span>` : html`<span class="mono" style="font-size: 12px; color: var(--tx3)">(empty)</span>`}</div>

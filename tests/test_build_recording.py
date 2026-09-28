@@ -371,3 +371,63 @@ async def test_the_pills_rec_button_turns_recording_on_and_off(session):
     assert steps(s) == [("TICK", "")]
     await page.mouse.click(await pill_x(page) + 40, 31)             # (the pill is centred: "Rec" is narrower than "Rec off")
     await until(lambda: asyncio.sleep(0, not s.recorder.on))
+
+
+async def pill_right(page) -> float:
+    """Where the pill ends (its last button is Done)."""
+    return await page.evaluate("""() => { const host = document.querySelector('rr-build-overlay');
+      for (let x = innerWidth - 1; x > 0; x -= 2) { if (document.elementFromPoint(x, 31) === host) return x; } return -1; }""")
+
+
+async def test_the_pills_done_stops_recording_and_leaves_a_summary_of_what_was_recorded(session):
+    s = session
+    page = s._page()
+    await s.recorder.start(after=2)
+    await page.click("#firstName")
+    await page.keyboard.type("Jane")
+    await page.click("#offers")                                  # (leaving First name records it)
+    await quiet(s, 2)
+    await s.broadcast()
+    right = await pill_right(page)
+    assert right > 0
+    await page.mouse.click(right - 22, 31)                    # Done
+    await until(lambda: asyncio.sleep(0, not s.recorder.on))
+    summary = s.state()["record"]["summary"]
+    assert summary["count"] == 2 and summary["test"] == "Rec"
+    assert [st["n"] for st in s._steps() if st["row"] in summary["rows"]] == [summary["first"], summary["last"]] == [2, 3]
+    assert s.overlay_state()["label"] == "✓ Recorded 2 steps (steps 2-3)" and s.mode == "browse"
+
+
+async def test_done_while_picking_just_goes_back_to_browsing(session):
+    s = session
+    page = s._page()
+    await s.set_mode("pick", None)
+    await page.mouse.click(await pill_right(page) - 22, 31)
+    await until(lambda: asyncio.sleep(0, s.mode == "browse"))
+    assert s.recorder.on is False and s.state()["record"]["summary"] is None
+
+
+async def test_recording_an_empty_test_starts_with_an_open_step_on_the_domain(site, tmp_path):
+    envs = [["Variable", "Required", "Secret", "UAT", "PROD"], ["DOMAIN", "Y", "", site.rstrip("/") + "/build_record.html", ""]]
+    cfg = Config(base_dir=tmp_path)
+    cfg.timeouts.element_s = 3
+    cfg.build.headless = True
+    cfg.build.idle_close_s = 0
+    doc = BuildDocument(book(tmp_path / "new.xlsx", {"Rec": []}, params={"Rec": [{"NOTE": ""}]}, environments=envs), tmp_path / "runs")
+    s = BuildSession(doc, cfg, tmp_path / "runs" / ".build" / "new", environment="UAT", headless=True)
+    await s.start("Rec", None)
+    await settled(s)
+    try:
+        page = s._page()
+        assert page.url.endswith("/build_record.html")        # the window opened on the Domain
+        await s.recorder.start()
+        await page.click("#offers")
+        await quiet(s, 2)
+        assert [(st["method"], st["value"]) for st in s._steps()] == [("OPEN", "{DOMAIN}"), ("TICK", "")]
+        await s.recorder.stop()
+        assert s.state()["record"]["summary"]["count"] == 2
+        s.run("to", row=s._steps()[-1]["row"])                # what was recorded replays on its own
+        state = await settled(s)
+        assert results(state) == [(1, "PASSED"), (2, "PASSED")]
+    finally:
+        await s.close()

@@ -704,6 +704,7 @@ def parse_test_sheet(editor: WorkbookEditor, sheet: str, variables: set[str], *,
             here_flow = [dict(f) for f in flow]
         steps.append({
             "row": r, "n": len(steps) + 1, "method": method, "kind": _step_kind(method, legacy, save_as, match),
+            "element": method in ELEMENT_METHODS,                  # (acts on an element: the inspector always offers "On which element")
             "name": name, "nameAuto": name_auto, "autoName": generated, "block": grid.raw(r, BLOCK_COLUMN) if stored else "",
             "page": grid.raw(r, "PAGE"),
             "locator": {"findBy": grid.raw(r, "FINDBY"), "value": locator, "index": index, "name": locator_name, "backups": backups,

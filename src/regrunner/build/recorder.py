@@ -46,6 +46,7 @@ WIDGET_CLICKS = 15                                    # a calendar is given up (
 WIDGET_S = 120.0                                      # ...or this long
 SUGGESTION_S = 30.0                                   # a click on a suggestion this soon after typing makes one CHOOSE_SUGGESTION step
 MAX_PROMPTS = 12
+FINISHED_LABEL_S = 8.0                                # the pill says what a recording wrote for this long after it stops
 DATE_FORMATS = ("dd/mm/yyyy", "d/m/yyyy", "yyyy-mm-dd", "dd-mm-yyyy", "dd.mm.yyyy", "d mmm yyyy", "dd mmm yyyy", "d mmmm yyyy", "mmm d, yyyy",
                 "dd/mm/yy")
 _NUMBER = re.compile(r"-?\d[\d,]*(\.\d+)?")
@@ -354,6 +355,8 @@ class Recorder:
         self._widget: dict | None = None             # clicks through a calendar, not written yet
         self._last: dict | None = None               # the last step written (for a suggestion to join a typing step)
         self._version = -1                           # the document version right after the recorder's last write
+        self.recorded: list[int] = []                # the rows this recording wrote (kept right as rows move), for the summary
+        self.summary: dict | None = None             # what the last recording wrote, once it is over (the Build tab shows it and jumps there)
 
     # -- small helpers -----------------------------------------------------------------------------------------------------------------
     @property
@@ -402,7 +405,7 @@ class Recorder:
 
     def state(self) -> dict:
         return {"on": self.on, "cursor": {"row": self.cursor, "n": self.s._n_of(self.cursor)} if self.cursor else None, "count": self.count,
-                "prompts": [self._public(p) for p in self.prompts], "widget": bool(self._widget)}
+                "prompts": [self._public(p) for p in self.prompts], "widget": bool(self._widget), "summary": self.summary}
 
     @staticmethod
     def _public(prompt: dict) -> dict:
@@ -427,7 +430,10 @@ class Recorder:
             raise BuildError(f"Row {after} is not a step of {self._test()}.", "step", 400)
         self.cursor = after if after is not None else (steps[-1]["row"] if steps else None)
         self.on, self.count, self._widget, self._last = True, 0, None, None
+        self.recorded, self.summary = [], None
         self.s.mode, self.s.pick_for = "browse", None
+        if not steps:
+            await self._open_first()
         runner = self.s._runner
         session = runner.session if runner is not None else None
         pages = self.s._open_pages()
@@ -452,12 +458,46 @@ class Recorder:
         for page in self.s._open_pages():
             self._urls[id(page)] = page.url
 
+    async def _open_first(self) -> None:
+        """An empty test recorded from the window the build session opened on the Domain: its first step opens the Domain, so the recorded
+        test runs on its own (an address typed in the browser's address bar is not recorded)."""
+        domain = await asyncio.to_thread(self.s.domain)
+        if not domain:
+            return
+        applied = await self._apply([self._insert_op({"method": "OPEN", "page": "Chrome", "value": "{DOMAIN}"}, None)])
+        row = next(a["row"] for a in applied if a.get("op") == "insert_step")
+        self.cursor = row
+        self.count += 1
+        self.recorded.append(row)
+        self.s.emit("build_session_step_recorded", test=self._test(), step=self.s._n_of(row), row=row, method="OPEN", name="Open {DOMAIN}",
+                    what="open")
+
+    def finish(self) -> None:
+        """Recording is over (the pill's Done or Rec, the Build tab's Rec, or the window closed): keep what it wrote, as step numbers now."""
+        if not self.on:
+            return
+        self.on = False
+        numbers = {st["row"]: st["n"] for st in self._steps()}
+        rows = sorted({r for r in self.recorded if r in numbers})
+        self.summary = {"id": uuid.uuid4().hex[:8], "test": self._test(), "count": len(rows), "rows": rows,
+                        "first": numbers[rows[0]] if rows else None, "last": numbers[rows[-1]] if rows else None, "at": time.monotonic()}
+
+    def just_finished(self) -> bool:
+        return self.summary is not None and time.monotonic() - self.summary["at"] < FINISHED_LABEL_S
+
+    def finished_label(self) -> str:
+        n = self.summary["count"] if self.summary else 0
+        if not n:
+            return "Recording stopped: no steps recorded"
+        where = f"step {self.summary['first']}" if n == 1 else f"steps {self.summary['first']}-{self.summary['last']}"
+        return f"✓ Recorded {n} step{'s' if n != 1 else ''} ({where})"
+
     async def stop(self) -> None:
         if not self.on:
             return
         async with self.lock:
             await self._flush_widget()
-            self.on = False
+            self.finish()
         self.s.emit("log", level="info", message=f"recording stopped: {self.count} step{'s' if self.count != 1 else ''} recorded")
         self.s.touch()
         await self.s.broadcast()
@@ -630,6 +670,7 @@ class Recorder:
         def moved(row):
             return row + by if isinstance(row, int) and row >= at else row
         self.cursor = moved(self.cursor)
+        self.recorded = [moved(r) for r in self.recorded]
         for p in self.prompts:
             p["row"] = moved(p.get("row"))
             p["_after"] = moved(p.get("_after"))
@@ -651,6 +692,7 @@ class Recorder:
         row = rows[-1]
         for r in rows:
             self._shift(r)
+        self.recorded.extend(rows)
         self.cursor = row
         self.count += len(rows)
         await self._follow(switches)
@@ -962,6 +1004,8 @@ class Recorder:
         applied = await self._apply(ops)
         row = applied[-1]["row"]
         self._shift(row)
+        if self.on:
+            self.recorded.append(row)
         if self.cursor is not None and after is not None and self.cursor == after:
             self.cursor = row
         self.s.emit("build_session_step_recorded", test=self._test(), step=self.s._n_of(row), row=row, method="ASSERT_PAGE",

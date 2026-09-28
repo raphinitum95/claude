@@ -112,3 +112,116 @@ async def test_new_workbook_dialog_creates_a_workbook_ready_to_build(web):
     finally:
         await browser.close()
         await pw.stop()
+
+
+async def test_all_workbooks_is_one_click_away_and_the_whole_card_opens_a_workbook(web, build_copy):
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}")
+    try:
+        await js_until(page, "document.querySelectorAll('main a.disp').length >= 2")
+        await page.locator('header a[href="#/build/all"]').click()
+        await js_until(page, "location.hash === '#/build/all' && document.querySelectorAll('.wb-card').length >= 2")
+        names = await page.locator(".wb-card b").all_inner_texts()
+        assert build_copy in names and "mock.xlsx" in names
+        assert "Open now" in await page.locator(".wb-card", has_text=build_copy).inner_text()
+        await page.locator(".wb-card", has_text="mock.xlsx").click(position={"x": 90, "y": 20})     # anywhere on the card, not only its name
+        await js_until(page, "location.hash === '#/build/mock.xlsx' && document.querySelectorAll('main a.disp').length >= 2")
+        await page.locator('.b-rail a[href="#/build/all"]').click()                                 # the rail has the way back too
+        await js_until(page, "location.hash === '#/build/all'")
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_the_download_button_gives_the_saved_workbook_as_a_file(web, build_copy):
+    async with web.aclient() as c:
+        r = await c.get(f"/api/workbooks/{build_copy}/download")
+        assert r.status_code == 200 and r.content == (web.root / "workbooks" / build_copy).read_bytes()
+        assert "attachment" in r.headers["content-disposition"] and build_copy in r.headers["content-disposition"]
+        assert (await c.get("/api/workbooks/nope.xlsx/download")).status_code == 404
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}")
+    try:
+        await js_until(page, "!!document.querySelector('header [data-act=\"build-download\"]')")
+        async with page.expect_download() as info:
+            await page.locator('header [data-act="build-download"]').click()
+        download = await info.value
+        assert download.suggested_filename == build_copy
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_a_step_that_acts_on_an_element_always_offers_on_which_element_and_a_typed_locator_is_saved(web, build_copy):
+    async with web.aclient() as c:
+        r = await c.post(f"/api/build/workbooks/{build_copy}/edit", headers=HEADERS,
+                         json={"ops": [{"op": "insert_step", "test": "FlowA", "step": {"method": "CLICK"}}]})
+        assert r.status_code == 200, r.text
+        row = r.json()["applied"][0]["row"]
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 0")
+        await page.locator('[data-act="build-pick-block"]').last.click()                         # (the new last step is in the last block)
+        await page.locator(f'.scard [data-act="build-pick-step"][data-row="{row}"]').click()
+        box = page.locator(f'input[data-input="build-step-locator"][data-row="{row}"]')
+        await js_until(page, f"!!document.querySelector('input[data-input=\"build-step-locator\"][data-row=\"{row}\"]')")
+        assert await box.input_value() == ""
+        assert await page.locator(f'[data-act="build-sess-pick-for"][data-row="{row}"]').inner_text() == "Open the site and pick"
+        await box.fill("#go-now")
+        await box.blur()
+
+        async def locator_of_step():
+            async with web.aclient() as c:
+                model = (await c.get(f"/api/build/workbooks/{build_copy}")).json()
+            step = next(s for s in next(t for t in model["tests"] if t["id"] == "FlowA")["steps"] if s["row"] == row)
+            return step["locator"]
+        deadline = asyncio.get_running_loop().time() + 10
+        while (await locator_of_step())["value"] != "#go-now":
+            if asyncio.get_running_loop().time() > deadline:
+                raise AssertionError("the typed locator did not reach the workbook")
+            await asyncio.sleep(0.2)
+        assert (await locator_of_step())["findBy"] == "BY_CSSSELECTOR"                              # guessed from what was typed
+        await page.locator(f'select[data-change="build-step-findby"][data-row="{row}"]').select_option("BY_XPATH")
+        deadline = asyncio.get_running_loop().time() + 10
+        while (await locator_of_step())["findBy"] != "BY_XPATH":
+            if asyncio.get_running_loop().time() > deadline:
+                raise AssertionError("the FindBy change did not reach the workbook")
+            await asyncio.sleep(0.2)
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_the_new_workbook_dialog_says_production_or_not_production_on_each_environment(web):
+    pw, browser, page = await open_ui(web, "/#/build/all")
+    try:
+        await page.get_by_role("button", name=re.compile("New workbook")).first.click()
+        await js_until(page, "!!document.querySelector('[data-change=\"build-nw-env-prod\"]')")
+        labels = await page.locator('.modal tbody label').all_inner_texts()
+        assert [x.strip() for x in labels] == ["Not production", "Not production", "Production"]            # QA, UAT, PROD
+        assert "is it production?" in (await page.locator(".modal thead").inner_text()).lower()
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_the_selected_bar_wraps_inside_a_narrow_window(web, build_copy):
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await page.set_viewport_size({"width": 760, "height": 800})
+        await js_until(page, "document.querySelectorAll('.scard').length > 1")
+        page_width = await page.evaluate("document.documentElement.scrollWidth")
+        boxes = page.locator('.scard input[data-act="build-toggle-multi"]')
+        await boxes.nth(0).click()
+        await boxes.nth(1).click()
+        await js_until(page, "!!document.querySelector('.bulk-bar')")
+        bar = await page.locator(".bulk-bar").bounding_box()
+        column = await page.locator(".bulk-bar").evaluate("el => el.offsetParent.getBoundingClientRect().toJSON()")
+        assert bar["x"] >= column["x"] and bar["x"] + bar["width"] <= column["x"] + column["width"] + 1      # nothing cut off at the sides
+        assert await page.evaluate("document.documentElement.scrollWidth") <= page_width                      # the bar never widens the page
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()

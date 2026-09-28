@@ -110,11 +110,12 @@ function route() {
   } else if (buildTest || buildVars || buildScenario || buildWb || location.hash === '#/build') {
     S.route = { name: 'build', id: null };
     A.closeRun();
-    if (buildTest) AB.openBuild(decodeURIComponent(buildTest[1]), 'test', decodeURIComponent(buildTest[2]));
+    if (location.hash === '#/build/all') AB.openWorkbookList();
+    else if (buildTest) AB.openBuild(decodeURIComponent(buildTest[1]), 'test', decodeURIComponent(buildTest[2]));
     else if (buildVars) AB.openBuild(decodeURIComponent(buildVars[1]), 'variables');
     else if (buildScenario) AB.openBuild(decodeURIComponent(buildScenario[1]), 'scenario', decodeURIComponent(buildScenario[2]));
     else if (buildWb) AB.openBuild(decodeURIComponent(buildWb[1]), 'map');
-    else { const name = AB.defaultBuildName(); if (name) AB.openBuild(name, 'map'); }
+    else { const name = AB.defaultBuildName(); if (name) AB.openBuild(name, 'map'); else AB.openWorkbookList(); }
   } else if (resultsBatch || resultsTest || resultsCompare || location.hash === '#/results') {
     S.route = { name: 'results', id: null };
     A.closeRun();

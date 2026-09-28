@@ -141,6 +141,7 @@ body { margin: 0 }
 .bn-fail { background: var(--fail-soft); border-color: var(--fail-line) }
 .bn-acc { background: var(--acc-soft); border-color: var(--acc-line) }
 .bn-wait { background: var(--wait-soft); border-color: var(--wait-line) }
+.bn-pass { background: var(--pass-soft); border-color: var(--pass-line) }
 .waitline { display: flex; gap: 9px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--wait-soft); border: 1px solid var(--wait-line); font-size: 12.5px; color: var(--tx) }
 .bn b { font-weight: 650 }
 
@@ -256,3 +257,19 @@ details.more > summary::-webkit-details-marker { display: none }
 .rec-dot.live, .rec-on .rec-dot { background: var(--fail) }
 .btn.rec-on { color: var(--fail); background: var(--fail-soft); border-color: var(--fail-line, var(--fail)) }
 .which-num { width: 20px; height: 20px; flex: none; border-radius: 50%; background: var(--warn); color: #06121C; display: grid; place-items: center; font: 700 11px var(--f-mono) }
+
+/* --- Build tab: All workbooks page (#/build/all) and the "selected" bar --------------------------------------------------------- */
+.wb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 12px }
+.wb-card { position: relative; display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 16px; box-shadow: none; cursor: pointer }
+.wb-card:hover { border-color: var(--line2) }
+.wb-card.on { border-color: var(--acc-line) }
+.wb-card-open { position: absolute; inset: 0; border-radius: inherit }            /* the whole card opens the workbook... */
+.wb-card-open:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px }
+.wb-card-btn { position: relative; z-index: 1 }                                 /* ...and a button on it only does its own job */
+.bulk-bar { position: absolute; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; flex-wrap: wrap; justify-content: center;
+  align-items: center; gap: 4px 6px; padding: 7px 8px; width: max-content; max-width: calc(100% - 24px); border-radius: 13px;
+  background: var(--surface3); border: 1px solid var(--line2); box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)) }
+.bulk-bar .btn { white-space: nowrap }
+.bulk-bar .bulk-count { font-size: 13px; padding: 0 6px; white-space: nowrap }
+.bulk-bar .bulk-sep { width: 1px; height: 20px; background: var(--line2) }
+@media (max-width: 900px) { .bulk-bar .bulk-sep { display: none } .bulk-bar .bulk-count { flex-basis: 100%; text-align: center } }
