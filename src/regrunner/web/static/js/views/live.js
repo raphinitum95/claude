@@ -7,6 +7,7 @@ import { counts, timing, lanes as laneList, pending as pendingList, finished as 
   entryActive, batchLanes, batchRows, batchTotals, batchFailedSoFar, wbColor } from '../runstate.js';
 import { banner, btn } from './shell.js';
 import { browserOf, browserChip } from '../browsers.js';
+import { scenarioLive } from './scenario_lanes.js';
 
 export const baseName = (p) => String(p || '').split(/[\\/]/).pop().replace(/\.(xlsx|xlsm)$/i, '');
 export const SHOTS = { every_step: 'Every step', on_failure: 'Failures only', off: 'No screenshots' };
@@ -250,6 +251,7 @@ ${statCard(html`<span class="dot ${active ? 'pulse' : ''}" style="width: 12px; h
 ${statCard(icon('dashed', 24), ['var(--pend-soft)', 'var(--tx2)'], 'Pending', c.pending, `${num(c.queuedSteps)} steps waiting`)}
 ${statCard(icon('passc', 24), ['var(--pass-soft)', 'var(--pass)'], 'Passed', c.passedTests, passedTests.length ? `${num(passedTests.reduce((a, t) => a + t.total, 0))} steps · ${dur(passedTests.reduce((a, t) => a + (t.duration || 0), 0))}` : 'no test finished yet')}
 ${statCard(icon('failc', 24), ['var(--fail-soft)', 'var(--fail)'], 'Failed', c.failedTests + c.otherTests, `${c.failedSteps ? `${plural(c.failedSteps, 'failing step')} in ${failedIds.join(', ')}` : 'no failing steps'}${c.notRunTests ? ` · ${c.notRunTests} not run (browser crashed)` : ''}`, c.failedSteps ? 'var(--fail)' : '')}</div>
+${scenarioLive(run)}
 ${lanes.length ? html`<div><div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px"><h2 class="ttl">Now running</h2>
 <span class="chip mono">${lanes.length} of ${run.workers} workers</span><span style="font-size: 12.5px; color: var(--tx3); margin-left: auto">Screenshots update after every step</span></div>
 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 20px">${lanes.map((t) => laneCard(S, run, t))}</div></div>` : ''}

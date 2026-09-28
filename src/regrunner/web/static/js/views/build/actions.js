@@ -17,6 +17,7 @@ export const blockIndexForN = (test, n) => Math.max(0, test.blocks.findIndex((b)
 export function buildUrl(name, screen, testId) {
   const n = enc(name);
   if (screen === 'variables') return `#/build/${n}/variables`;
+  if (screen === 'scenario' && testId) return `#/build/${n}/scenario/${enc(testId)}`;
   if (screen === 'test' && testId) return `#/build/${n}/test/${enc(testId)}`;
   return `#/build/${n}`;
 }
@@ -46,7 +47,8 @@ export async function openBuild(name, screen = 'map', testId = null) {
   const switching = b.name !== name;
   if (switching) { const kw = b.keywords; Object.assign(b, freshBuild(), { name, keywords: kw }); }
   const prevTest = b.testId;
-  b.screen = screen; b.testId = testId;
+  b.screen = screen; b.testId = screen === 'scenario' ? null : testId;
+  b.scenario = screen === 'scenario' ? testId : null;       // (P12: the scenario board's scenario name)
   if (screen === 'test' && testId !== prevTest) b.ed = freshEditor();
   b.error = null;
   remember(name);

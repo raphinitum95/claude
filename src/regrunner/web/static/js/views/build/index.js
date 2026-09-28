@@ -6,6 +6,7 @@ import { buildRail } from './rail.js';
 import { workbookMap, variableMap } from './workbook.js';
 import { testEditor } from './editor.js';
 import { buildUrl } from './actions.js';
+import { scenarioBoard } from './scenario.js';
 
 function envSeg(S, m) {
   const names = m.environments.names;
@@ -27,6 +28,7 @@ export function buildHeader(S) {
   const status = m.status;
   const middle = html`<a href="${buildUrl(b.name, 'map')}" class="trunc" style="font-size: 13px; color: var(--tx3); text-decoration: none">${m.name}</a>
 ${b.screen === 'test' && b.testId ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp" style="font-size: 16px; font-weight: 700">${b.testId}</span>` : ''}
+${b.screen === 'scenario' && b.scenario ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700">${b.scenario}</span>` : ''}
 ${b.screen === 'variables' ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp" style="font-size: 16px; font-weight: 700">Variables</span>` : ''}
 <span style="flex: 1"></span>${envSeg(S, m)}`;
   const right = html`
@@ -57,6 +59,7 @@ export function buildView(S) {
     return html`<div class="app-body"><main class="main"><div class="page"><b>Could not open ${b.name}.</b><p style="color: var(--tx2)">${b.error.message}</p></div></main></div>`;
   }
   if (b.screen === 'test') return testEditor(S);
+  if (b.screen === 'scenario') return scenarioBoard(S);
   if (b.screen === 'variables') return html`<div class="app-body">${buildRail(S)}${variableMap(S)}</div>`;
   return html`<div class="app-body">${buildRail(S)}<main class="main scroll" style="overflow: auto">${workbookMap(S)}</main></div>`;
 }

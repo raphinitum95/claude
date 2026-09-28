@@ -2,6 +2,7 @@
 import { html, raw } from '../../util.js';
 import { icon } from '../../icons.js';
 import { buildUrl, bm } from './actions.js';
+import { scenarioCards } from './scenario.js';
 
 const KIND_ICON = { web: 'grid', api: 'api', xml: 'xml' };
 const KIND_LABEL = { web: 'Website', api: 'API', xml: 'XML' };
@@ -46,6 +47,7 @@ ${m.tests.length === 0 ? html`<div style="border: 1.5px dashed var(--line2); bor
 <div style="color: var(--tx3); display: inline-flex">${icon('grid', 26)}</div><div style="font-weight: 650; margin-top: 8px">No tests yet</div>
 <div style="font-size: 12.5px; color: var(--tx2); margin-top: 2px">Add one to start building.</div></div>` : ''}
 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px">${web.map((t) => testCard(S, t))}${other.map((t) => testCard(S, t))}</div>
+${m.tests.length ? scenarioCards(S) : ''}
 </div>`;
 }
 

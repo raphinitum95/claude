@@ -43,7 +43,33 @@ def list_tests(workbook: Workbook, cfg: Config, flows: list | None = None) -> li
             "steps": len(planned), "asks": sum(method in ("ASK_USER", "PROMPT", "ASK") for _, _, method in planned),
             "needs": getattr(runtime, "needs", []),          # empty parameters the test uses that nothing in it sets: [{param, cell, rows, steps, set_by}]
         })
+    tests.extend(scenario_entries(workbook, tests))
     return tests
+
+
+def scenario_entries(workbook: Workbook, tests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The workbook's concurrency scenarios (``_rr_scenarios``, engine/scenario.py) as entries of the test table: picking one runs all its lanes
+    together.  ``runnable`` is False (with ``problem``) when it cannot run as written."""
+    if not any(name.upper() == "_RR_SCENARIOS" for name in workbook.data.sheets):
+        return []
+    from .engine.scenario import ScenarioError, plan_scenario
+    from .workbook.scenarios import read_scenarios
+    from .workbook.writer import WorkbookEditor
+    editor = WorkbookEditor.open(workbook.path)
+    steps = {t["id"]: t["steps"] for t in tests}
+    out = []
+    for d in read_scenarios(editor):
+        entry = {"id": d["name"], "kind": "scenario", "sheet": "", "title": d["name"], "scenario": "", "description": d.get("notes", ""),
+                 "enabled": d["enabled"], "runnable": True, "iteration": 1, "iterations": 1, "tags": ["scenario"], "steps": 0, "asks": 0, "needs": [],
+                 "lanes": [{"key": l["key"], "test": l["test"], "label": l["label"], "data_row": l["dataRow"]} for l in d["lanes"]]}
+        try:
+            plan = plan_scenario(editor, workbook, d, workbook._discovered or workbook.discover())
+            entry["steps"] = sum(steps.get(c.base_id, 0) for c in plan.lanes)
+            entry["lanes"] = [{**lane, "id": c.id, "test": c.base_id} for lane, c in zip(entry["lanes"], plan.lanes)]
+        except ScenarioError as err:
+            entry["runnable"], entry["problem"] = False, str(err)
+        out.append(entry)
+    return out
 
 
 def summary_and_flows(workbook: Workbook, cfg: Config) -> tuple[dict[str, Any], list]:

@@ -150,9 +150,11 @@ def adjust_order(order, plans: list[ScenarioPlan]) -> None:
         union = sorted({d for i in ids for d in order.deps.get(i, []) if d not in ids})
         for i in ids:
             order.deps[i] = list(union)
-            data = order.data.get(i)
-            if data:
-                order.data[i] = {k: [p for p in v if p not in ids] for k, v in data.items() if any(p not in ids for p in v)}
+            kept = {k: [p for p in v if p not in ids] for k, v in order.data.get(i, {}).items() if any(p not in ids for p in v)}
+            if kept:
+                order.data[i] = kept
+            else:
+                order.data.pop(i, None)
         order.after_ui = [t for t in order.after_ui if t not in ids]
         for other, deps in order.deps.items():                       # an API test that goes "after every UI test" waits for the lanes too: fine,
             if other not in ids and any(d in ids for d in deps):     # but never for only some of them (they finish together anyway)

@@ -29,8 +29,9 @@ export function freshResults() {
 export function freshBuild() {
   return {
     name: null, model: null, loading: false, error: null,
-    screen: 'map',            // 'map' | 'variables' | 'test'
+    screen: 'map',            // 'map' | 'variables' | 'test' | 'scenario'
     testId: null,
+    scenario: null,           // the scenario board's scenario (views/build/scenario.js)
     keywords: null,            // GET /api/build/keywords, loaded once and kept across workbooks
     selVariable: null,
     env: '',                  // '' = the workbook's own default (Global!Environment)

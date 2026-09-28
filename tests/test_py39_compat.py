@@ -11,7 +11,8 @@ from tests.workbook_factory import build_workbook
 SRC = Path(__file__).resolve().parents[1] / "src" / "regrunner"
 PRIMITIVES = {"Event", "Lock", "Queue", "Semaphore", "Condition"}
 CONSTRUCTED_INSIDE_A_COROUTINE = {("engine/throttle.py", "__init__"), ("engine/schedule.py", "__init__"),           # Throttle / Schedule / Pool / Engine are only built inside execute_many()
-                                  ("engine/pool.py", "__init__"), ("engine/runner.py", "__init__")}
+                                  ("engine/pool.py", "__init__"), ("engine/runner.py", "__init__"),
+                                  ("engine/scenario.py", "__init__")}          # Coordinator: made inside run_scenario
 
 
 def test_asyncio_primitives_are_created_inside_coroutines():

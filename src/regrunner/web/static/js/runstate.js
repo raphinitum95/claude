@@ -12,6 +12,7 @@ export function newRun(id) {
     warnings: [], startedMs: null, lastMs: null, endedMs: null, duration: null, shares: [],
     tests: {}, order: [], log: [], summary: null, artifacts: null, error: '', exitCode: null, started: false, asks: {}, askFocus: null,
     waits: {},                                               // workers waiting on purpose right now (a login code, a slow page, a re-run after a crash)
+    scenarios: [],                                           // concurrency scenarios in this run (run_started): {name, lanes, syncs, orders, shared_sign_in}
   };
 }
 
@@ -20,6 +21,7 @@ function newTest(id, o = {}) {
     id, title: o.title || id, description: o.description || '', scenario: o.scenario || '', total: o.total_steps || 0,
     done: 0, failed: 0, status: 'QUEUED', worker: null, startedMs: null, endedMs: null, duration: null, step: null,
     shot: null, box: null, shotStep: 0, fails: [], review: [], attempt: 1, error: '', vars: [], waitsFor: o.waits_for || [],
+    lane: o.lane || null, syncs: [],                          // a lane of a concurrency scenario, and what happened at its sync points
   };
 }
 
@@ -47,6 +49,7 @@ export function apply(run, e) {
       run.params = e.params || null;
       run.shares = e.shares || [];                           // the other runs that use the same workers
       run.warnings = e.warnings || [];
+      run.scenarios = e.scenarios || [];
       run.tests = {};
       run.order = [];
       run.log = [];
@@ -138,6 +141,12 @@ export function apply(run, e) {
       pushLog(run, e.ts, 'WAIT', 'var(--warn)', `${e.test || 'run'}${e.worker != null ? ' on W' + e.worker : ''}: ${e.message || ''}`);
       if (t && e.code === 'infra_rerun') { t.status = 'QUEUED'; t.done = 0; t.failed = 0; t.fails = []; t.step = null; }     // it starts over: not finished
       break;
+    case 'scenario_sync':                                  // a lane of a concurrency scenario at a sync point / order marker
+      if (!t) break;
+      t.syncs.push({ item: e.sync || '', kind: e.kind || '', role: e.role || '', state: e.state || '', message: e.message || '', atMs: at,
+        waiting: e.waiting || [], ended: e.ended || [], waited_s: e.waited_s ?? null });
+      pushLog(run, e.ts, 'SYNC', e.state === 'timeout' ? 'var(--fail)' : e.state === 'arrived' || e.state === 'waiting' ? 'var(--warn)' : 'var(--acc)', `${t.id}: ${e.message || e.state}`);
+      break;
     case 'worker_resumed':
       delete run.waits[e.wait];
       pushLog(run, e.ts, 'GO', 'var(--tx3)', `${e.test || 'run'} carries on${e.waited_s != null ? ` after ${fmtSecs(e.waited_s)}` : ''}`);
@@ -202,7 +211,7 @@ export function workerSummary(run) {
   const waits = waitsOf(run);
   const waitingTests = new Set(waits.map((w) => w.test));
   const running = lanes(run).filter((t) => !waitingTests.has(t.id)).length;
-  const kinds = { login_code: 'for a login code', slow_page: 'for a slow page', infra_rerun: 'to re-run a test after a browser crash' };
+  const kinds = { login_code: 'for a login code', slow_page: 'for a slow page', infra_rerun: 'to re-run a test after a browser crash', scenario_sync: 'at a scenario sync point' };
   const byKind = {};
   for (const w of waits) byKind[w.code] = (byKind[w.code] || 0) + 1;
   const parts = [];

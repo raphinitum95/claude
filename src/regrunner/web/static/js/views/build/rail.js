@@ -3,6 +3,7 @@
 import { html } from '../../util.js';
 import { icon } from '../../icons.js';
 import { buildUrl, bm } from './actions.js';
+import { scenarioRailItems } from './scenario.js';
 
 const KIND_ICON = { web: 'grid', api: 'api', xml: 'xml' };
 
@@ -38,6 +39,7 @@ ${S.workbooks.map((w) => html`<button class="rail-item" data-act="build-open-wb"
 <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 6px 2px"><span class="lbl">Tests</span>
 <button class="btn btn-ghost btn-sm" style="height: 22px; padding: 0 5px" data-act="build-new-test" aria-label="New test">${icon('plus', 12)}</button></div>
 ${m.tests.map((t) => testRow(S, t))}</div>
+${scenarioRailItems(S)}
 <div style="display: flex; flex-direction: column; gap: 2px"><span class="lbl" style="padding: 6px 6px 2px">Data</span>
 ${params.map((p) => html`<button class="rail-item" data-act="build-open-grid" data-sheet="${p.name}">${icon('table', 14)}<span class="trunc" style="flex: 1">${p.name}</span>
 ${dataRowsOf(p.name) != null ? html`<span class="mono" style="font-size: 11px; color: var(--tx3)">${dataRowsOf(p.name)}</span>` : ''}</button>`)}

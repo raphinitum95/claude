@@ -50,6 +50,7 @@ from .results_api import register_results_routes
 from .run_batch import register_batch_routes
 from .templates_api import register_templates_routes
 from .refactor_api import register_refactor_routes
+from .scenario_api import register_scenario_routes
 
 STATIC = Path(__file__).parent / "static"
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._ -]+")
@@ -344,8 +345,14 @@ class RunManager:
             if pick.all:
                 chosen = [c for c in cases if c.runnable]
             else:
-                chosen = select_cases(cases, RunOptions(workbook=wb_path, tests=pick.tests or None,
-                                                        tags=[pick.tag] if pick.tag and not pick.tests else None), cfg)
+                from ..engine.scenario import ScenarioError, pick as pick_scenarios
+                options = RunOptions(workbook=wb_path, tests=pick.tests or None, tags=[pick.tag] if pick.tag and not pick.tests else None)
+                try:
+                    scenarios, rest = pick_scenarios(wb, options, cases) if pick.tests else ([], options.tests)   # (a named scenario runs all its lanes)
+                except ScenarioError as err:
+                    raise SelectionError(str(err)) from err
+                chosen = [] if rest == [] else select_cases(cases, RunOptions(workbook=wb_path, tests=rest, tags=options.tags), cfg)
+                chosen += [lane for plan in scenarios for lane in plan.lanes]
             if not chosen:
                 raise SelectionError("No tests selected. Pick at least one test.")
         except SelectionError as err:
@@ -724,6 +731,7 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
     register_results_routes(app, mgr)                       # /api/results/*: causes, trend, block map, compare (web/results_api.py)
     register_templates_routes(app, mgr, build_store)        # /api/build/templates*: the shared template library (web/templates_api.py)
     register_refactor_routes(app, mgr, build_store)         # duplicate/find-replace/merge (web/refactor_api.py)
+    register_scenario_routes(app, mgr, build_store)         # /api/build/workbooks/{name}/scenarios*: concurrency scenarios (web/scenario_api.py)
     wb_cache: dict[tuple, Any] = {}
 
     # -- request guard -------------------------------------------------------------------------------
