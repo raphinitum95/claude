@@ -148,7 +148,7 @@ class TestRunner:
                  cfg: Config, bus: EventBus, run_dir: Path, selector_map: SelectorMap,
                  cancel: asyncio.Event, planned_rows: list[int], worker: int = 0, harvest=None,
                  devices: dict | None = None, attempt: int = 1, throttle=None, asker=None, visible: bool = False, shared: dict | None = None,
-                 pool: VariablePool | None = None, pw=None, call_stack: tuple = (), base_id: str = "", side_effects: str = "run"):
+                 pool: VariablePool | None = None, pw=None, call_stack: tuple = (), base_id: str = "", side_effects: str = "run", lane=None):
         self.workbook, self.case, self.cfg, self.bus = workbook, case, cfg, bus
         self.run_dir, self.selector_map, self.cancel = run_dir, selector_map, cancel
         self.planned_rows = planned_rows
@@ -193,6 +193,8 @@ class TestRunner:
         self._branch_skipped = 0                                  # planned steps an IF (or a loop with nothing to repeat) left out
         self.side_effects = side_effects if side_effects in SIDE_EFFECT_MODES else "run"   # SIDE_EFFECTS=Y steps: "ask" in a build-mode replay (P08)
         self._hard_stop = ""                                      # a failed step that ends the test (a page gate, a blocked side effect): why
+        self.lane = lane                                          # a lane of a concurrency scenario (engine/scenario.py LaneHook): waits at its sync points
+        self._lane_stop = ""                                      # why the scenario stopped this lane (it gave up waiting for the others)
 
     def hidden(self) -> list[str]:
         """The secrets to mask, longest first (short ones would mask ordinary words)."""
@@ -330,6 +332,14 @@ class TestRunner:
                         off[row] = empty
                     row += 1
                     continue
+                if self.lane is not None:                        # a scenario's sync point / order marker before this step: wait for the other lanes
+                    why = await self.lane.before_step(row, self.notice, self.timing)
+                    if self.cancel.is_set():
+                        result.status, stop_reason = "CANCELLED", "cancelled"
+                        break
+                    if why:
+                        self._lane_stop = stop_reason = why
+                        break
                 self._seq += 1
                 seq = self._seq
                 if step.method in ("BREAK", "STOP"):
@@ -340,6 +350,8 @@ class TestRunner:
                 self._branch, self._iteration = None, None
                 record = await self._execute(runtime, step, seq, off)
                 self._seq = max(self._seq, self._call_last)       # a called test's steps took the numbers after this one
+                if self.lane is not None:
+                    self.lane.stepped()
                 if self.session.infra or self._call_stop[0] == "infra":
                     result.infra = self.session.infra or self._call_stop[1]      # the machine, not the site: this attempt says nothing about the application
                     stop_reason = "the browser stopped working"
@@ -402,6 +414,8 @@ class TestRunner:
                     result.status, result.error = "ERROR", (blocked if result.blocked == blocked and blocked.startswith("Blocked") else f"The site did not load. {blocked}")
                 elif result.captcha:
                     result.status, result.error = "ERROR", result.captcha
+                elif self._lane_stop:
+                    result.status, result.error = "ERROR", self._lane_stop
                 elif executed == 0:
                     result.status, result.error = "ERROR", "No executable steps (check blnExecute/parameter flags)"
                 else:
@@ -414,6 +428,8 @@ class TestRunner:
         except Exception as err:                                  # a runner bug must not take the run down
             result.status, result.error = "ERROR", f"{type(err).__name__}: {err}"
         finally:
+            if self.lane is not None:                             # the other lanes stop waiting for this one now, not after its browser has closed
+                await self.lane.finish(result.status)
             await self._finish(started)
         return result
 

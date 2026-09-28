@@ -952,15 +952,16 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
                 else "inputoutput" if u == "INPUTOUTPUT" else "other")
         sheets.append({"name": n, "hidden": editor.is_hidden(n), "role": role})
 
+    from .scenarios import board, scenario_problems                   # (P12: concurrency scenarios, _rr_scenarios)
     model = {
         "name": editor.path.name, "version": version, "environment": chosen_env, "globals": {k: _jsonable(v) for k, v in globals_.items()},
         "sheets": sheets, "tests": tests, "variables": sorted(var_index.values(), key=lambda v: v["label"].lower()),
-        "environments": environments, "fingerprints": fingerprints, "scenarios": [], "problems": [],
+        "environments": environments, "fingerprints": fingerprints, "scenarios": board(editor, tests), "problems": [],
         "problemCounts": {"error": 0, "warning": 0, "info": 0}, "status": status or {},
     }
     if with_problems:
         from ..lint import builder_problems
-        attach_problems(model, builder_problems(model))
+        attach_problems(model, builder_problems(model) + scenario_problems(model))
     for t in model["tests"]:
         t.pop("_needs", None)
     return model

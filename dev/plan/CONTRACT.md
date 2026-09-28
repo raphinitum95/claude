@@ -102,7 +102,22 @@ Each is a plain table: row 1 = headers (exactly these, case-insensitive on read)
 - `UrlContains`: text the URL must contain (may use `{DOMAIN}` etc.). `Landmark`: a locator (same syntax as `FindBy_Value`, `css=`/`xpath=`/
   `text=` prefixes allowed) that must be visible. `LandmarkText`: optional text the landmark must contain. Both URL and landmark must hold.
 
-**`_rr_scenarios`** (reserved for P12): P12 defines the columns and writes them here before building on them.
+**`_rr_scenarios`** (P12, Q35/Q36; `workbook/scenarios.py`): `Scenario | Item | Name | Lane | Test | DataRow | Block | Then | ThenBlock | Timeout | Execute | Notes`,
+one row per item, the rows of one scenario share its `Scenario` name (case-insensitive):
+- `Item = scenario`: `Execute` Y/N (blank = Y: a run of the workbook with no tests named includes it; a run by tag never does), `Timeout` = how
+  long a lane waits at a sync point / order marker, in seconds **without any lane it waits for starting or finishing a step** (blank = 120),
+  `Notes` = what it is for. Optional: a scenario with only lane rows is enabled with the defaults.
+- `Item = lane`: `Lane` = its letter (`A`..`Z`, unique), `Test` = the test sheet, `DataRow` = the Params row (API test: its data row) it runs
+  with (blank = the test's first enabled row; a row whose blnExecute is N runs anyway: the scenario chose it), `Name` = a label ("agent Ana").
+- `Item = sync`: "all wait here". One row per lane in it, all with the same `Name`; `Block` = the lane waits **after** that block (blank =
+  before its first step). `Timeout` overrides the scenario's.
+- `Item = order`: "A before B". `Lane`'s `Block` finishes (blank = the whole lane) before `Then`'s `ThenBlock` starts (blank = its first step).
+- Blocks are named by title (1.5), `Title#2` for the second block with the same title. An API lane has no blocks: only blank ends.
+- A scenario's name must not be a sheet name (a run is started by naming it). A lane runs as the test id `"<scenario> · <lane>"`.
+- Runtime rules (`engine/scenario.py`): the lanes start together on **one** worker (one browser, a context each); a lane that ends (passed,
+  failed, stopped, crashed) counts as having reached every point it had left; a lane that gives up waiting stops with ERROR; lanes are never
+  re-run one by one (retries / captcha / crash re-runs do not apply; a crash is NOT_RUN with that said). Two lanes signing in with the same
+  one-time-code key get different 30 s windows (`totp.reserve_window`, already per key); the run says so beforehand.
 
 Sheet names starting `_rr_` are never tests, Params or anything the legacy runner reads.
 
@@ -149,7 +164,7 @@ number within the test (section rows and empty rows are not steps). Rows are the
   globals: { Environment: "UAT", ... },                           // Global sheet as written (formulas as "=...")
   sheets: [ { name, hidden, role } ],                             // role: test | params | datasheets | global | environments | inputoutput | runner | other
   tests: [Test], variables: [Variable], environments: Environments, fingerprints: [Fingerprint],
-  scenarios: [],                                                  // P12
+  scenarios: [Scenario],                                          // P12, 2.9
   problems: [Problem], problemCounts: { error, warning, info },
   status: Status }
 ```
@@ -248,6 +263,22 @@ Fingerprint  { name: "Payment page", urlContains: "/purchase/payment", landmark:
 `externalChange`: the file on disk changed since the builder opened it (Q29): offer reload (drops the draft) or save anyway (`force`).
 `locked`: Excel has it open (`~$name.xlsx`): saving answers 423 "Close it in Excel to save".
 
+### 2.9 `Scenario` (P12)
+```
+{ name: "Two agents edit one policy", enabled: true, timeout: 120 | null, timeoutUsed: 120, notes: "",
+  lanes: [ { key: "A", test: "PostDeparture", dataRow: 3 | null, usesRow: 3, label: "agent Ana", kind: "web" | "api" | "xml" | "",
+             found: true, sheet, dataLabel: "", dataEnabled: true, steps: 214,
+             blocks: [ { ref: "Save" | "Start#2", title, kind, start, end, count, firstRow, lastRow, gate, sideEffects } ] } ],
+  syncs: [ { name: "Sync 1", timeout: null, points: [ { lane: "A", block: "Edit address" } ] } ],          // block "" = before its first step
+  orders: [ { name: "A saves first", timeout: null, first: { lane: "A", block: "Save" }, then: { lane: "B", block: "Save" } } ],
+  sharedSignIn: [ ["A", "B"] ],                                    // lanes whose GET_GOOGLE_TOKEN uses the same key (compared by hash)
+  problems: [ { severity, kind, message, lane? } ] }
+```
+Problem kinds (also in `Workbook.problems`, with `test: ""` and `scenario: <name>`): `scenario_unknown_test`, `scenario_bad_data_row`,
+`scenario_unknown_lane`, `scenario_unknown_block`, `scenario_sync_one_lane`, `scenario_order_same_lane`, `scenario_deadlock` (waits that could
+never all be met: a cycle through sync lines and order markers), `scenario_same_data_row`, `scenario_one_lane`, `scenario_name_taken`,
+`scenario_shared_sign_in` (info). An `error` one makes a run of the scenario refuse to start with its message.
+
 ---
 
 ## 3. Server endpoints (`web/build_api.py`, all under `/api/build/`)
@@ -334,8 +365,16 @@ sends to the existing `/edit`; the merge endpoint re-diffs against disk itself a
 | `GET /api/build/workbooks/{name}/duplicate-candidates?newName=<name>` | | `{rows: [{kind: name\|domain\|text, label, find, replace, whole}]}`: seed rows for "What changes?" (Q26) - `replace` is left `""` for the person to fill in except `name` |
 | `POST /api/build/workbooks/{name}/merge` | `{picks: {"<test>:<row>": "theirs"\|"mine"}, version}` | `{model, applied}`. Re-runs `diff("disk")` itself; only `kind: "changed"` hits picked `"theirs"` become `update_step` ops (an added/removed row needs reload or save-anyway instead) |
 
-Reserved for later phases (they add them in their own modules, same prefix):
-scenarios `/api/build/workbooks/{name}/scenarios*` (P12). Runs and batches stay under `/api/runs`, `/api/batches` (P05/P06).
+**Scenarios** (P12, `web/scenario_api.py`'s `register_scenario_routes`; edits are `set_scenario` / `delete_scenario` ops through `/edit`, 3.1):
+
+| Method + path | Body | Answer |
+|---|---|---|
+| `GET /api/build/workbooks/{name}/scenarios?env=` | | `{scenarios: [Scenario]}` (2.9, from the draft) |
+| `GET /api/build/workbooks/{name}/scenarios/{scenario}/runs?limit=5` | | `{runs: [{runId, when, status, environment, lanes: [{id, key, label, test, status, error, passed, failed, skipped, syncs}]}]}` newest first |
+
+A scenario is **run** like a test: `POST /api/runs` (and `regrunner run --tests`) with its name (or a lane's id: the whole scenario runs) in
+`tests`; `GET /api/workbooks/{name}/tests` lists it with `kind: "scenario"`, `lanes`, and `runnable: false` + `problem` when it cannot run.
+Runs and batches stay under `/api/runs`, `/api/batches` (P05/P06).
 One build document per workbook per server (`BuildStore`); a run of the same workbook uses its own copy of the file, so they coexist.
 `create_app` captures `register_build_routes`'s returned `BuildStore` and passes it to `register_templates_routes` /
 `register_refactor_routes`, so a template insert, a find/replace or a merge goes through the very same `BuildDocument`
@@ -378,6 +417,13 @@ API / XML ops (P10, `build/api_builder.OPS`, added through `builder.EXTRA_OPS`; 
 | `api_set_value` | `test, row, column, value` | one cell of the row (column added when missing) |
 | `api_use_template` | `test, row, location, file, format?, mappings: [{placeholder, column? \| value?}]` | template cells + `Replace` rows; a placeholder another sheet already maps keeps its row, and this row's cell for that column becomes `=<column><row>` or the value |
 
+Scenario ops (P12, `workbook/scenarios.OPS`, added through `builder.EXTRA_OPS`):
+
+| op | fields | effect |
+|---|---|---|
+| `set_scenario` | `scenario: {name, enabled?, timeout?, notes?, lanes, syncs, orders}` (2.9 without the derived fields), `rename?: old name` | the scenario's rows of `_rr_scenarios` are replaced (a new one goes at the end; the sheet is created hidden). 409 `exists` for a name taken; refused: a sheet's name, `·` or `/` in the name, lane keys that are not letters or repeat, a time limit under 5 s |
+| `delete_scenario` | `name` | its rows go; 404 when there is none |
+
 ---
 
 ## 4. Events (new types go through `events.py`, `runstate.js`, `reporting/from_events.py`)
@@ -396,5 +442,5 @@ about a step, `step` and `row` like `step_started`. Secrets never appear in any 
 | `popup_dismissed` | `test, step, row, appeared (bool)` | P07 `DISMISS_IF_SHOWN` |
 | `side_effect_paused` / `side_effect_blocked` | `test, step, row, name, environment` | P07/P08 (paused in build replays, blocked on production) |
 | `backup_locator_suggestion` | `test, step, row, locator, matches, screenshot` | P07 on a primary miss |
-| `scenario_sync` | `scenario, lane, sync, reached, waiting` | P12 |
+| `scenario_sync` | `test` (the lane's id), `scenario, lane, sync, kind` (sync / order), `role` (sync / first / then), `state` (arrived / waiting / released / done / ended / timeout), `reached, waiting, ended, message, [waited_s]` | P12; `run_started` also carries `scenarios` and each lane test's `lane`; results.json tests carry `lane` + `syncs` |
 | `build_session_*` | `build_session_started`, `_step_recorded`, `_replay_progress`, `_closed` | P08/P09 (build-session stream, not a run) |

@@ -29,7 +29,7 @@ Short doesn't mean incomplete: always include failures, risks, required actions 
    Reports are shared with a QA team (`publish.dir`).
 5. **Python 3.9 must keep working** (`requires-python >= 3.9`; the work computer uses 3.9). Create `asyncio.Event/Lock/Queue`
    inside coroutines only (guarded by `tests/test_py39_compat.py`). Annotations use `from __future__ import annotations`.
-6. **Run only the tests your change touches** (section 5). The full suite is 953 tests / 40+ min: only when the user asks.
+6. **Run only the tests your change touches** (section 5). The full suite is 988 tests / 40+ min: only when the user asks.
    Always tell the user which tests you ran.
 7. **Do not edit the user's workbooks** (`workbooks/*.xlsx`). If a cell is wrong, tell the user which cell and why.
 8. **Changes to server code** (`src/regrunner/web/app.py` or anything it imports at server start) **need the user to restart the UI**.
@@ -94,6 +94,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Value builder (computed values: date ± N, unique, pick from list, math, text join - Q23), a new Excel function | `workbook/formula.py` (`@function`), `web/static/js/views/build/dialogs.js` (`valueBuilderDialog`), `views/build/actions.js` (`refreshValueBuilderFormula` builds the formula string; it is written via the existing `update_step`/`set_cell` ops, no new backend) | `test_formula.py` (fast) |
 | API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates; `{NAME}` / `REQUEST_BODY` / JSONPath + XPath paths / XML (SOAP) templates / greater_than-between-matches checks | `workbook/api.py`, `workbook/api_template.py`, `workbook/api_paths.py`, `engine/api_runner.py` (`prepare_body`, `fetch`, `read_response`) | `test_api_tests.py`, `test_api_purchase_flavour.py`, `test_api_paths_and_xml.py` |
 | Build tab API / XML editor (form, Send now, response tree with "this item" / "item where", cURL, Postman, templates; `api_*` ops) | `build/api_builder.py`, `web/build_apitest.py` (`/api/build/api/*`), `web/static/js/views/build/api_editor.js`; CONTRACT.md 1.6 | `test_api_builder.py` (Send now hits the mock APIs), `test_web_api_builder.py`. **Restart UI** for api_builder/build_apitest changes |
+| Concurrency scenarios (Q35/36): `_rr_scenarios` table, lanes (a test, or one test twice with its own data row) run together on one worker, sync lines / order markers, a failed lane releases the others, per-lane results, shared sign-in codes; the Build tab's scenario board; live / finished lanes | `workbook/scenarios.py` (table, board model, problems, deadlock check, `set_scenario`/`delete_scenario` ops), `engine/scenario.py` (`pick`, `LaneCase`, `Coordinator`, `run_scenario`), `engine/runner.py` (`_load_and_plan`, worker → `run_scenario`, `run_one`/`record`, `run_case(lane=)`), `engine/schedule.py` (groups), `engine/test_runner.py` (`lane.before_step`), `web/scenario_api.py`, `views/build/scenario.js`, `views/scenario_lanes.js`, `insight.py` (`scenario_entries`), `web/app.py` (`RunManager._validate`) | `test_scenarios.py` (fast), `test_scenario_run.py` (mock site `scenario_policy.html`, `okta.html`), `test_web_scenario.py`. **Restart UI** for scenario_api / app.py / insight changes |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
 | Workers, several workbooks at once, joining a run, progress, shutdown/cancel | `engine/runner.py`, `engine/pool.py`, `engine/inbox.py`, `engine/diagnostics.py` | `test_multi_run.py`, `test_progress_and_parked_worker.py`, `test_shutdown.py`, `test_py39_compat.py` |
 | WAF 403/429, cool-down, pacing per site | `engine/throttle.py`, `engine/session.py` (`raise_if_blocked`), `engine/runner.py` (`run_case`) | `test_waf.py`, `test_web_paused_banner.py` |
@@ -178,6 +179,9 @@ src/regrunner/
     resources.py   402  resources.jsonl sampler (CPU, free memory, swap, browsers' memory, loop lag; stdlib, psutil if present), machine_info, runner_version
     settle.py 61 · enabled.py 97 · keys.py 87 · outcome.py 94 · order.py 243 · schedule.py 72 · pool.py 100
     inbox.py 115 · throttle.py 71 · captcha.py 65 · ask.py 118 · failure_capture.py 449 · api_runner.py 343 · diagnostics.py 17
+    scenario.py    386  concurrency scenarios (P12): pick (named / lane id / Execute=Y), LaneCase ("<scenario> · <lane>"), adjust_order (lanes never
+                        wait for each other), Coordinator (sync points / order markers, ended = reached, time limit = no step by the lanes waited
+                        for), run_scenario (every lane at once on one worker, never re-run one by one)
   workbook/
     model.py 812 (Workbook, TestCase, TestRuntime, prepare_row, value_of, plan) · sheet.py 262 · formula.py 770 · textfmt.py 156
     variables.py 339 (VariablePool, environment table, secret_value, {NAME} substitute, IF conditions, flow_map of IF/loops)
@@ -187,6 +191,8 @@ src/regrunner/
     templates.py 274 (P11: the shared template library, templates.xlsx; save_as_template, match_variables, insert_template_ops - all
                   compose existing ops, no new op kind) · refactor.py 151 (P11: find_replace_preview, duplicate_candidates, merge_ops -
                   same: hits/candidates the caller turns into set_cell/update_step ops, never writes a workbook itself)
+    scenarios.py 526 (P12: `_rr_scenarios` read/write, blocks as anchors (`Title#2`), `resolve` -> Points (rows), `deadlock`, shared sign-in
+                  by key hash, `board` = Workbook.scenarios, `scenario_problems`, `set_scenario`/`delete_scenario` in builder.EXTRA_OPS)
   build/        the Build tab's live browser window (P08; the UI server runs it, never a run): session.py (BuildSession: headed browser + overlay
                 on every context, pick -> locator checked with the engine's selectors, word -> {VARIABLE}, replays with TestRunner's own steps,
                 BuildAsker for the side-effect pause, stale check; SessionStore: one per workbook, 3 max), api_builder.py (P10: API/XML
@@ -213,14 +219,18 @@ src/regrunner/
     templates_api.py  /api/build/templates* + /api/build/workbooks/{name}/templates/insert (P11, register_templates_routes: one line in
                   create_app, needs register_build_routes's returned BuildStore so an insert shares the workbook's undo/draft with every
                   other edit)
+    scenario_api.py  /api/build/workbooks/{name}/scenarios* (P12, register_scenario_routes: one line in create_app, same shared BuildStore):
+                  the board and a scenario's last runs per lane (`scenario_runs`, plain paths); edits are set_scenario ops through /edit
     refactor_api.py  duplicate/find-replace/merge routes (P11, register_refactor_routes: one line in create_app, same shared BuildStore);
                   none of it is a new op kind - find/replace and "what changes?" resolve to set_cell ops, merge to update_step ops
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
-    static/js/views/{shell,newrun,live,results,modals}.js
+    static/js/views/{shell,newrun,live,results,modals,scenario_lanes}.js   (scenario_lanes: a scenario's lanes side by side, live and finished, P12)
     static/js/views/build/  the Build tab: {api,actions,state (in ../../state.js),rail,workbook (map + variable map),editor,dialogs,index (header+screen dispatcher),
                   session (P08: build window strip, pick panel, which-one, side-effect dialog; polls /api/build/session/<wb>),
                   record (P09: Rec / Check / Save / Wait until buttons, the check card, the recorder's prompts),
-                  api_editor (P10: the editor of an api/xml test, dispatched from editor.js's testEditor)}.js
+                  api_editor (P10: the editor of an api/xml test, dispatched from editor.js's testEditor),
+                  scenario (P12: `#/build/<wb>/scenario/<name>` board: lanes x blocks grid split by sync-line columns, order-marker chips,
+                  inspector, last runs; the map's Scenarios cards and the rail's Scenarios list)}.js
     static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen),batch,test,compare,index (header+screen dispatcher)}.js;
                   results.js stays the single finished-run page opened from Run (`#/run/:id`); `#/results...` is the separate browsable tab
 
@@ -232,7 +242,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            83 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            86 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -246,8 +256,8 @@ Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv`
 |---|---|---|
 | One file | `.venv/bin/pytest -q tests/test_page_ready.py` | seconds to ~1 min |
 | One test | `.venv/bin/pytest -q tests/test_web_ui.py -k theme` | |
-| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 607 tests, ~6 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
-| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 953 tests, 40+ min |
+| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 635 tests, ~6 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
+| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 988 tests, 40+ min |
 
 - Marker `browser` = needs Playwright (module-level `pytestmark` or per test); `realworkbook` = needs `workbooks/UAT_AEM_Travelex Regression_v9.1.xlsx` (skips otherwise).
 - Pure-logic files (all fast): `test_workbook_roundtrip -k "not real"`, `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
@@ -411,6 +421,20 @@ way to remove a sheet yet - a real P01 gap, surfaced as a plain 400 `unsupported
 workbook (decomposes into existing ops too, but was left to a later session: `add_test` + repeated `insert_step`/`add_variable`/`set_cell`
 from the JS side, same pattern as the template insert).
 
+P12 (concurrency scenarios) PR open: a scenario = rows of the hidden `_rr_scenarios` table (CONTRACT.md 1.4 / 2.9): lanes (a test, or one test
+again with its own data row), sync lines ("all wait here", after a named block) and order markers ("A before B"). Blocks, not rows, are the
+anchors (rows move when steps are inserted; `Title#2` for a repeated title). A run that names the scenario (or one lane id, as "re-run failed"
+does; a plain run includes those with Execute=Y) runs every lane as an ordinary test (`LaneCase`, id `"<scenario> · <lane>"`: own events,
+evidence folder, result) - but the pool hands them to **one** worker together (`Schedule` groups), each in its own browser context, so a sync can
+never wait for a lane that has no worker. `TestRunner(lane=)` calls `before_step(row)` before each step: it waits there on purpose
+(`worker_waiting` code `scenario_sync`, `timing.span("wait","scenario")`). A lane that ends counts as reached everywhere (failure never hangs the
+others); a wait gives up after the time limit **with no step started/finished by the lanes waited for** (the lane stops, ERROR). Lanes are never
+re-run one by one. Two lanes sharing a TOTP key already get different windows (`totp.reserve_window` is per key); the run and the board say so.
+The Run tab lists scenarios (`insight.scenario_entries`, `kind: "scenario"`); `RunManager._validate` expands them too. Not built: arrows between
+blocks on the board (order markers are chips on both ends, like P04's cards-not-graph simplification), drag to place a sync line (the inspector's
+per-lane "after <block>" selects do it), a scenario section in the HTML report (results.json has `lane` + `syncs`; the report lists lanes as
+tests), re-running a whole scenario automatically after a crash. Unverified: two headed lanes on the work computer (one Chrome, two contexts).
+
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
@@ -452,6 +476,8 @@ Gotchas:
   row for the same key with another column (it takes the key away from the other sheets); reuse the existing row's column (`api_builder`).
 - A secret header's value typed straight into a sheet (legacy `DT_apiKey`) is shown as `••••••` by the API editor; the builder writes
   `{SECRET:NAME}` for new ones so the value lives in secrets.env.
+- Scenario lanes share one worker's browser (a context each) and one worker number: the live view's worker cards show both lanes on the same W.
+  A lane id contains " · " (never "/": ids travel in URL paths); `select_cases` alone does not know scenarios - call `engine/scenario.pick` first.
 - `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
   narrow window clips it instead of pushing the header wider than the viewport (see the `Run` tab's version tag vs. the `Build` tab's breadcrumb).
 

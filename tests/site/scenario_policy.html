@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Policy P-7</title></head>
+<body>
+<h1>Policy P-7</h1>
+<p>Agent: <span id="agent"></span> · version <span id="version">…</span></p>
+<label>Address <input id="address"></label>
+<button id="save" type="button">Save changes</button>
+<div id="out"></div>
+<script>
+  // Two agents open the same policy; the second to save gets "Changed by another user" (server.py SHARED_POLICY).
+  const who = new URLSearchParams(location.search).get('agent') || '?';
+  document.getElementById('agent').textContent = who;
+  let base = null;
+  fetch('/bin/scenario/open?agent=' + encodeURIComponent(who)).then((r) => r.json()).then((d) => {
+    base = d.version;
+    document.getElementById('version').textContent = String(d.version);
+  });
+  document.getElementById('save').addEventListener('click', () => {
+    fetch('/bin/scenario/save?agent=' + encodeURIComponent(who) + '&base=' + base).then((r) => r.json()).then((d) => {
+      const msg = document.createElement('p');
+      msg.id = 'msg';
+      msg.textContent = d.message;
+      document.getElementById('out').appendChild(msg);          // (appears only once the answer is in)
+    });
+  });
+</script>
+</body>
+</html>

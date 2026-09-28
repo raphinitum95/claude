@@ -21,6 +21,11 @@ FLAKY = {"block": 0, "seen": 0}
 OKTA: dict = {"secret": "", "used": set(), "seen": []}
 
 
+# A stand-in for one policy that two agents edit at the same time (``scenario_policy.html``, concurrency scenarios): its version, and who did
+# what in which order.  Saving from a page that opened an older version is refused, like a real "changed by another user" check.
+SHARED_POLICY: dict = {"version": 1, "log": []}
+
+
 # A stand-in for the policy API (API tests): what the last request looked like, so tests can see exactly what was sent.
 API_SEEN: dict = {"headers": {}, "body": None, "path": "", "count": 0}
 POLICY = {"transactionStatus": "Success", "detailResponse": {"policyDetail": {
@@ -151,6 +156,20 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(403, {"errorCode": "E0000068", "errorSummary": "Invalid Passcode/Answer", "passCode": code})
             OKTA["used"].add(code)
             return self._json(200, {"status": "SUCCESS"})
+        if self.path.startswith("/bin/scenario/"):
+            from urllib.parse import parse_qs, urlparse
+            query = parse_qs(urlparse(self.path).query)
+            agent = (query.get("agent") or ["?"])[0]
+            if self.path.startswith("/bin/scenario/open"):
+                SHARED_POLICY["log"].append(("open", agent))
+                return self._json(200, {"version": SHARED_POLICY["version"]})
+            base = int((query.get("base") or ["0"])[0] or 0)
+            if base != SHARED_POLICY["version"]:
+                SHARED_POLICY["log"].append(("refused", agent))
+                return self._json(200, {"message": "Changed by another user"})
+            SHARED_POLICY["version"] += 1
+            SHARED_POLICY["log"].append(("saved", agent))
+            return self._json(200, {"message": "Saved"})
         if self.path.startswith("/bin/forever"):
             import time
             time.sleep(120)                                    # never, as far as a test is concerned

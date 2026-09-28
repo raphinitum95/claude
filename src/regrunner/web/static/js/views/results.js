@@ -7,6 +7,7 @@ import { strip, groupReview, reviewTotal, finalVars } from '../runstate.js';
 import { banner, btn } from './shell.js';
 import { baseName, envChip, runBanners, SHOTS, variablesCard, sharesStrip } from './live.js';
 import { browserOf, browserChip } from '../browsers.js';
+import { scenarioFinished } from './scenario_lanes.js';
 
 const BAD = new Set(['FAILED', 'ERROR']);
 
@@ -179,6 +180,7 @@ ${[['Passed', passedT, 'var(--pass)'], ['Failed', failedT, 'var(--fail)'], ['Err
 <div style="font-size: 12.5px; color: var(--tx2); line-height: 1.55">${n > 1 && r.workers > 1
     ? html`Running the ${n} tests one by one would have taken <b class="mono" style="color: var(--tx)">${dur(seq)}</b>. ${r.workers} workers made it <b class="mono" style="color: var(--acc)">${speedup.toFixed(1)}×</b> faster.`
     : n > 1 ? 'The tests ran one after another on a single worker.' : 'A single test, so there was nothing to run in parallel.'}</div></section></div>
+${scenarioFinished(r, id)}
 <div class="split" style="--side-w: 372px">
 <section class="card" style="padding: 20px 0 0; overflow: hidden; min-width: 0">
 <div style="display: flex; align-items: center; gap: 12px; padding: 0 22px 16px; flex-wrap: wrap"><h2 class="ttl">Tests</h2><span style="font-size: 12.5px; color: var(--tx3)">Failed first, then longest</span>

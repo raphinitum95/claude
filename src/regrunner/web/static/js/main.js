@@ -15,12 +15,13 @@ import * as A from './actions.js';
 import * as AB from './views/build/actions.js';
 import * as BS from './views/build/session.js';
 import * as BA from './views/build/api_editor.js';
+import * as SC from './views/build/scenario.js';
 import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
-const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...AR.acts };
-const changes = { ...A.changes, ...AB.changes, ...BA.changes };
-const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...AR.inputs };
+const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...AR.acts };
+const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes };
+const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...SC.inputs, ...AR.inputs };
 
 const baseTitle = document.title;
 const appEl = () => document.getElementById('app');
@@ -95,6 +96,7 @@ function route() {
   const mBatch = location.hash.match(/^#\/batch\/([A-Za-z0-9._-]+)/);
   const buildTest = location.hash.match(/^#\/build\/([^/]+)\/test\/([^/]+)$/);
   const buildVars = location.hash.match(/^#\/build\/([^/]+)\/variables$/);
+  const buildScenario = location.hash.match(/^#\/build\/([^/]+)\/scenario\/([^/]+)$/);
   const buildWb = location.hash.match(/^#\/build\/([^/]+)$/);
   const resultsBatch = location.hash.match(/^#\/results\/batch\/([A-Za-z0-9._-]+)$/);
   const resultsTest = location.hash.match(/^#\/results\/test\/([A-Za-z0-9._-]+)\/([^/]+)$/);
@@ -105,11 +107,12 @@ function route() {
   } else if (mBatch) {
     S.route = { name: 'batch', id: mBatch[1] };
     A.openBatch(mBatch[1]);
-  } else if (buildTest || buildVars || buildWb || location.hash === '#/build') {
+  } else if (buildTest || buildVars || buildScenario || buildWb || location.hash === '#/build') {
     S.route = { name: 'build', id: null };
     A.closeRun();
     if (buildTest) AB.openBuild(decodeURIComponent(buildTest[1]), 'test', decodeURIComponent(buildTest[2]));
     else if (buildVars) AB.openBuild(decodeURIComponent(buildVars[1]), 'variables');
+    else if (buildScenario) AB.openBuild(decodeURIComponent(buildScenario[1]), 'scenario', decodeURIComponent(buildScenario[2]));
     else if (buildWb) AB.openBuild(decodeURIComponent(buildWb[1]), 'map');
     else { const name = AB.defaultBuildName(); if (name) AB.openBuild(name, 'map'); }
   } else if (resultsBatch || resultsTest || resultsCompare || location.hash === '#/results') {

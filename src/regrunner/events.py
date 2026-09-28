@@ -9,7 +9,7 @@ The runner never prints.  It emits events on an :class:`EventBus`; everything el
 
 Event types (all carry ``type``, ``ts`` and ``run_id``):
 
-    run_started    workbook, environment, workers, tests:[{id,title,total_steps,description}]
+    run_started    workbook, environment, workers, tests:[{id,title,total_steps,description,[lane]}], [scenarios]
     test_started   test, title, total_steps, worker
     step_started   test, step, total_steps, row, name, action
     step_passed    test, step, total_steps, row, name, action, status, duration_ms, expected, actual,
@@ -34,12 +34,18 @@ Event types (all carry ``type``, ``ts`` and ``run_id``):
     build_session_closed   workbook, reason                            the build window closed (by the person, idle, or the browser went away)
     build_session_step_recorded  test, step, row, method, name, what    a step written by the recorder or a Check / Save / Wait card (build/recorder.py;
                    what = click | type | toggle | key | back | switch | suggestion | gate | <check kind>; never the typed value)
+    scenario_sync  test, scenario, lane, sync, kind, role, state, reached, waiting, ended, message, [waited_s]   a lane of a concurrency scenario
+                   (engine/scenario.py; ``test`` = the lane's id "<scenario> · <lane>") at a sync point (kind sync) or an order marker (kind order;
+                   role first = the lane that goes first, then = the lane that waits for it).  state: arrived / waiting (held there, ``waiting`` =
+                   the lanes it waits for) | released (goes on; ``ended`` = lanes that ended without getting there) | done (a first lane did its
+                   part) | ended (the lane ended before this point: nobody waits for it there) | timeout (it gave up: the lane stops).
+                   run_started carries ``scenarios`` ([{name, lanes, syncs, orders, shared_sign_in, timeout_s}]) and each lane's test ``lane``
     screenshot_saved  test, step, path, kind
     console_error  test, step, kind, message, url          (kind: console|pageerror)
     network_error  test, step, kind, url, status, method, message   (kind: requestfailed|http_error)
     review_item    test, step, category, severity, message           (selector fallback, ignored error ...)
     test_finished  test, status, passed, failed, skipped, duration_s, error      (status NOT_RUN: the machine could not run it; run again)
-    worker_waiting   test, worker, step, wait, code, message, [seconds]   a worker waits on purpose (code: login_code | slow_page | infra_rerun)
+    worker_waiting   test, worker, step, wait, code, message, [seconds]   a worker waits on purpose (code: login_code | slow_page | infra_rerun | scenario_sync)
     worker_resumed   test, worker, step, wait, code, waited_s             ...and that wait is over
     run_progress   done, total, percent, tests:{id:{done,total,percent,status}}
     run_finished   status, summary, artifacts
