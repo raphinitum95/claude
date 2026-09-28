@@ -81,7 +81,13 @@ def summary_and_flows(workbook: Workbook, cfg: Config) -> tuple[dict[str, Any], 
 def workbook_summary(workbook: Workbook, cfg: Config, flows: list | None = None) -> dict[str, Any]:
     tests = list_tests(workbook, cfg, flows)
     settings = workbook.global_settings()
-    return {"tests": tests, "warnings": list(workbook.warnings), "environment": str(settings.get("Environment", "")).upper(),
+    table = workbook.environment_table()
+    # A workbook with its own environment table (``_rr_environments``) has no default environment: "environment" is only the one asked for,
+    # and "environments" lists the ones a run may pick (the Run tab offers exactly those; ``required``: one must be picked).
+    own = table.source == "rr"
+    environment = str(workbook.environment or "").upper() if own else str(settings.get("Environment", "")).upper()
+    return {"tests": tests, "warnings": list(workbook.warnings), "environment": environment,
+            "environments": {"source": table.source, "names": list(table.names), "production": list(table.production), "required": own},
             "sheets": len(tests), "flagged": sum(t["enabled"] for t in tests)}
 
 

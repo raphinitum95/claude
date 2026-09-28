@@ -84,7 +84,7 @@ async def test_the_build_window_coexists_with_a_run_of_the_same_workbook(web, pl
     async with web.aclient() as c:
         r = await c.post(f"/api/build/session/{plans}/start", json={"test": "Plans", "headless": True})
         assert r.status_code == 200, r.text
-        run = await c.post("/api/runs", json={"workbook": plans, "tests": ["Plans"]})
+        run = await c.post("/api/runs", json={"workbook": plans, "tests": ["Plans"], "env": "UAT"})     # (its own table: no default)
         assert run.status_code == 200, run.text                          # the run reads the saved file in its own process and browser
         detail = await asyncio.to_thread(web.wait_finished, run.json()["run_id"])
         assert detail["meta"]["status"] in ("PASSED", "FAILED")

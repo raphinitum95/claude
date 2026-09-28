@@ -82,6 +82,10 @@ byte-for-byte (the writer never re-renders an untouched cell).
 
 ### 1.4 Hidden runner sheets (`_rr_` prefix, created on first write, `state="hidden"`)
 
+(All but one: `_rr_environments` is a **visible** sheet placed right after `Global`, so someone who opens a downloaded workbook in Excel sees
+every environment. The builder makes it visible and moves it there whenever it writes the table (`set_environments`, a rename or delete of
+one of its rows, `new_workbook`); files saved before stay as they were until then. Its name does not change: every reader looks for it.)
+
 Each is a plain table: row 1 = headers (exactly these, case-insensitive on read), one row per item. Written with `WorkbookEditor.write_table`.
 
 **`_rr_variables`**: `Token | Label | Secret | EnvSpecific | Notes`
@@ -96,6 +100,13 @@ Each is a plain table: row 1 = headers (exactly these, case-insensitive on read)
 - `Secret = Y`: the cell holds `{SECRET:NAME}`, never a value.
 - Workbooks without this sheet: the builder shows the legacy `Environments` sheet (`Environment | Parameter | Value`) read-only as the table
   (`environments.source = "legacy"`), with no required rows. The engine keeps reading the legacy sheet for API tests as today.
+- **No default environment** (builder feedback item 18): a workbook that has this table is run in one of **its** environments, named by the run
+  (`regrunner run --env`, the Run tab's Environment, `env` of `POST /api/runs`). `Global!Environment` is not a fallback for it (a new workbook
+  does not write one). With no environment named, or one the table does not list, the runner raises `SelectionError` ("Pick the environment
+  to run on ... Its environments: QA, UAT, PROD"; the CLI prints it and exits 2) and the server answers 422 `env_required` / `env_unknown`
+  with `environments: [...]`, before anything starts. The Build tab works in the environment asked for (`?env=`), else the table's first one
+  (the header shows which). Workbooks without the table keep `Global!Environment` as their default, exactly as before.
+- Environment names are letters, digits, `-` and `_`, up to 16 (what `--env` / the server accept); `set_environments` refuses others.
 
 **`_rr_fingerprints`** (Q53): `Name | UrlContains | Landmark | LandmarkText | Notes`
 - `Name`: what `ASSERT_PAGE` names ("Payment page"). Unique, case-insensitive.
@@ -181,7 +192,8 @@ number within the test (section rows and empty rows are not steps). Rows are the
 
 ### 2.1 `Workbook`
 ```
-{ name: "qantas.xlsx", version: 7, environment: "UAT",          // environment the problems were computed for (?env= or Global!Environment)
+{ name: "qantas.xlsx", version: 7, environment: "UAT",          // environment the problems were computed for: ?env=, else Global!Environment;
+                                                                  // with an _rr_environments table: ?env= when the table has it, else its first (1.4)
   globals: { Environment: "UAT", ... },                           // Global sheet as written (formulas as "=...")
   sheets: [ { name, hidden, role } ],                             // role: test | params | datasheets | global | environments | inputoutput | runner | other
   tests: [Test], variables: [Variable], environments: Environments, fingerprints: [Fingerprint],
@@ -328,6 +340,19 @@ Same security as every route: localhost Host; POST/PUT/DELETE need header `X-Req
 | `GET /api/build/workbooks/{name}/fingerprints` | | `[Fingerprint]` |
 | `GET /api/build/workbooks/{name}/sheets/{sheet}` | | `{name, headers, rows}` raw cells as written (formulas `"=..."`) for the Excel-grid view |
 
+**Variables screen** (`web/variables_api.py`, `register_variables_routes`; builder feedback item 12). Adding, a label, a data value, an
+environment value and delete are ordinary ops through `/edit` (`add_variable`, `set_variable`, `set_cell`, `set_environments`,
+`delete_variable`). A secret's value is only ever written to `secrets.env` and never sent back: the answers carry `true` / `false` per
+environment.
+
+| Method + path | Body | Answer |
+|---|---|---|
+| `GET /api/build/workbooks/{name}/variables/{token}/values` | | `{token, sources: [{sheet, column, tests, rows: [{row, label, enabled, value, formula}]}], environment: {variable, required, secret, values, typedIn?} \| null, environments: {source, names, production}, secret: {name, environments: {ENV: bool}, perEnvironment: {ENV: bool}, everywhere} \| null}` (a secret row's typed-in values come back as `••••••`, listed in `typedIn`) |
+| `POST /api/build/workbooks/{name}/variables/rename-preview` | `{from, to}` | `{changes: [{sheet, row, column, header, before, after}], secrets: [new secrets.env keys]}`; nothing changes. 409 `exists` when `to` is taken; 400 `domain` for DOMAIN |
+| `POST /api/build/workbooks/{name}/variables/rename` | `{from, to, version}` | `{model, applied, secretsCopied}`: the `rename_variable` op (one undo step) + every `RR_SECRET_<ENV>_FROM` / `RR_SECRET_FROM` / `RR_VAR_FROM` entry of secrets.env copied to the new name (the old ones stay, so an undo still works) |
+| `POST /api/build/workbooks/{name}/variables/secret` | `{name, environment?: "" = every environment, value}` | `{key, name, environments, perEnvironment, everywhere}`: `RR_SECRET_<ENV>_<NAME>` (or `RR_SECRET_<NAME>`) in secrets.env, replacing what it held; never the value |
+| `GET /api/workbooks/{name}/download-info` | | `{name, secrets: [NAME]}`: the secrets the **saved** file uses (`{SECRET:NAME}` anywhere, `Secret = Y` rows); Download says their values are not in the file |
+
 **Build session** (`register_session_routes`, P08; `build/session.py`'s `BuildSession`/`SessionStore`): the Build tab's own headed browser, one
 per workbook. Every route below 409s `closed` (`{error, kind: "closed"}`) when the window is not open, except `start`, which opens it.
 
@@ -417,11 +442,12 @@ Each op is `{op: "...", ...}`; `test` is the sheet name; rows are current sheet 
 | `rename_block` | `test, row, title` | row = any step of the block |
 | `split_block` | `test, row, title` | the block splits above `row`; `row..end` becomes `title` |
 | `merge_blocks` | `test, row` | the block of `row` joins the block before it |
-| `rename_variable` | `from, to` | every Params header, whole-cell token, `{TOKEN}`, `{SECRET:TOKEN}` (also inside formulas' text), `_rr_variables`, `_rr_environments` |
+| `rename_variable` | `from, to` | every Params header, whole-cell token, `{TOKEN}`, `{SECRET:TOKEN}` (also inside formulas' text), `_rr_variables`, `_rr_environments`; in API sheets and `_rr_fingerprints` only the `{...}` forms. 409 `exists` when `to` is already a variable. `builder.rename_preview(editor, from, to)` lists the same cells without writing |
+| `delete_variable` | `token` | empties its Params column(s) (header and values; the column stays so nothing shifts), removes its `_rr_variables` and `_rr_environments` rows; steps that use it are left (problems list them), secrets.env is left. Refused for `DOMAIN`; 404 when nothing stores it |
 | `set_variable` | `token, label?, secret?, envSpecific?, notes?` | upsert in `_rr_variables` |
-| `add_variable` | `token, label?, sheet: paramsSheet, value?` | new Params column (+ label); `value` goes in every data row |
+| `add_variable` | `token, label?, sheet: paramsSheet \| test: test id, value?` | new Params column (+ label); `value` goes in every data row. With `test` instead of `sheet`: that test's Params sheet, made (`<test>_Params`, `blnExecute` + one `Y` row, linked in DataSheets) when it has none |
 | `set_cell` | `sheet, row, column: header \| number, value` | grid view and data drawer; `=` starts a formula |
-| `set_environments` | `names, production, rows` (the `Environments` shape) | rewrites `_rr_environments` |
+| `set_environments` | `names, production, rows` (the `Environments` shape) | rewrites `_rr_environments` (visible, after Global: 1.4); names must be run-nameable (1.4) |
 | `set_fingerprint` | `name, urlContains, landmark, landmarkText?, notes?, rename?: old name` | upsert |
 | `delete_fingerprint` | `name` | |
 | `set_test` | `test, enabled?, paramSheet?, tags?, comment?` | DataSheets row (added when the sheet is not listed) |

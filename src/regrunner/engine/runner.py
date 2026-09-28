@@ -210,6 +210,10 @@ def _load_and_plan(options: RunOptions, cfg: Config, headless: bool) -> RunPlan:
     cases += [lane for plan in scenarios for lane in plan.lanes]
     if not cases:
         raise SelectionError("No tests selected (all DataSheets rows are 'N'? use --tests or --all)")
+    from ..preflight import environment_choice_problem, environment_problem
+    choice = environment_choice_problem(workbook, options.environment)      # a workbook with its own environment table has no default
+    if choice:
+        raise SelectionError(f"{Path(str(options.workbook)).name}: {choice}")
     environment = (options.environment or workbook.global_settings().get("Environment") or "").upper() \
         if not isinstance(options.environment, str) else options.environment.upper()
     environment = environment or str(workbook.global_settings().get("Environment", "")).upper()
@@ -217,7 +221,6 @@ def _load_and_plan(options: RunOptions, cfg: Config, headless: bool) -> RunPlan:
         raise SelectionError(
             "Refusing to run against PROD: these flows place real transactions (purchases, emails). "
             "Pass --allow-prod (or set runner.allow_prod: true) if that is really what you want.")
-    from ..preflight import environment_problem
     problem, missing = environment_problem(workbook, environment)
     if problem:
         raise EnvironmentMissing(problem, environment, missing)

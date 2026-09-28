@@ -164,7 +164,8 @@ def test_a_required_environment_value_that_is_missing_is_an_error_for_the_chosen
     doc = BuildDocument(path)
     doc.apply([{"op": "set_environments", "names": ["QA", "UAT", "PROD"], "production": ["PROD"],
                 "rows": [{"variable": "DOMAIN", "required": True, "values": {"QA": "https://qa.example", "UAT": "", "PROD": "https://example"}}]}])
-    model = doc.model()                                              # Global says UAT
+    assert doc.model()["environment"] == "QA"                         # Global says UAT, but a workbook with its own table has no default
+    model = doc.model("UAT")
     env_problems = [(p["severity"], p["row"]) for p in model["problems"] if p["kind"] == "missing_environment_value"]
     assert ("error", None) in env_problems and ("error", 2) in env_problems
     assert model["environments"] == {"source": "rr", "names": ["QA", "UAT", "PROD"], "production": ["PROD"],
@@ -406,7 +407,9 @@ def test_a_new_workbook_has_global_datasheets_and_the_environment_table(tmp_path
     assert model["environments"]["rows"][0] == {"variable": "DOMAIN", "required": True, "secret": False,
                                                 "values": {"UAT": "https://uat.example", "PROD": "https://example"}}
     wb = openpyxl.load_workbook(path)
-    assert wb.sheetnames == ["Global", "DataSheets", "_rr_environments"] and wb["Global"]["B2"].value == "UAT"
+    assert wb.sheetnames == ["Global", "_rr_environments", "DataSheets"]              # the environments right after Global, visible
+    assert wb["_rr_environments"].sheet_state == "visible"
+    assert [[c.value for c in r] for r in wb["Global"].iter_rows()] == [["Parameter", "Value", "Comments"]]      # no default Environment
     assert Workbook(path).discover() == []
     with pytest.raises(BuildError):
         new_workbook(path, [])
