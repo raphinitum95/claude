@@ -23,7 +23,7 @@ what was found in the code, so the next session does not have to re-derive it.
    Open step; none set = blank page + a notice with a link to Environments. Recording an empty test starts it with `OPEN {DOMAIN}`.
 8. **"Selected" bar** wraps inside its column (`.bulk-bar` in app.css) instead of overflowing a narrow window.
 
-## Batch 2: to do (items 9-19)
+## Batch 2: to do (items 9-20)
 
 9. **Run plan Timeline** (Run tab, `views/newrun.js` `timelineView`): cut off and unreadable on small screens. Scroll sideways at least, test
    names stay readable.
@@ -52,5 +52,8 @@ what was found in the code, so the next session does not have to re-derive it.
 19. **Results tab stays the Results tab**: a solo run opened from the Results history (`views/results/history.js` `itemUrl`, also
     `results/batch.js` and `results/test.js` links, `results/actions.js` after a re-run) goes to `#/run/<id>`, which switches to the Run
     tab. Show that run inside the Results tab instead.
+20. **Drag to reorder steps** in the test editor's step cards (and across blocks). The `move_steps` op already takes `before` (and `block`),
+    so this is UI work in `views/build/editor.js` / `actions.js`; today steps only move through "Move to block..." (which, without
+    `before`, sends them to the end of the test: see item 11).
 
 Also told the user: `workbooks/qantas-test 2.xlsx` is saved with Global Environment = PROD.
