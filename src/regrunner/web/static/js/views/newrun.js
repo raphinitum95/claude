@@ -373,7 +373,7 @@ function orderGroup(S, name) {
   if (b.load !== 'ok' || !o) return '';
   const multi = f.books.length > 1;
   const streams = o.streams || [];
-  const hints = (o.notes || []).filter((x) => x.kind === 'parallel' || x.kind === 'chain_unknown' || x.kind === 'after_ui');
+  const hints = (o.notes || []).filter((x) => x.kind === 'parallel' || x.kind === 'chain_unknown' || x.kind === 'after_stream');
   if (!streams.length && !hints.length && !b.chains.length) return '';
   const w = html`data-wb="${name}"`;
   const arrow = (id, dir, glyph, label, off) => html`<button class="stp" style="width: 30px; height: 28px" data-act="order-move" data-id="${id}" data-dir="${dir}" ${w} aria-label="${label} ${id}${multi ? ` in ${name}` : ''}" ${off ? raw('disabled') : ''}>${glyph}</button>`;
@@ -395,7 +395,7 @@ ${st.tests.map((t, k) => {
 <div style="min-width: 0"><b class="mono" style="font-size: 13px">${t}</b>${(formTests(S, name).find((x) => x.id === t) || {}).kind === 'api' ? html` <span class="tag">API</span>` : ''}<div class="mono" style="font-size: 11.5px; color: var(--tx3)">${waits.length ? `waits for ${waits.join(', ')}` : 'starts first'}</div></div>
 <div style="display: flex; gap: 4px">${arrow(t, -1, '↑', 'Run earlier:', k === 0)}${arrow(t, 1, '↓', 'Run later:', k === st.tests.length - 1)}</div></div>`;
   })}</div>`)}
-${hints.map((x) => html`<div style="display: flex; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--tx2)" data-key="hint-${x.test}"><span style="color: var(--warn); display: inline-flex; margin-top: 1px">${icon('warn', 16)}</span><span>${x.message}</span></div>`)}
+${hints.map((x) => html`<div style="display: flex; gap: 10px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--tx2)" data-key="hint-${x.kind}-${x.test}"><span style="color: var(--warn); display: inline-flex; margin-top: 1px">${icon('warn', 16)}</span><span>${x.message}</span></div>`)}
 </div>`;
 }
 

@@ -556,6 +556,29 @@ class ApiRuntime:
         """The cells of *other sheets* the request reads: what other tests of the run have to produce first."""
         return [i for i in self.request_inputs() if not i["own"]]
 
+    def formula_reads(self) -> list[dict[str, Any]]:
+        """Every cell of *another sheet* that a formula anywhere in this row names, not only the request's inputs: an expected value such as
+        ``PolicyStatus_EXP = =AgentPortal_Params!X3`` is what a website test of the run captured, so the API test has to wait for that test as
+        surely as for its policy number.  Same shape as ``cell_reads`` (``blank`` is always False: nothing is asked for a checked value, the
+        run only waits for whoever sets it)."""
+        from openpyxl.utils import get_column_letter
+        data = self.sheet.data
+        out: list[dict[str, Any]] = []
+        seen: set[tuple] = set()
+        for header, col in self.columns.items():
+            cell = data.cells.get((self.row, col))
+            if cell is None or not cell.formula:
+                continue
+            for key in referenced_cells(cell.formula, self.book):
+                if key in seen or key[0].upper() == str(self.case.sheet).upper():
+                    continue
+                seen.add(key)
+                other = self.book.data.sheet(key[0])
+                name = other.header_names.get(key[2]) if other is not None else None
+                out.append({"column": header, "param": name or header, "key": key, "blank": False, "own": False, "in_url": False,
+                            "source": f"{key[0]}!{get_column_letter(key[2])}{key[1]}" + (f" ({name})" if name else "")})
+        return out
+
     # -- what gets checked -----------------------------------------------------------------------------------------------------------
     def checkpoints(self) -> list[Checkpoint]:
         skip = skipped_columns(self.io, self.values, self.global_text("TC_Name_Column", "TC_Name"))

@@ -155,8 +155,8 @@ def adjust_order(order, plans: list[ScenarioPlan]) -> None:
                 order.data[i] = kept
             else:
                 order.data.pop(i, None)
-        order.after_ui = [t for t in order.after_ui if t not in ids]
-        for other, deps in order.deps.items():                       # an API test that goes "after every UI test" waits for the lanes too: fine,
+        order.after_stream = {t: w for t, w in order.after_stream.items() if t not in ids}
+        for other, deps in order.deps.items():                       # an API test that waits for the rest of its stream waits for the lanes too: fine,
             if other not in ids and any(d in ids for d in deps):     # but never for only some of them (they finish together anyway)
                 order.deps[other] = sorted(set(deps) | ids)
 

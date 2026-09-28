@@ -9,7 +9,9 @@ Tests run side by side, but one may need what another produces: ``Purchase`` wri
   run saves NAME (Output_Value ``NAME`` / ``{NAME}``, SET_VARIABLE, or a test it calls does): it waits for that test.  Earlier tests in DataSheets
   are preferred; when only a later one provides the name, the later one goes first;
 * **chains** - an order fixed by hand: ``[Purchase#1, ViewPolicy#1, Cancellation#1]`` means each waits for the one before it, whatever happened to it.
-  Data cannot say that ViewPolicy comes before Cancellation (both only read the policy number), a chain can.
+  Data cannot say that ViewPolicy comes before Cancellation (both only read the policy number), a chain can;
+* **an API test's stream** - an API test that reads from a stream (a cell a UI test sets, a ``{NAME}`` it saves) also waits for the other UI tests of
+  that stream, since what it checks is what the stream leaves behind.  An API test linked to nothing runs at once.
 
 Streams that do not touch each other (row 3's tests and row 5's) still run in parallel.
 """
@@ -34,6 +36,7 @@ class Flow:
     sheet: str = ""
     reads: dict[str, dict[str, Any]] = field(default_factory=dict)      # PARAMETER -> {param, rows, blank}
     sets: set[str] = field(default_factory=set)                          # PARAMETERS its steps set
+    may_set: set[str] = field(default_factory=set)                       # PARAMETERS a step of its sheet writes, whatever its blnExecute says
     writes: set[tuple] = field(default_factory=set)                      # an API test: the cells (sheet, row, column) its response can fill in
     needs: set[str] = field(default_factory=set)                         # {NAME}s it reads from the run's shared variables (Needs)
     provides: set[str] = field(default_factory=set)                      # names it saves into them (Provides)
@@ -44,6 +47,9 @@ class Flow:
         flow = cls(id=case.id, index=index, kind=case.kind, param_sheet=case.param_sheet, param_row=case.param_row, sheet=case.sheet)
         if runtime is not None and case.kind != "api":
             flow.reads, flow.sets = dict(runtime.reads), set(runtime.sets)
+            # the dry run only follows the branches it can decide; a purchase branch whose flag depends on what the page showed (or on a cell it
+            # cannot read) is skipped there, yet may run for real.  An API test that reads that parameter's cell waits for the test all the same.
+            flow.may_set = {name for name, sheets in (getattr(runtime, "writers", None) or {}).items() if case.sheet in sheets} | flow.sets
             flow.needs, flow.provides, flow.calls = set(runtime.pool_reads), set(runtime.pool_sets), list(runtime.calls)
             for info in flow.reads.values():                             # a Params cell that is =PurchaseUS!FB3 reads what an API test fills in
                 key = info.get("key")
@@ -53,9 +59,11 @@ class Flow:
         elif runtime is not None:                                        # an API row reads cells of other sheets (=AgentPortal_Params!R3)
             flow.writes = runtime.output_cells()
             flow.needs, flow.provides = set(runtime.pool_reads()), set(runtime.pool_sets())     # {NAME}s (Workbook Builder rows, P10)
-            for item in runtime.cell_reads():
-                flow.reads[f"{item['param'].upper()}@{item['key'][0]}!{item['key'][1]}"] = {
-                    "param": item["param"], "rows": [], "blank": item["blank"], "source": item["source"], "key": item["key"]}
+            for item in [*runtime.cell_reads(), *runtime.formula_reads()]:            # the request's inputs first (they say "blank"), then any
+                name = f"{item['param'].upper()}@{item['key'][0]}!{item['key'][1]}"    # other formula of the row (a checked value a UI test captured)
+                if name not in flow.reads:
+                    flow.reads[name] = {"param": item["param"], "rows": [], "blank": item["blank"], "source": item["source"], "key": item["key"],
+                                        "cells": [tuple(item["key"])]}          # another API test whose response fills that cell feeds it too
         return flow
 
 
@@ -74,16 +82,16 @@ def analyse(workbook) -> list[Flow]:
 
 @dataclass
 class Order:
-    deps: dict[str, list[str]] = field(default_factory=dict)              # test -> the tests it waits for (data + chains + API after UI)
+    deps: dict[str, list[str]] = field(default_factory=dict)              # test -> the tests it waits for (data + chains + an API test's stream)
     data: dict[str, dict[str, list[str]]] = field(default_factory=dict)   # test -> {PARAMETER: tests that set it}: what it cannot run without
     streams: list[dict[str, Any]] = field(default_factory=list)           # tests that hang together: {tests, levels, params}
     notes: list[dict[str, Any]] = field(default_factory=list)             # what to tell the person before the run
     chains: list[list[str]] = field(default_factory=list)                 # the chains in effect (members of this run only)
     cells: dict[str, dict[str, tuple]] = field(default_factory=dict)      # test -> {PARAMETER: the cell (sheet, row, column) it reads}: to see whether it got set
-    after_ui: list[str] = field(default_factory=list)                     # API tests nobody chained: they start after every UI test of the run
+    after_stream: dict[str, list[str]] = field(default_factory=dict)      # API test -> the other UI tests of its stream it also waits for
 
     def as_dict(self) -> dict[str, Any]:
-        return {"deps": self.deps, "data": self.data, "streams": self.streams, "notes": self.notes, "chains": self.chains, "after_ui": self.after_ui}
+        return {"deps": self.deps, "data": self.data, "streams": self.streams, "notes": self.notes, "chains": self.chains, "after_stream": self.after_stream}
 
 
 def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] | None = None) -> Order:
@@ -120,13 +128,13 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
                 order.deps[after].append(before)
 
     # data: a test that reads what a test of the run (same parameter row) sets waits for it.  A UI test only waits for tests that come earlier in
-    # DataSheets (the legacy order); an API test names the cell it reads, so whoever sets it comes first.
+    # DataSheets (the legacy order); an API test names the cell it reads, so whoever sets it - or has a step that may set it - comes first.
     for f in sel:
         for info in f.reads.values():
             param = info["param"].upper()
             sheet, row = (info["key"][0], info["key"][1]) if info.get("key") else (f.param_sheet, f.param_row)
             same = lambda q: (q.kind != "api" and q.id != f.id and (f.kind == "api" or q.index < f.index) and str(q.param_sheet or "").upper() == str(sheet or "").upper()
-                              and q.param_row == row and param in q.sets)
+                              and q.param_row == row and param in (q.may_set if f.kind == "api" else q.sets))
             producers = [q.id for q in sel if same(q)]
             foreign = set(map(tuple, info.get("cells") or []))               # cells of API sheets this parameter's formula reads
             fed = [q for q in sel if q.kind == "api" and q.id != f.id and q.writes & foreign]
@@ -148,8 +156,7 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
                 order.notes.append({"kind": "waits", "test": f.id, "param": info["param"], "on": producers, "blank": info["blank"],
                                     "message": f"{f.id} waits for {' and '.join(producers)}, which set{'s' if len(producers) == 1 else ''} {info['param']}."})
             elif info["blank"]:
-                available = [q.id for q in flows if q.id not in chosen and q.kind != "api" and (f.kind == "api" or q.index < f.index)
-                             and str(q.param_sheet or "").upper() == str(sheet or "").upper() and q.param_row == row and param in q.sets]
+                available = [q.id for q in flows if q.id not in chosen and same(q)]
                 available += [q.id for q in flows if q.id not in chosen and q.kind == "api" and q.id != f.id and q.writes & foreign]
                 where = f" ({info['source'].split(' (')[0]})" if info.get("source") and f.kind == "api" else ""
                 order.notes.append({"kind": "missing", "test": f.id, "param": info["param"], "available": available,
@@ -197,26 +204,13 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
     # streams: the tests that hang together (data + chains), in the order they will run in
     explicit = {t: list(d) for t, d in order.deps.items()}
     ids = [f.id for f in sel]
-    chained = {t for chain in order.chains for t in chain}
-    ui = [f.id for f in sel if f.kind != "api"]
-    feeders = {p for named in order.data.values() for producers in named.values() for p in producers if by_id[p].kind == "api"}   # API tests a UI test reads from
-    order.after_ui = [f.id for f in sel if f.kind == "api" and f.id not in chained and f.id not in feeders and ui]
-    for t in order.after_ui:                                  # an API test reads what the UI tests produced: unless somebody chained it, it goes after all of them
-        order.deps[t] = list(dict.fromkeys(order.deps[t] + [u for u in ui if u != t]))
     links: dict[str, set[str]] = {t: set() for t in ids}
     for t in ids:
         for d in explicit[t]:
             links[t].add(d)
             links[d].add(t)
+    groups: list[list[str]] = []
     seen: set[str] = set()
-    level: dict[str, int] = {}
-
-    def level_of(t: str, group: set[str]) -> int:
-        if t not in level:
-            level[t] = 0                                       # (guards a cycle the checks above should have made impossible)
-            level[t] = 1 + max([level_of(d, group) for d in order.deps[t] if d in group] or [-1])
-        return level[t]
-
     for t in ids:
         if t in seen or not links[t]:
             continue
@@ -228,6 +222,38 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
             seen.add(x)
             group.append(x)
             todo.extend(links[x])
+        groups.append(group)
+
+    # An API test that reads from a stream checks what the whole stream leaves behind: the real PolicySearch reads the policy number Purchase
+    # sets and expects PolicyStatus "Cancelled", which only Cancellation (the same Params row, reading the same number) makes true.  So, unless a
+    # chain places it or a test of the run reads what it answers, it also waits for the other UI tests of its own stream.  An API test that
+    # nothing links to a UI test (no cell it reads, no {NAME} it needs) is in no stream and runs at once, like any other test.  This replaces a
+    # blanket "every API test starts after every UI test of the run", which held independent API / XML tests back behind unrelated website tests.
+    chained = {t for chain in order.chains for t in chain}
+    feeders = {p for named in order.data.values() for producers in named.values() for p in producers if by_id[p].kind == "api"}   # API tests others read from
+    for group in groups:
+        for t in sorted(group, key=lambda x: by_id[x].index):
+            if by_id[t].kind != "api" or t in chained or t in feeders:
+                continue
+            rest = [u for u in sorted(group, key=lambda x: by_id[x].index)
+                    if u != t and by_id[u].kind != "api" and u not in order.deps[t] and not depends_on(u, t)]
+            if not rest:
+                continue
+            order.deps[t].extend(rest)
+            order.after_stream[t] = rest
+            order.notes.append({"kind": "after_stream", "test": t, "on": rest,
+                                "message": f"{t} also waits for {' and '.join(rest)}, the rest of its stream: an API test checks what its stream leaves "
+                                           "behind (a policy's final status, say). Put it in a chain to choose where it runs."})
+
+    level: dict[str, int] = {}
+
+    def level_of(t: str, group: set[str]) -> int:
+        if t not in level:
+            level[t] = 0                                       # (guards a cycle the checks above should have made impossible)
+            level[t] = 1 + max([level_of(d, group) for d in order.deps[t] if d in group] or [-1])
+        return level[t]
+
+    for group in groups:
         members = set(group)
         group.sort(key=lambda x: (level_of(x, members), by_id[x].index))
         params = sorted({info["param"] for x in group for info in by_id[x].reads.values() if info["param"].upper() in order.data.get(x, {})}
@@ -241,10 +267,6 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
                 order.notes.append({"kind": "parallel", "test": same_level[0], "tests": same_level,
                                     "message": f"{' and '.join(same_level)} run at the same time (nothing puts one before the other). If the order matters - "
                                                "cancelling a policy before viewing it - set a chain."})
-    if order.after_ui:
-        order.notes.append({"kind": "after_ui", "test": order.after_ui[0], "tests": order.after_ui,
-                            "message": f"{' and '.join(order.after_ui)} {'starts' if len(order.after_ui) == 1 else 'start'} after every UI test of the run "
-                                       "(an API test reads what those tests produce). Put it in a chain to choose where it runs."})
     return order
 
 

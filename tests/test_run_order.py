@@ -230,20 +230,71 @@ def test_an_api_test_that_reads_a_cell_another_test_sets_is_in_the_stream_and_wa
     """The question: PolicySearch reads the policy number Purchase produces, so why was it not part of the run order?"""
     order = plan_order(flows_of(build_with_api(tmp_path / "a.xlsx", site)), ALL_API)
     assert order.data["Policy#1"] == {"DT_POLICY_OUT": ["Buy#1"]} and order.data["Policy#2"] == {"DT_POLICY_OUT": ["Buy#2"]}       # each stream's own cell
-    assert "Buy#1" in order.deps["Policy#1"] and "Buy#2" not in order.deps["Policy#1"] or set(order.deps["Policy#1"]) >= {"Buy#1"}
     stream = order.streams[0]
     assert stream["tests"][0] == "Buy#1" and stream["tests"][-1] == "Policy#1" and "Policy#2" not in stream["tests"]              # in its stream, after the others
     assert order.streams[1]["tests"][-1] == "Policy#2"
-    assert order.after_ui == ["Policy#1", "Policy#2"] and any(n["kind"] == "after_ui" for n in order.notes)                         # the default is said, not silent
-    assert set(order.deps["Policy#1"]) == {"Buy#1", "Buy#2", "Cancel#1", "Cancel#2", "View#1", "View#2"}                          # unchanged: after every UI test
+    # what it checks (the real PolicySearch expects "Cancelled") is what its whole stream leaves behind: it waits for the rest of that stream, said on the card
+    assert order.after_stream == {"Policy#1": ["Cancel#1", "View#1"], "Policy#2": ["Cancel#2", "View#2"]}
+    assert set(order.deps["Policy#1"]) == {"Buy#1", "Cancel#1", "View#1"}                                                         # never the other stream's tests
+    (note,) = [n for n in order.notes if n["kind"] == "after_stream" and n["test"] == "Policy#1"]
+    assert note["on"] == ["Cancel#1", "View#1"] and "the rest of its stream" in note["message"] and "chain" in note["message"]
 
 
 def test_an_api_test_can_be_chained_and_then_only_waits_where_the_chain_and_the_data_say(site, tmp_path):
     """Before: Purchase#1 -> PolicySearch#1 -> Cancellation#1 made PolicySearch wait for Cancellation (all UI tests) while Cancellation waited for it: a deadlock."""
     order = plan_order(flows_of(build_with_api(tmp_path / "a.xlsx", site)), ALL_API, [["Buy#1", "Policy#1", "Cancel#1"]])
-    assert order.deps["Policy#1"] == ["Buy#1"] and set(order.deps["Cancel#1"]) == {"Policy#1", "Buy#1"}
-    assert order.after_ui == ["Policy#2"]                                                                                          # only the unchained one keeps the default
+    assert order.deps["Policy#1"] == ["Buy#1"] and set(order.deps["Cancel#1"]) == {"Policy#1", "Buy#1"}                           # the chain wins over the stream
+    assert order.after_stream == {"Policy#2": ["Cancel#2", "View#2"]}                                                              # only the unchained one waits for its stream
     assert [n["kind"] for n in order.notes if n["kind"] == "conflict"] == []
+
+
+def set_cells(path: Path, sheet: str, **cells) -> Path:
+    """Change a few cells of a synthetic workbook this test built (``I3="P-100"``)."""
+    wb = openpyxl.load_workbook(path)
+    for ref, value in cells.items():
+        wb[sheet][ref] = value
+    wb.save(path)
+    return path
+
+
+def test_an_api_test_that_reads_nothing_a_website_test_sets_starts_at_once_and_is_in_no_stream(site, tmp_path):
+    """The user's workbook: one website test and API / XML tests that share nothing with it.  They used to start only after every website test."""
+    path = set_cells(build_with_api(tmp_path / "a.xlsx", site), "Policy", I3="P-100")                  # Policy#2 asks for a fixed policy number
+    order = plan_order(flows_of(path), ALL_API)
+    assert order.deps["Policy#2"] == [] and "Policy#2" not in order.data and "Policy#2" not in order.after_stream
+    assert all("Policy#2" not in s["tests"] for s in order.streams)
+    assert not [n for n in order.notes if n["test"] == "Policy#2"]                                     # nothing to say: it simply runs
+    assert set(order.deps["Policy#1"]) == {"Buy#1", "Cancel#1", "View#1"}                               # its linked sibling still waits
+
+
+def test_an_api_test_whose_checked_value_is_a_cell_a_website_test_sets_waits_for_that_test(site, tmp_path):
+    """Not only the request's inputs: an expected value that is =Params_1!D3 (what Buy#2 captured) is read when the response is checked."""
+    path = set_cells(build_with_api(tmp_path / "a.xlsx", site), "Policy", I3="P-100", J3="=Params_1!D3")
+    order = plan_order(flows_of(path), ALL_API)
+    assert order.data["Policy#2"] == {"DT_POLICY_OUT": ["Buy#2"]} and order.cells["Policy#2"]["DT_POLICY_OUT"] == ("Params_1", 3, 4)
+    assert set(order.deps["Policy#2"]) == {"Buy#2", "Cancel#2", "View#2"}
+    alone = plan_order(flows_of(path), ["Policy#2"])
+    assert not [n for n in alone.notes if n["kind"] == "missing"]                                      # nothing is asked for a checked value
+
+
+def test_an_api_test_waits_for_a_website_test_whose_step_that_sets_its_cell_the_dry_run_cannot_decide(site, tmp_path):
+    """The real StandAlone workbook: the steps that capture DT_Policy_Out run under a flag the dry run cannot work out (=IF([4]Global!$B$2=...)).
+    The step is still there, so the API test that reads the cell waits for the test that may fill it in."""
+    path = set_cells(build_with_api(tmp_path / "a.xlsx", site), "Buy", A4='=IF([1]Global!$B$2="PROD","N","Y")')
+    flows = {f.id: f for f in flows_of(path)}
+    assert "DT_POLICY_OUT" not in flows["Buy#1"].sets and "DT_POLICY_OUT" in flows["Buy#1"].may_set
+    order = plan_order(list(flows.values()), ["Buy#1", "Policy#1"])
+    assert order.deps["Policy#1"] == ["Buy#1"] and order.data["Policy#1"] == {"DT_POLICY_OUT": ["Buy#1"]}
+
+
+def test_an_api_test_that_needs_a_name_a_website_test_saves_waits_for_it_and_its_stream(site, tmp_path):
+    """{NAME} in the request (Needs / Provides): Buy saves DT_Policy_Out into the run's variables, the API test's URL reads it."""
+    path = set_cells(build_with_api(tmp_path / "a.xlsx", site), "Policy", D3=site + "policy/v4/{DT_POLICY_OUT}", I3=None)
+    flows = flows_of(path)
+    assert "DT_POLICY_OUT" in next(f for f in flows if f.id == "Policy#2").needs
+    order = plan_order(flows, ["Buy#1", "View#1", "Policy#2"])
+    assert order.data["Policy#2"] == {"DT_POLICY_OUT": ["Buy#1"]} and order.deps["Policy#2"] == ["Buy#1", "View#1"]
+    assert order.after_stream == {"Policy#2": ["View#1"]}
 
 
 def test_an_api_test_whose_cell_nothing_sets_says_which_cell_and_who_could_set_it(site, tmp_path):
@@ -275,3 +326,13 @@ async def test_an_api_test_whose_producer_did_not_set_the_value_is_not_run(site,
     assert tests["Buy#1"].status == "FAILED"
     t = tests["Policy#1"]
     assert t.status == "ERROR" and t.steps == [] and "Not run: Policy#1 needs DT_Policy_Out" in t.error and "Buy#1 ended FAILED" in t.error
+
+
+@pytest.mark.browser
+async def test_an_independent_api_test_runs_while_the_website_tests_are_still_going(site, make_cfg, tmp_path):
+    """Two workers, one website stream and an API test linked to nothing: the API test takes the free worker at once instead of queueing behind Buy#1."""
+    path = set_cells(build_with_api(tmp_path / "a.xlsx", site), "Policy", I3="P-100")
+    tests, events = await run(make_cfg, path, ["Buy#1", "View#1", "Policy#2"], workers=2)
+    assert tests["Buy#1"].status == tests["View#1"].status == "PASSED"
+    assert at(events, "test_started", "Policy#2") < at(events, "test_finished", "Buy#1")
+    assert not (tests["Policy#2"].error or "").startswith("Not run")
