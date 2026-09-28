@@ -679,7 +679,7 @@ async function createTest() {
   m.busy = true; m.error = ''; rerender();
   const before = bm().tests.map((t) => t.id);
   const k = m.testKind || 'web';
-  const applied = await applyOps([k === 'web' ? { op: 'add_test', name, kind: 'web' } : { op: 'api_add_test', name, format: k === 'xml' ? 'xml' : 'json' }]);
+  const applied = await applyOps([k === 'web' ? { op: 'add_test', name, kind: 'web' } : { op: 'api_add_test', name }]);
   if (!applied) { m.busy = false; rerender(); return; }
   S.modal = null;
   const added = bm().tests.map((t) => t.id).find((id) => !before.includes(id));

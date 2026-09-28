@@ -5,7 +5,7 @@ import { icon } from '../../icons.js';
 import { buildUrl, bm } from './actions.js';
 import { scenarioRailItems } from './scenario.js';
 
-const KIND_ICON = { web: 'grid', api: 'api', xml: 'xml' };
+const KIND_ICON = { web: 'grid', api: 'xml', xml: 'xml' };            // (an API test gets the <> icon, JSON or XML alike)
 
 function lastDot(t) {
   if (!t.lastRun) return 'var(--pend)';

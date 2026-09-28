@@ -21,11 +21,10 @@ from ..config import Config
 from .ask import AskCancelled, AskTimeout, AskUnavailable
 from ..events import EventBus, now_iso
 from ..reporting.results import StepRecord, TestResult
-from ..workbook.api import METHODS, ApiRuntime, check, json_get, json_set, output_json_text, output_text, template_candidates
+from ..workbook.api import METHODS, RESPONSE_CHECK, ApiRuntime, json_get, json_set, output_json_text, output_text, template_candidates
 from ..workbook.api_paths import MISSING, is_extended_xpath, is_json_path, json_path_first, xpath_all
 from ..workbook.api_template import apply_replacements, json_to_tree, output_values, replacement_text, xml_to_tree
 from ..workbook.model import TestCase, Workbook
-from ..workbook.sheet import cell_text
 from .outcome import FAILED, PASSED
 from .session import http_block_message
 
@@ -169,6 +168,7 @@ def read_response(runtime: ApiRuntime, response: ApiResponse) -> list[str]:
     Workbook Builder writes: a JSONPath (``$.plans[?(@.code=='{PLAN}')].eligible``) and an XPath that starts at the document or ends on ``@attr``.
     Returns the notes for the report."""
     notes: list[str] = []
+    runtime.record_response(response.text, response.data, response.is_json)            # (for a whole-response check)
     runtime.record_output("RES_STATUS_CD_OUT", str(response.status))
     runtime.record_output("ELAPSEDTIME_OUT", str(response.elapsed_ms))
     data = response.data if response.is_json else None
@@ -425,18 +425,14 @@ class ApiTestRunner:
         return self.workbook.api_runtime(self.case, self.shared, pool=self._pool), ""
 
     def _check(self, runtime: ApiRuntime, point, seq: int) -> None:
-        started_at, t0 = self._begin(seq, runtime.row, f"Check {point.actual_column}", point.kind.upper())
-        expected_raw = runtime.values.get(point.expected_column.upper())
-        if isinstance(expected_raw, str) and "{" in expected_raw:
-            expected_raw = runtime.fill(expected_raw).text                # an expected value may be {PLAN} (the builder writes it)
-        expected = runtime.mask(cell_text(expected_raw))
-        actual = runtime.actual(point.actual_column)
-        ok = check(point.kind, expected_raw, actual)
-        comparison = "contains" if point.kind.startswith("contains") else "exact" if point.kind.startswith("compare") else ""
-        how = "" if comparison else f" ({point.kind.replace('_', ' ')})"            # greater than / between / matches: said in the notes
-        notes = [] if ok else [f"{point.expected_column} vs {point.actual_column}{how}"]
-        if not ok and actual == "":
+        started_at, t0 = self._begin(seq, runtime.row, point.step_name, point.kind.upper())
+        ok, expected, actual, differences = runtime.verdict(point)     # (an expected value may be {PLAN}: the builder writes it)
+        whole = point.kind == RESPONSE_CHECK
+        comparison = "" if whole else "contains" if point.kind.startswith("contains") else "exact" if point.kind.startswith("compare") else ""
+        how = "" if comparison or whole else f" ({point.kind.replace('_', ' ')})"   # greater than / between / matches: said in the notes
+        notes = differences if whole else [] if ok else [f"{point.expected_column} vs {point.actual_column}{how}"]
+        if not ok and actual == "" and not whole:
             notes.append("nothing was found in the response for that column (path missing or empty)")
-        self._record(seq, runtime.row, f"Check {point.actual_column}", point.kind.upper(), PASSED if ok else FAILED,
+        self._record(seq, runtime.row, point.step_name, point.kind.upper(), PASSED if ok else FAILED,
                      error="" if ok else "Comparison Failed", expected=expected, actual=actual, comparison=comparison, notes=notes,
                      started_at=started_at, t0=t0)

@@ -1,7 +1,9 @@
-// The API / XML test editor (P10; design Q18/Q19): steps on the left (send, checks, saves), the request in the middle (Form · Paste cURL ·
+// The API test editor (P10; design Q18/Q19): steps on the left (send, checks, saves), the request in the middle (Form · Paste cURL ·
 // Postman collection · From template), the response on the right as a clickable tree. Clicking a value opens the Check / Save pop-up with the
-// JSON path or XPath written out (and editable); inside a list it asks "this item" or "the item where ...". Everything it changes is an api_*
-// op sent through applyOps (one undo step each); what it shows comes from GET /api/build/api/<workbook>/tests/<test> (build/api_builder.py).
+// JSON path or XPath written out (and editable); inside a list it asks "this item" or "the item where ...". A check can also be typed by hand
+// (a path, the status, the time, or the whole response with an "ignore these fields" list) without sending anything. There is one kind of API
+// test: JSON or XML is only its Content-Type header, a row of the Headers table like any other. Everything it changes is an api_* op sent
+// through applyOps (one undo step each); what it shows comes from GET /api/build/api/<workbook>/tests/<test> (build/api_builder.py).
 import { S, rerender } from '../../state.js';
 import { html, raw, cx, toast } from '../../util.js';
 import { icon } from '../../icons.js';
@@ -17,7 +19,7 @@ const CHECKS = [['compare', 'Is'], ['contains', 'Contains'], ['greater_than', 'G
 const ui = {
   key: '', testKey: '', view: null, loading: false, error: null, row: null,
   tab: 'form', sel: 'send', resp: null, respMode: 'tree', sending: false, sendError: '', missing: [], values: {},
-  pop: null, closed: new Set(), varMenu: false,
+  pop: null, closed: new Set(), varMenu: false, newVar: null, newHeader: null, hand: null,
   curl: { text: '', result: null, busy: false }, postman: { requests: null, picked: new Set(), busy: false, error: '' },
   tpl: { list: null, folders: [], pick: null, fields: null, maps: {}, busy: false },
 };
@@ -31,6 +33,7 @@ async function load(t) {
   const sameTest = ui.testKey === `${wbName()}|${t.id}`;
   ui.testKey = `${wbName()}|${t.id}`;
   if (!sameTest) Object.assign(ui, { resp: null, sel: 'send', pop: null, missing: [], values: {}, sendError: '', tab: 'form', row: null, closed: new Set(),
+    newVar: null, newHeader: null, hand: null,
     curl: { text: '', result: null, busy: false }, postman: { requests: null, picked: new Set(), busy: false, error: '' },
     tpl: { list: null, folders: [], pick: null, fields: null, maps: {}, busy: false } });
   ui.loading = true;
@@ -77,7 +80,7 @@ function chips(text) {
 function toolbar(t, v) {
   const rows = v.dataRows || [];
   return html`<div style="flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 48px; border-bottom: 1px solid var(--line); background: var(--rail)">
-<span class="chip" style="height: 26px; color: var(--k-${v.format === 'json' ? 'api' : 'xml'})">${icon(v.format === 'json' ? 'api' : 'xml', 13)} ${v.format === 'json' ? 'API' : 'XML'} test</span>
+<span class="chip" style="height: 26px; color: var(--k-api)" title="JSON or XML is set by the Content-Type header">${icon('xml', 13)} API test</span>
 <span class="mono" style="font-size: 11.5px; color: var(--tx3)">${v.steps.length} steps</span>
 <span style="width: 1px; height: 20px; background: var(--line)"></span>
 <span class="chip" title="${v.needs.length ? v.needs.join(', ') : 'Nothing'}">${icon('arrowr', 12)} Needs ${v.needs.length}</span>
@@ -87,24 +90,36 @@ function toolbar(t, v) {
 <select class="fld" style="height: 30px; width: auto; font-size: 12px" data-change="build-api-row" aria-label="Data row">
 ${rows.map((r) => html`<option value="${r.row}" ${r.row === v.row ? raw('selected') : ''}>Row ${r.row}${r.label ? ' · ' + r.label : ''}${r.enabled === false ? ' (off)' : ''}</option>`)}
 </select></label>
-<div class="seg" role="group" aria-label="Format" style="width: 150px">
-<button class="${cx(v.format === 'json' && 'on')}" data-act="build-api-format" data-val="json" aria-pressed="${String(v.format === 'json')}">JSON</button>
-<button class="${cx(v.format === 'xml' && 'on')}" data-act="build-api-format" data-val="xml" aria-pressed="${String(v.format === 'xml')}">XML</button></div>
 </div>`;
 }
 
 // ---- steps column --------------------------------------------------------------------------------------------------------------
 function resultOf(step) {
-  if (!ui.resp || !ui.resp.checks || step.kind !== 'check') return null;
-  const c = V().checks.find((x) => x.ioRow === step.ioRow);
-  const r = c && ui.resp.checks.find((x) => x.actual.toUpperCase() === c.actual.toUpperCase() && x.expected.toUpperCase() === c.expected.toUpperCase());
+  const r = resultOfCheck(step.kind === 'check' ? V().checks.find((x) => x.ioRow === step.ioRow) : null);
   return r ? r.passed : null;
+}
+
+function resultOfCheck(c) {
+  if (!c || !ui.resp || !ui.resp.checks) return null;
+  return ui.resp.checks.find((x) => x.actual.toUpperCase() === c.actual.toUpperCase() && x.expected.toUpperCase() === c.expected.toUpperCase()) || null;
+}
+
+// The status the sheet expects but nothing checks (builder problem status_never_checked): said here, with the one-click fix.
+function statusBanner(v) {
+  const u = v.statusUnchecked;
+  if (!u) return '';
+  return html`<div class="bn bn-warn" data-key="status-unchecked" style="flex-direction: column; align-items: stretch; gap: 8px">
+<span style="display: flex; gap: 8px">${icon('warn', 15, 'color: var(--warn); flex: none')}<span><b>The status is never checked.</b> Row ${u.row} expects
+<span class="mono">${u.expected}</span> (RES_STATUS_CD_EXP) but InputOutput has no check for it${u.offRow ? html` (its row says <span class="mono">${u.offFunction}</span>, which switches it off)` : ''}, so any answer passes.</span></span>
+${u.sharedWith.length ? html`<span style="font-size: 12px; color: var(--tx2)">The check row is shared: ${u.sharedWith.join(', ')} will be checked too.</span>` : ''}
+<button class="btn btn-sm btn-pri" style="align-self: flex-start" data-act="build-api-fix-status">${icon('check', 12)} Check the status</button></div>`;
 }
 
 function stepsCol(v) {
   const badge = { send: ['api', 'Send'], check: ['check', 'Check'], save: ['save', 'Save'] };
   return html`<div class="scroll" style="width: 280px; flex: none; border-right: 1px solid var(--line); padding: 14px 12px; display: flex; flex-direction: column; gap: 5px; overflow: auto">
 <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 2px 6px"><span class="lbl">Steps</span></div>
+${statusBanner(v)}
 ${v.steps.map((s) => {
     const on = s.kind === 'send' ? ui.sel === 'send' : ui.sel === s.ioRow;
     const res = resultOf(s);
@@ -113,7 +128,10 @@ ${v.steps.map((s) => {
 <span class="trunc mono" style="font-size: 11.5px; flex: 1; text-align: left">${s.label}</span>
 ${res === true ? html`<span class="pdot" style="background: var(--pass)" title="Passed on the last send"></span>` : res === false ? html`<span class="pdot" style="background: var(--fail)" title="Failed on the last send"></span>` : ''}</button>`;
   })}
-<span style="font-size: 11.5px; color: var(--tx3); padding: 8px 4px">Checks and saves are added by clicking values in the response →</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 2px 0">
+<button class="btn btn-sm ${ui.sel === 'hand' ? 'btn-pri' : ''}" data-act="build-api-hand" data-val="path">${icon('plus', 12)} Check</button>
+<button class="btn btn-sm" data-act="build-api-hand" data-val="whole" title="Compare the entire response with the one you expect, leaving out fields that change (timestamps, ids)">${icon('plus', 12)} Whole response</button></div>
+<span style="font-size: 11.5px; color: var(--tx3); padding: 4px 4px 8px">Type a check by hand, or send the request and click a value in the response →</span>
 ${ui.resp ? html`<button class="btn btn-sm" data-act="build-api-check-status">${icon('check', 12)} Check status is ${ui.resp.response ? ui.resp.response.status : ''}</button>` : ''}
 </div>`;
 }
@@ -121,54 +139,145 @@ ${ui.resp ? html`<button class="btn btn-sm" data-act="build-api-check-status">${
 // ---- request panel: form -----------------------------------------------------------------------------------------------------------
 function varMenu(v) {
   if (!ui.varMenu) return '';
-  const names = [...new Set([...(v.columns || []).filter((c) => !/^(blnExecute|TCID|TC_Name|WEBSERVICE_|JSON_FORMAT|REQUEST_BODY|XML_|ENVIRONMENT_PARAMETER)/i.test(c)),
+  const own = new Set([...v.headers.map((h) => h.column), ...v.checks.flatMap((c) => [c.expected, c.actual]), ...v.saves.map((s) => s.column)]
+    .filter(Boolean).map((c) => c.toUpperCase()));                                  // (this test's own header / check / save columns are not inputs)
+  const names = [...new Set([...(v.columns || []).filter((c) => !own.has(c.toUpperCase())
+    && !/^(blnExecute|TCID|TC_Name|WEBSERVICE_|JSON_FORMAT|REQUEST_BODY|XML_|ENVIRONMENT_PARAMETER|RES_STATUS_CD_|ELAPSEDTIME_)/i.test(c)),
     ...(v.environmentVariables || [])])];
-  return html`<div class="menu" style="padding: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-height: 180px; overflow: auto">
-${names.length ? names.map((n) => html`<button class="btn btn-sm" data-act="build-api-insert-var" data-name="${n}">${icon('braces', 11)} ${n}</button>`) : html`<span style="font-size: 12px; color: var(--tx3); padding: 4px">No columns yet: type {NAME} and set its value in the Excel grid.</span>`}
-<button class="btn btn-sm" data-act="build-api-insert-var" data-name="SECRET:">${icon('lock', 11)} {SECRET:…}</button></div>`;
+  const nv = ui.newVar;
+  return html`<div class="menu" style="padding: 6px; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto">
+<div style="display: flex; flex-wrap: wrap; gap: 4px">
+${names.length ? names.map((n) => html`<button class="btn btn-sm" data-act="build-api-insert-var" data-name="${n}">${icon('braces', 11)} ${n}</button>`) : html`<span style="font-size: 12px; color: var(--tx3); padding: 4px">No variables yet: make one below.</span>`}
+<button class="btn btn-sm" data-act="build-api-insert-var" data-name="SECRET:">${icon('lock', 11)} {SECRET:…}</button>
+${nv ? '' : html`<button class="btn btn-sm" data-act="build-api-new-var">${icon('plus', 11)} New variable</button>`}</div>
+${nv ? html`<div data-key="new-var" style="display: flex; flex-direction: column; gap: 6px; padding: 6px; border-top: 1px solid var(--line)">
+<span class="lbl">New variable</span>
+<div style="display: flex; gap: 6px"><input class="fld mono" style="height: 30px; font-size: 12px" value="${nv.name}" placeholder="NAME" data-input="build-api-new-var-name" aria-label="Variable name" autocomplete="off">
+<input class="fld mono" style="height: 30px; font-size: 12px" value="${nv.value}" placeholder="its value in row ${v.row}" data-input="build-api-new-var-value" aria-label="Value in this row" autocomplete="off"></div>
+<span style="font-size: 11.5px; color: var(--tx3)">A column of this test's data row; the body gets {NAME} where the cursor was.</span>
+<div style="display: flex; gap: 6px"><button class="btn btn-sm btn-pri" data-act="build-api-new-var-add">Add and insert</button><button class="btn btn-sm btn-ghost" data-act="build-api-new-var-cancel">Cancel</button></div></div>` : ''}</div>`;
+}
+
+// Send now goes to the real site of the chosen environment: say so where the button is, louder on production.
+function sendWarning(v) {
+  const env = v.environment || 'the workbook\'s environment';
+  const prod = (v.production || []).includes(String(v.environment || '').toUpperCase()) || /^PROD(UCTION)?$/i.test(v.environment || '');
+  return html`<div class="bn ${prod ? 'bn-fail' : 'bn-warn'}" data-key="send-warning" role="note" style="padding: 10px 13px">${icon('warn', 15, `color: var(--${prod ? 'fail' : 'warn'}); flex: none`)}
+<span><b>Send now sends a real request to ${env}${prod ? ' (production)' : ''}.</b> It can create real transactions (a purchase, a cancellation) just like a run would.
+{NAME}s come from row ${v.row}, then the environment table; nothing is saved to the workbook.</span></div>`;
+}
+
+function headerRow(h) {
+  const hidden = h.secret && h.value === '••••••';
+  if (h.implied) {
+    return html`<tr data-key="hdr-implied"><td class="mono" style="width: 34%">${h.name} <span class="tag" title="${h.implied}">automatic</span></td>
+<td><input class="fld mono" style="height: 28px; font-size: 12px" value="${h.value}" data-change="build-api-header" data-name="${h.name}" aria-label="${h.name} value" title="${h.implied}. Type another value to send that instead."></td>
+<td style="width: 34px"></td></tr>`;
+  }
+  return html`<tr data-key="hdr-${h.ioRow}"><td style="width: 34%"><input class="fld mono" style="height: 28px; font-size: 12px" value="${h.name}" data-change="build-api-header-name" data-name="${h.name}" aria-label="Header name" autocomplete="off"></td>
+<td><input class="fld mono" style="height: 28px; font-size: 12px" value="${h.value}" data-change="build-api-header" data-name="${h.name}" aria-label="${h.name} value"
+${hidden ? raw('placeholder="typed in the sheet (hidden)"') : ''}></td>
+<td style="width: 34px"><button class="icon-btn" style="width: 26px; height: 26px" data-act="build-api-remove-header" data-name="${h.name}" aria-label="Stop sending ${h.name}">${icon('x', 12)}</button></td></tr>`;
 }
 
 function formPanel(v) {
-  const env = v.environment || 'the workbook\'s environment';
   const body = v.body;
+  const nh = ui.newHeader;
   return html`<div style="display: flex; gap: 8px">
 <select class="fld" style="width: 104px; height: 34px; font-size: 12.5px; color: var(--k-api)" data-change="build-api-method" aria-label="Method">
 ${v.methods.map((m) => html`<option ${m === v.method ? raw('selected') : ''}>${m}</option>`)}</select>
 ${v.urlFormula ? html`<div class="fld mono" style="height: 34px; display: flex; align-items: center; font-size: 12px; color: var(--tx2); overflow: hidden" title="A formula: edit it in the Excel grid">${v.url}</div>`
     : html`<input class="fld mono" style="height: 34px; font-size: 12.5px" value="${v.url}" placeholder="${v.environmentParameter ? 'from the Environments sheet: ' + v.environmentParameter : '{DOMAIN}/path'}" data-change="build-api-url" aria-label="Address">`}
 <button class="btn btn-pri ${ui.sending ? 'busy' : ''}" data-act="build-api-send" ${ui.sending ? raw('disabled') : ''}>${icon('play', 12)} Send now</button></div>
-<span style="font-size: 12px; color: var(--tx3)">Sends a real request with ${env} values and row ${v.row}. {NAME}s come from this row, then the environment table; nothing is saved to the workbook.</span>
+${sendWarning(v)}
 ${ui.missing.length ? html`<div class="bn bn-warn" style="flex-direction: column; gap: 8px"><b>Only an earlier test of a run would give these. Type a value to send with (not saved):</b>
 ${ui.missing.map((n) => html`<label style="display: flex; align-items: center; gap: 8px"><span class="var">${n}</span><input class="fld mono" style="height: 30px; font-size: 12px" value="${ui.values[n] || ''}" data-input="build-api-missing" data-name="${n}"></label>`)}
 <button class="btn btn-sm btn-pri" style="align-self: flex-start" data-act="build-api-send">Send with these</button></div>` : ''}
 ${ui.sendError ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${ui.sendError}</span></div>` : ''}
 <div style="display: flex; flex-direction: column; gap: 6px"><div style="display: flex; align-items: center; gap: 8px"><span class="lbl">Headers</span><span style="flex: 1"></span>
-<button class="btn btn-ghost btn-sm" data-act="build-api-add-header">${icon('plus', 12)} Header</button></div>
+<button class="btn btn-ghost btn-sm" data-act="build-api-add-header" ${nh ? raw('disabled') : ''}>${icon('plus', 12)} Header</button></div>
 <div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><tbody>
-${v.headers.length ? v.headers.map((h) => html`<tr data-key="hdr-${h.ioRow}"><td class="mono" style="width: 34%">${h.name}</td>
-<td><input class="fld mono" style="height: 28px; font-size: 12px" value="${h.value}" data-change="build-api-header" data-name="${h.name}" aria-label="${h.name} value"
-${h.secret && h.value === '••••••' ? raw('placeholder="typed in the sheet (hidden)"') : ''}></td>
-<td style="width: 34px"><button class="icon-btn" style="width: 26px; height: 26px" data-act="build-api-remove-header" data-name="${h.name}" aria-label="Stop sending ${h.name}">${icon('x', 12)}</button></td></tr>`)
-    : html`<tr><td style="color: var(--tx3)">No headers. ${v.format === 'json' ? 'Content-Type: application/json is sent for JSON.' : ''}</td></tr>`}
+${v.headers.map((h) => headerRow(h))}
+${nh ? html`<tr data-key="hdr-new"><td style="width: 34%"><input class="fld mono" style="height: 28px; font-size: 12px" value="${nh.name}" placeholder="Header name" data-input="build-api-new-header-name" data-change="build-api-new-header" aria-label="New header name" autocomplete="off"></td>
+<td><input class="fld mono" style="height: 28px; font-size: 12px" value="${nh.value}" placeholder="value (a key: {SECRET:NAME})" data-input="build-api-new-header-value" data-change="build-api-new-header" aria-label="New header value" autocomplete="off"></td>
+<td style="width: 34px"><button class="icon-btn" style="width: 26px; height: 26px" data-act="build-api-new-header-cancel" aria-label="Cancel the new header">${icon('x', 12)}</button></td></tr>` : ''}
+${!v.headers.length && !nh ? html`<tr><td style="color: var(--tx3)">No headers.</td></tr>` : ''}
 </tbody></table></div>
-${v.headers.some((h) => h.secret) ? html`<span style="font-size: 11.5px; color: var(--tx3)">For a key, type {SECRET:NAME}: the value then comes from secrets.env (RR_SECRET_NAME), never the sheet.</span>` : ''}</div>
+<span style="font-size: 11.5px; color: var(--tx3)">Content-Type says whether the body is JSON or XML${v.headers.some((h) => h.secret) ? '. For a key, type {SECRET:NAME}: the value then comes from secrets.env (RR_SECRET_NAME), never the sheet' : ''}.</span></div>
 <div style="display: flex; flex-direction: column; gap: 6px; position: relative"><div style="display: flex; align-items: center; gap: 8px"><span class="lbl">Body · ${v.format.toUpperCase()}</span>
 ${body.kind === 'template' ? html`<span class="tag">from ${body.template.file}</span>` : ''}<span style="flex: 1"></span>
 <button class="btn btn-ghost btn-sm" data-act="build-api-var-menu" aria-expanded="${String(ui.varMenu)}">${icon('braces', 13)} Insert variable</button></div>
 ${varMenu(v)}
 ${body.kind === 'template' && !body.text ? html`<div class="bn">${icon('filetext', 15, 'color: var(--tx3)')}<span>The body is the template <b>${body.template.file}</b>${body.template.location ? ' in ' + body.template.location : ''}, with
 ${body.template.replace.length} placeholders filled from this row. Typing a body below replaces it (the template stays named in the sheet).</span></div>` : ''}
-<textarea class="fld mono" style="height: 170px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6; resize: vertical" data-change="build-api-body" spellcheck="false"
+<textarea data-key="body-${v.test}-${v.row}" class="fld mono" style="height: 170px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6; resize: vertical" data-change="build-api-body" spellcheck="false"
 placeholder="${v.format === 'json' ? '{ "plan": "{PLAN}" }' : '<Request><Plan>{PLAN}</Plan></Request>'}" aria-label="Body">${body.text}</textarea>
 ${body.text && /\{/.test(body.text) ? html`<div style="font-size: 12px; color: var(--tx3); display: flex; flex-wrap: wrap; gap: 4px; align-items: center">Uses ${chips((body.text.match(/\{(SECRET:)?[A-Za-z_][A-Za-z0-9_]*\}/g) || []).filter((x, i, a) => a.indexOf(x) === i).join(' '))}</div>` : ''}
 </div>`;
 }
 
 // ---- request panel: step editor (a check or a save) --------------------------------------------------------------------------------------
+// The response of the last Send now as an expected body (JSON pretty-printed, so it reads well in the cell and in the textarea).
+function lastResponseText() {
+  const r = ui.resp && ui.resp.response;
+  if (!r) return '';
+  if (r.format === 'json') { try { return JSON.stringify(JSON.parse(r.text), null, 2); } catch (e) { return r.text; } }
+  return r.text;
+}
+
+function whatPlaceholder(v) { return v.format === 'json' ? '$.policy.number  or  /Envelope/Body/Policy/@id' : '/Envelope/Body/Policy/@id  or  $.policy.number'; }
+
+// A check typed by hand: a value (its path), the status, the time, or the whole response. Nothing needs to be sent first.
+function handForm(v) {
+  const h = ui.hand;
+  const whats = [['path', 'A value'], ['status', 'Status'], ['time', 'Time (ms)'], ['whole', 'Whole response']];
+  const whole = h.what === 'whole';
+  return html`<div class="card" data-key="hand-check" style="padding: 14px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><span class="badge k-check">Check</span><b>Add a check by hand</b></div>
+<div class="seg" role="group" aria-label="What to check">${whats.map(([k, label]) => html`<button class="${cx(h.what === k && 'on')}" aria-pressed="${String(h.what === k)}" data-act="build-api-hand-what" data-val="${k}">${label}</button>`)}</div>
+${h.what === 'path' ? html`<label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">Path in the response (a JSON path or an XPath)</span>
+<input class="fld mono" style="height: 32px; font-size: 12px" value="${h.path}" placeholder="${whatPlaceholder(v)}" data-input="build-api-hand-path" aria-label="Path" autocomplete="off"></label>` : ''}
+${whole ? '' : html`<label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">How</span>
+<select class="fld" style="height: 32px; font-size: 12.5px" data-change="build-api-hand-kind" aria-label="How">
+${v.checkKinds.map((k) => html`<option value="${k.kind}" ${k.kind === h.kind ? raw('selected') : ''}>${k.label}</option>`)}</select></label>
+<label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">Expected</span>
+<input class="fld mono" style="height: 32px; font-size: 12.5px" value="${h.expected}" data-input="build-api-hand-expected" aria-label="Expected" autocomplete="off"
+placeholder="${h.kind === 'between' ? '100;200' : h.kind === 'matches' ? '^Q-\\d+$' : h.what === 'status' ? '200' : ''}"></label>`}
+${whole ? html`<label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl" style="display: flex; align-items: center; gap: 8px">The response you expect
+${ui.resp && ui.resp.response ? html`<button class="lnk" style="text-transform: none; letter-spacing: 0" data-act="build-api-hand-use-last">Use the last response</button>` : ''}</span>
+<textarea class="fld mono" style="height: 160px; padding: 10px 12px; font-size: 12px; resize: vertical" spellcheck="false" data-input="build-api-hand-expected" aria-label="Expected response"
+placeholder="${v.format === 'json' ? '{ "status": "OK", "plan": { "code": "{PLAN}" } }' : '<Response><Status>OK</Status></Response>'}">${h.expected}</textarea></label>
+${ignoreField(h.ignore, 'data-input="build-api-hand-ignore"')}` : ''}
+<div style="display: flex; gap: 8px"><button class="btn btn-sm btn-pri" data-act="build-api-hand-add">Add as step ${v.steps.length + 1}</button><button class="btn btn-sm btn-ghost" data-act="build-api-sel" data-io="">Cancel</button></div></div>`;
+}
+
+function ignoreField(value, attrs) {
+  return html`<label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">Ignore these fields (they change on every call)</span>
+<input class="fld mono" style="height: 32px; font-size: 12px" value="${value}" placeholder="timestamp; requestId; $.meta.created; /Envelope/Body/Quote/@id" ${raw(attrs)} aria-label="Fields to ignore" autocomplete="off">
+<span style="font-size: 11.5px; color: var(--tx3)">A field name alone is ignored wherever it is; a path ($.a.b, $.items[*].id, /a/b/@c) ignores that part. Separate them with ;</span></label>`;
+}
+
+function wholeEditor(v, c) {
+  const res = resultOfCheck(c);
+  return html`<div class="card" style="padding: 14px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><span class="badge k-check">Check</span><b>The whole response</b><span class="mono" style="font-size: 11px; color: var(--tx3)">(${c.expected})</span></div>
+<label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl" style="display: flex; align-items: center; gap: 8px">The response you expect
+${ui.resp && ui.resp.response ? html`<button class="lnk" style="text-transform: none; letter-spacing: 0" data-act="build-api-whole-use-last" data-column="${c.expected}">Use the last response</button>` : ''}</span>
+<textarea data-key="whole-exp-${c.expected}" class="fld mono" style="height: 200px; padding: 10px 12px; font-size: 12px; resize: vertical" spellcheck="false" data-change="build-api-expected" data-column="${c.expected}" aria-label="Expected response">${c.expectedValue}</textarea></label>
+${ignoreField(c.ignore.join('; '), `data-change="build-api-ignore" data-column="${c.expected}"`)}
+${res ? html`<div class="bn ${res.passed ? '' : 'bn-fail'}" style="flex-direction: column; gap: 4px"><b>${res.passed ? 'The last response matched.' : (res.differences || []).length ? `The last response differs (${res.actualValue.split(':')[0]}):` : `The last response differs: ${res.actualValue}`}</b>
+${(res.differences || []).slice(0, 12).map((d) => html`<span class="mono" style="font-size: 11.5px">${d}</span>`)}</div>` : ''}
+${c.disabled ? html`<span class="tag tag-warn">switched off for this test (DisableCheckpoint)</span>` : ''}
+<div style="display: flex; gap: 8px"><button class="btn btn-sm" data-act="build-api-sel" data-io="">${icon('chevl', 12)} Request</button><span style="flex: 1"></span>
+<button class="btn btn-sm" data-act="build-api-delete" data-io="${c.ioRow}">${icon('trash', 12)} Remove check</button></div></div>`;
+}
+
 function stepEditor(v) {
+  if (ui.sel === 'hand' && ui.hand) return handForm(v);
   const c = v.checks.find((x) => x.ioRow === ui.sel);
   const s = v.saves.find((x) => x.ioRow === ui.sel);
   if (!c && !s) return formPanel(v);
+  if (c && c.what === 'whole') return wholeEditor(v, c);
   if (c) {
     return html`<div class="card" style="padding: 14px; display: flex; flex-direction: column; gap: 10px">
 <div style="display: flex; align-items: center; gap: 8px"><span class="badge k-check">Check</span><b>${c.what || c.path || c.actual}</b></div>
@@ -178,7 +287,7 @@ ${v.checkKinds.map((k) => html`<option value="${k.kind}" ${k.kind === c.kind ? r
 <label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">Expected <span class="mono" style="text-transform: none; letter-spacing: 0">(${c.expected})</span></span>
 <input class="fld mono" style="height: 32px; font-size: 12.5px" value="${c.expectedValue}" data-change="build-api-expected" data-column="${c.expected}"
 placeholder="${c.kind === 'between' ? '100;200' : c.kind === 'matches' ? '^Q-\\d+$' : ''}"></label>
-${c.outputRow ? html`<label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">${v.format === 'json' ? 'JSON path' : 'XPath'}, written for you (you can edit it)</span>
+${c.outputRow ? html`<label style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">${c.function === 'output_json' ? 'JSON path' : 'XPath'}, written for you (you can edit it)</span>
 <input class="fld mono" style="height: 32px; font-size: 12px" value="${c.path}" data-change="build-api-path" data-io="${c.outputRow}"></label>` : ''}
 ${c.disabled ? html`<span class="tag tag-warn">switched off for this test (DisableCheckpoint)</span>` : ''}
 <div style="display: flex; gap: 8px"><button class="btn btn-sm" data-act="build-api-sel" data-io="">${icon('chevl', 12)} Request</button><span style="flex: 1"></span>
@@ -318,7 +427,7 @@ ${r ? html`<div class="seg" style="width: 140px"><button class="${cx(ui.respMode
 <div class="scroll" style="flex: 1; overflow: auto; padding: 8px 10px">${nodes.map((n) => html`${nodeRow(n, r.format)}${ui.pop && ui.pop.id === n.id ? popup(v, n) : ''}`)}</div>`;
   }
   const checks = ui.resp && ui.resp.checks && ui.resp.checks.length ? html`<div style="padding: 8px 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px">
-${ui.resp.checks.map((c) => html`<span class="tag ${c.passed ? '' : 'tag-fail'}" title="expected ${c.expectedValue} · got ${c.actualValue}">${c.passed ? '✓' : '✗'} ${c.actual}</span>`)}</div>` : '';
+${ui.resp.checks.map((c) => html`<span class="tag ${c.passed ? '' : 'tag-fail'}" title="${c.kind === 'compare_response' ? `${c.actualValue}${(c.differences || []).length ? ' · ' + c.differences.slice(0, 5).join(' · ') : ''}` : `expected ${c.expectedValue} · got ${c.actualValue}`}">${c.passed ? '✓' : '✗'} ${c.kind === 'compare_response' ? 'whole response' : c.actual}</span>`)}</div>` : '';
   return html`<div style="width: 480px; flex: none; border-left: 1px solid var(--line); background: var(--rail); display: flex; flex-direction: column; min-height: 0">${head}${bodyHtml}${checks}</div>`;
 }
 
@@ -377,10 +486,11 @@ async function addFromPop() {
   const p = ui.pop;
   const v = V();
   if (!p || !p.path.trim()) { toast('The path is empty.'); return; }
-  const fn = KIND_OF[v.format];
+  const seen = ui.resp && ui.resp.response && KIND_OF[ui.resp.response.format] ? ui.resp.response.format : v.format;   // (the answer's own format)
+  const fn = KIND_OF[seen];
   const o = p.mode === 'save'
-    ? { op: 'api_add_save', ...base(), path: p.path.trim(), function: fn, variable: p.variable || 'VALUE' }
-    : { op: 'api_add_check', ...base(), path: p.path.trim(), function: fn, kind: p.kind, expected: p.expected };
+    ? { op: 'api_add_save', ...base(), path: p.path.trim(), function: fn, responseFormat: seen, variable: p.variable || 'VALUE' }
+    : { op: 'api_add_check', ...base(), path: p.path.trim(), function: fn, responseFormat: seen, kind: p.kind, expected: p.expected };
   const applied = await op([o]);
   if (!applied) return;
   const a = applied[0];
@@ -477,43 +587,122 @@ async function curlRead() {
 async function curlUse() {
   const r = ui.curl.result.request;
   const ops = [{ op: 'api_set_request', ...base(), method: r.method, url: r.url, format: r.format, body: r.body }];
-  for (const h of r.headers) {
-    if (h.name.toLowerCase() === 'content-type' && r.format === 'json' && /json/i.test(h.value)) continue;
-    ops.push({ op: 'api_set_header', ...base(), name: h.name, value: h.value });
-  }
+  for (const h of r.headers) ops.push({ op: 'api_set_header', ...base(), name: h.name, value: h.value });
   const applied = await op(ops);
   if (applied) { ui.tab = 'form'; ui.curl = { text: '', result: null, busy: false }; toast('The request now comes from that cURL command.'); rerender(); }
 }
 
-function insertVariable(name) {
-  const token = name === 'SECRET:' ? '{SECRET:NAME}' : `{${name}}`;
+// Where {NAME} goes in the body: the cursor of the body box, remembered when the menu opened (a click in the menu takes the focus away).
+let bodyCursor = null;
+function rememberCursor() {
+  const el = document.querySelector('[data-change="build-api-body"]');
+  bodyCursor = el && typeof el.selectionStart === 'number' ? [el.selectionStart, el.selectionEnd] : null;
+}
+
+function bodyWith(token) {
   const el = document.querySelector('[data-change="build-api-body"]');
   const text = el ? el.value : V().body.text;
-  const at = el && typeof el.selectionStart === 'number' ? el.selectionStart : text.length;
-  const next = text.slice(0, at) + token + text.slice(el && typeof el.selectionEnd === 'number' ? el.selectionEnd : at);
+  const [at, end] = bodyCursor || [text.length, text.length];
+  return text.slice(0, Math.min(at, text.length)) + token + text.slice(Math.min(end, text.length));
+}
+
+// A text box the page changes itself: morph.js never patches a textarea's value (it could be half typed), so it is set here.
+function setBox(selector, text) {
+  const el = document.querySelector(selector);
+  if (el) el.value = text;
+}
+
+async function insertVariable(name) {
+  const token = name === 'SECRET:' ? '{SECRET:NAME}' : `{${name}}`;
+  const next = bodyWith(token);
   ui.varMenu = false;
-  op([{ op: 'api_set_request', ...base(), body: next }]);
+  if (await op([{ op: 'api_set_request', ...base(), body: next }])) setBox('[data-change="build-api-body"]', next);
+}
+
+// "New variable" (Insert variable menu): a column of the data row holding its value here, and {NAME} in the body - one undo step.
+async function addNewVariable() {
+  const nv = ui.newVar;
+  const name = String(nv.name || '').trim().replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  if (!name || /^\d/.test(name)) { toast('A variable name has letters, digits or _ and does not start with a digit.'); return; }
+  const ops = [];
+  if (!(V().columns || []).some((c) => c.toUpperCase() === name.toUpperCase())) ops.push({ op: 'api_set_value', ...base(), column: name, value: nv.value || '' });
+  const next = bodyWith(`{${name}}`);
+  ops.push({ op: 'api_set_request', ...base(), body: next });
+  const applied = await op(ops);
+  if (!applied) return;
+  setBox('[data-change="build-api-body"]', next);
+  ui.newVar = null; ui.varMenu = false;
+  toast(nv.value ? `{${name}} added: ${nv.value} in row ${V().row}.` : `{${name}} added. Give it a value in the data row (or a run gives it).`, 5000);
+  rerender();
+}
+
+// Focus the value box of a header once the re-render has put it on the page (after "+ Header" named it).
+function focusHeaderValue(name) {
+  setTimeout(() => {
+    const el = [...document.querySelectorAll('[data-change="build-api-header"]')].find((x) => x.dataset.name.toLowerCase() === name.toLowerCase());
+    if (el) el.focus();
+  }, 60);
+}
+
+async function commitNewHeader(focusValue) {
+  const nh = ui.newHeader;
+  if (!nh || !String(nh.name || '').trim()) return;
+  await new Promise((r) => setTimeout(r, 250));              // (leaving the name box to press the row's x fires this first: let the x win)
+  if (ui.newHeader !== nh || nh.committing) return;
+  nh.committing = true;
+  const name = String(nh.name || '').trim();
+  if (/[\s:]/.test(name)) { nh.committing = false; toast('A header name has no spaces or colons (Content-Type, x-api-key).'); return; }
+  const applied = await op([{ op: 'api_set_header', ...base(), name, value: nh.value || '' }]);
+  nh.committing = false;
+  if (!applied) return;
+  ui.newHeader = null;
+  rerender();
+  if (focusValue) focusHeaderValue(name);
+}
+
+async function addHandCheck() {
+  const h = ui.hand;
+  const v = V();
+  let o;
+  if (h.what === 'whole') o = { op: 'api_add_check', ...base(), kind: 'compare_response', expected: h.expected, ignore: h.ignore };
+  else if (h.what === 'path') {
+    if (!h.path.trim()) { toast('Type the path of the value (a JSON path such as $.policy.number, or an XPath such as /Envelope/Body/Policy/@id).', 6000); return; }
+    o = { op: 'api_add_check', ...base(), path: h.path.trim(), kind: h.kind, expected: h.expected };
+  } else o = { op: 'api_add_check', ...base(), path: h.what, kind: h.kind, expected: h.expected };
+  const applied = await op([o]);
+  if (!applied) return;
+  ui.hand = null;
+  ui.sel = applied[0].ioRow || 'send';
+  toast(`Check added as step ${v.steps.length + 1}.`);
+  rerender();
 }
 
 export const acts = {
   'build-api-send'() { send(); },
-  'build-api-format'(el) { if (V() && V().format !== el.dataset.val) op([{ op: 'api_set_request', ...base(), format: el.dataset.val }]); },
   'build-api-tab'(el) { ui.tab = el.dataset.val; if (ui.tab === 'template' && !ui.tpl.list) loadTemplates(); rerender(); },
   'build-api-sel'(el) { ui.sel = el.dataset.io ? Number(el.dataset.io) : 'send'; ui.tab = 'form'; rerender(); },
   'build-api-add-header'() {
-    const name = window.prompt('Header name (for example x-api-key):');
-    if (!name || !name.trim()) return;
-    const value = window.prompt(`Value of ${name.trim()} (a key: {SECRET:NAME}, kept in secrets.env):`, '') ?? '';
-    op([{ op: 'api_set_header', ...base(), name: name.trim(), value }]);
+    ui.newHeader = { name: '', value: '' };
+    rerender();
+    setTimeout(() => { const el = document.querySelector('[data-input="build-api-new-header-name"]'); if (el) el.focus(); }, 30);
   },
+  'build-api-new-header-cancel'() { ui.newHeader = null; rerender(); },
   'build-api-remove-header'(el) { op([{ op: 'api_remove_header', ...base(), name: el.dataset.name }]); },
-  'build-api-var-menu'() { ui.varMenu = !ui.varMenu; rerender(); },
+  'build-api-var-menu'() { if (!ui.varMenu) rememberCursor(); ui.varMenu = !ui.varMenu; ui.newVar = null; rerender(); },
+  'build-api-new-var'() {
+    ui.newVar = { name: '', value: '' };
+    rerender();
+    setTimeout(() => { const el = document.querySelector('[data-input="build-api-new-var-name"]'); if (el) el.focus(); }, 30);
+  },
+  'build-api-new-var-add'() { addNewVariable(); },
+  'build-api-new-var-cancel'() { ui.newVar = null; rerender(); },
   'build-api-insert-var'(el) { insertVariable(el.dataset.name); },
   'build-api-delete'(el) {
     const io = Number(el.dataset.io);
     const c = V().checks.find((x) => x.ioRow === io);
     const others = c && c.outputRow ? V().checks.filter((x) => x.outputRow === c.outputRow && x.ioRow !== io).length : 1;
     const rows = c && c.outputRow && !others ? [io, c.outputRow] : [io];            // the output row goes too when nothing else reads it
+    if (c && c.ignoreIoRow) rows.push(c.ignoreIoRow);                               // (a whole-response check's ignore list goes with it)
     ui.sel = 'send';
     op([{ op: 'api_delete_io', ioRows: rows }]);
   },
@@ -539,6 +728,32 @@ export const acts = {
   'build-api-postman-import'() { importPostman(); },
   'build-api-tpl-pick'(el) { pickTemplate(Number(el.dataset.i)); },
   'build-api-tpl-use'() { useTemplate(); },
+  'build-api-fix-status'() {
+    op([{ op: 'api_add_status_check', test: V().test }]).then((applied) => {
+      if (applied && applied[0].added) toast(`The status is checked now${applied[0].sharedWith.length ? ` (and in ${applied[0].sharedWith.join(', ')})` : ''}.`, 5000);
+    });
+  },
+  'build-api-hand'(el) {
+    ui.hand = { what: el.dataset.val || 'path', path: '', kind: 'compare', expected: el.dataset.val === 'whole' ? lastResponseText() : '', ignore: '' };
+    ui.sel = 'hand'; ui.tab = 'form';
+    rerender();
+  },
+  'build-api-hand-what'(el) {
+    const h = ui.hand;
+    if (!h) return;
+    const wasWhole = h.what === 'whole';
+    h.what = el.dataset.val;
+    if (h.what === 'whole' && !h.expected) h.expected = lastResponseText();
+    else if (wasWhole && h.what !== 'whole') h.expected = h.what === 'status' && ui.resp && ui.resp.response ? String(ui.resp.response.status) : '';
+    rerender();
+  },
+  'build-api-hand-use-last'() { if (ui.hand) { ui.hand.expected = lastResponseText(); setBox('textarea[data-input="build-api-hand-expected"]', ui.hand.expected); rerender(); } },
+  'build-api-hand-add'() { addHandCheck(); },
+  'build-api-whole-use-last'(el) {
+    const text = lastResponseText();
+    op([{ op: 'api_set_value', ...base(), column: el.dataset.column, value: text }])
+      .then((applied) => { if (applied) setBox(`textarea[data-change="build-api-expected"][data-column="${el.dataset.column}"]`, text); });
+  },
 };
 
 export const changes = {
@@ -547,6 +762,14 @@ export const changes = {
   'build-api-url'(el) { if (el.value !== V().url) op([{ op: 'api_set_request', ...base(), url: el.value }]); },
   'build-api-body'(el) { if (el.value !== V().body.text) op([{ op: 'api_set_request', ...base(), body: el.value }]); },
   'build-api-header'(el) { op([{ op: 'api_set_header', ...base(), name: el.dataset.name, value: el.value }]); },
+  'build-api-header-name'(el) {
+    const name = el.value.trim();
+    if (!name || name === el.dataset.name) { el.value = el.dataset.name; return; }
+    op([{ op: 'api_set_header', ...base(), name, previous: el.dataset.name }]);                // (the value stays: even a key typed in the sheet)
+  },
+  'build-api-new-header'(el) { commitNewHeader(el.dataset.input === 'build-api-new-header-name'); },
+  'build-api-ignore'(el) { op([{ op: 'api_set_response_ignore', expected: el.dataset.column, ignore: el.value }]); },
+  'build-api-hand-kind'(el) { if (ui.hand) { ui.hand.kind = el.value; rerender(); } },
   'build-api-expected'(el) { op([{ op: 'api_set_value', ...base(), column: el.dataset.column, value: el.value }]); },
   'build-api-path'(el) { if (el.value.trim()) op([{ op: 'api_update_io', ioRow: Number(el.dataset.io), parameter: el.value.trim() }]); },
   'build-api-check-kind'(el) { op([{ op: 'api_update_io', ioRow: Number(el.dataset.io), function: el.value }]); },
@@ -562,6 +785,13 @@ export const inputs = {
   'build-api-pop-var'(el) { if (ui.pop) ui.pop.variable = el.value; },
   'build-api-pop-path-text'(el) { if (ui.pop) { ui.pop.path = el.value; ui.pop.pathChoice = ''; } },
   'build-api-tpl-val'(el) { ui.tpl.maps[el.dataset.ph] = { column: '', value: el.value }; },
+  'build-api-new-header-name'(el) { if (ui.newHeader) ui.newHeader.name = el.value; },
+  'build-api-new-header-value'(el) { if (ui.newHeader) ui.newHeader.value = el.value; },
+  'build-api-new-var-name'(el) { if (ui.newVar) ui.newVar.name = el.value; },
+  'build-api-new-var-value'(el) { if (ui.newVar) ui.newVar.value = el.value; },
+  'build-api-hand-path'(el) { if (ui.hand) ui.hand.path = el.value; },
+  'build-api-hand-expected'(el) { if (ui.hand) ui.hand.expected = el.value; },
+  'build-api-hand-ignore'(el) { if (ui.hand) ui.hand.ignore = el.value; },
 };
 
 /** For tests and the debugger: what the editor holds. */

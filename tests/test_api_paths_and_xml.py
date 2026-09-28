@@ -10,6 +10,7 @@ import pytest
 
 from regrunner.workbook import Workbook
 from regrunner.workbook.api import check
+from regrunner.workbook.api_compare import compare_response, ignore_list
 from regrunner.workbook.api_paths import (MISSING, filter_literal, is_extended_xpath, is_json_path, json_path_all, json_path_first,
                                           json_path_of, xpath_all, xpath_of)
 from regrunner.workbook.api_template import json_to_tree, xml_to_tree
@@ -77,6 +78,34 @@ def test_an_xpath_reads_a_json_response_the_way_output_paths_see_it():
 ])
 def test_greater_than_less_than_between_and_matches_give_a_verdict(kind, expected, actual, ok):
     assert check(kind, expected, actual) is ok
+
+
+# -- the whole-response check (compare_response) -------------------------------------------------------------------------------------------------------
+def test_a_whole_json_response_is_compared_as_data_and_every_difference_is_named_by_its_path():
+    expected = json.dumps({"id": 1, "plan": {"code": "B", "price": 12.5}, "items": [{"id": 7, "n": "a"}, {"id": 8, "n": "b"}]})
+    same = json.dumps({"plan": {"price": 12.50, "code": "B"}, "items": [{"n": "a", "id": 7}, {"id": 8, "n": "b"}], "id": 1.0})
+    assert compare_response(expected, same).same                                              # key order and 12.5 vs 12.50 do not matter
+    got = compare_response(expected, json.dumps({"id": 2, "plan": {"code": "B"}, "items": [{"id": 7, "n": "a"}], "extra": True}))
+    assert not got.same and got.differences == ["$.id: expected 1, got 2", "$.plan.price: missing (expected 12.5)",
+                                                "$.items[1]: missing (the list has 1 items, 2 expected)", "$.extra: not expected (got true)"]
+    assert "not valid JSON" in compare_response("{oops", same).problem and not compare_response("{oops", same).same
+
+
+def test_the_ignore_list_leaves_out_a_field_anywhere_a_jsonpath_with_or_without_the_index_and_an_xpath():
+    expected = json.dumps({"quoteId": "Q-1", "createdAt": "t1", "meta": {"requestId": "r1", "createdAt": "t1"}, "items": [{"id": 1, "n": "a"}, {"id": 2, "n": "b"}]})
+    actual = json.dumps({"quoteId": "Q-2", "createdAt": "t2", "meta": {"requestId": "r2", "createdAt": "t2"}, "items": [{"id": 3, "n": "a"}, {"id": 4, "n": "b"}]})
+    assert compare_response(expected, actual).count == 6
+    got = compare_response(expected, actual, ignore="quoteId; createdAt; $.meta.requestId; $.items.id")
+    assert got.same and got.ignored == 6
+    assert compare_response(expected, actual, ignore=["quoteId", "createdAt", "requestId", "$.items[*].id"]).same
+    assert compare_response(expected, actual, ignore="quoteId; createdAt; requestId; $.items[0].id").differences == ["$.items[1].id: expected 2, got 4"]
+    xml_expected = '<s:Envelope xmlns:s="urn:s"><s:Body><Quote created="1"><Plan>Basic</Plan><Plan>Max</Plan><Stamp>9</Stamp></Quote></s:Body></s:Envelope>'
+    xml_actual = '<Envelope><Body><Quote created="2"><Plan>Basic</Plan><Plan>Plus</Plan><Stamp>10</Stamp></Quote></Body></Envelope>'
+    assert compare_response(xml_expected, xml_actual).differences == ['/Envelope/Body/Quote/@created: expected "1", got "2"',
+                                                                      '/Envelope/Body/Quote/Plan[2]: expected "Max", got "Plus"',
+                                                                      '/Envelope/Body/Quote/Stamp: expected "9", got "10"']
+    assert compare_response(xml_expected, xml_actual, ignore="@created; /Envelope/Body/Quote/Plan[2]; //Stamp").same
+    assert ignore_list("a; b\nc,, ") == ["a", "b", "c"]
 
 
 # -- a row the builder wrote --------------------------------------------------------------------------------------------------------------------------

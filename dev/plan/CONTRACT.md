@@ -150,6 +150,27 @@ sheet (`Function | Parameter | Value`), as `workbook/api.py` reads it. The build
 - A column an `output_json` / `Output` row fills, that the sheet has, also goes into the run's pool (`{COLUMN}` in later tests: the API
   test Provides it); `{NAME}`s only the pool can give are its Needs. Column names the builder makes: `H_<header>`, `<name>_OUT` / `<name>_EXP`,
   a save's own variable name, `RES_STATUS_CD_EXP` / `ELAPSEDTIME_EXP` for the status / time checks.
+- **One kind of API test** (feedback item 16): the model's `kind` is `"api"` for every API sheet (`"xml"` is no longer produced; the engine's
+  `TestCase.kind` was always `"api"`). JSON or XML is the test's `Content-Type` header, an ordinary `addHeader` row (`H_Content_Type`),
+  `application/json` on a new test. `JSON_FORMAT` stays the runner's switch (default Content-Type, body escaping, output function of a
+  clicked value) and the builder writes it: `json` in the Content-Type = `Y`, `xml` = `N`; with no Content-Type row (or another type), from
+  the response the value was clicked in (`responseFormat`), else from the typed body (`{`/`[` = Y, `<` = N), else unchanged. A legacy row
+  with no Content-Type row shows the one the runner sends as an implied header (`implied`: why; JSON_FORMAT = Y, or the Environments
+  sheet's `<prefix>_ContentHeader`): typing a value there writes a real row.
+- **Whole-response check** (feedback item 14): `compare_response | <EXP column> | RESPONSE_OUT` + the expected body in the data row's
+  `<EXP column>` (`RESPONSE_EXP`, made unique per workbook: check rows are shared) + optionally `ignore_in_response | <EXP column> |
+  timestamp; $.meta.id; /Envelope/Body/Quote/@id` (`;`, `,` or new lines between). An ignore entry is a field name (anywhere, any depth;
+  `@attr` too), a JSONPath (`$.a.b`, `$.items[*].id`, `$.items.id` = every item, `[2]`) or an XPath (`/a/b[2]/@c`, `//name`), and covers
+  that node and everything under it. JSON is compared as data (key order ignored, list order kept, `1` = `1.0`), XML as elements
+  (namespaces dropped; tag, attributes, trimmed text, children in order), anything else as squeezed text (`workbook/api_compare.py`).
+  `{NAME}`s in the expected body are filled in (escaped for the response's format). The body is never written into a cell
+  (`RESPONSE_OUT` is only the check's name: `DisableCheckpoint` can name it). Report: step `Check the whole response`, action
+  `COMPARE_RESPONSE`, expected `the whole response in RESPONSE_EXP (ignoring ...)`, actual `the same` / `N differences: <first>`, every
+  difference in the notes (first 50). Both functions are unknown to the legacy runner, which skips them.
+- **Status never checked** (feedback item 15): an API sheet whose enabled data row has a `RES_STATUS_CD_EXP` value but no check row names
+  that column (a `compareX` row is "switched off") is the `status_never_checked` warning; `DisableCheckpoint` of `RES_STATUS_CD_OUT` for the
+  row's test name is respected. The fix (`api_add_status_check`) switches the `compareX` row back to `compare`, else adds
+  `compare | RES_STATUS_CD_EXP | RES_STATUS_CD_OUT` (shared: every API sheet with that column is checked from then on).
 
 ---
 
@@ -171,7 +192,7 @@ number within the test (section rows and empty rows are not steps). Rows are the
 
 ### 2.2 `Test`
 ```
-{ id: "Purchase", sheet: "Purchase", kind: "web" | "api" | "xml" | "other",
+{ id: "Purchase", sheet: "Purchase", kind: "web" | "api" | "other",    // ("xml" is no longer produced: one kind of API test, 1.6)
   listed: true,                  // has a DataSheets row (false: a keyword sheet nobody runs)
   dataSheetsRow: 3 | null, enabled: true, paramSheet: "AgentPortal_Params" | null, tags: ["smoke"], comment: "",
   dataRows: [ { row: 2, enabled: true, label: "NE · Basic" } ],   // Params rows (web) or data rows (api); label from Notes/Scenario/TC_Name
@@ -255,7 +276,7 @@ Fingerprint  { name: "Payment page", urlContains: "/purchase/payment", landmark:
 ```
 `kind` is one of: `unset_variable`, `missing_expected`, `last_run_locator_miss`, `unmapped_template_variable`, `side_effect_on_prod`,
 `side_effect_suggested`, `missing_environment_value`, `unknown_method`, `missing_locator`, `unknown_test`, `unknown_fingerprint`,
-`bad_condition`, `unbalanced_flow`. Legacy rows are not problems (their card says why they are locked). New kinds may be added (the UI shows unknown kinds by severity and message).
+`bad_condition`, `unbalanced_flow`, `status_never_checked` (an API test, `row: null`, 1.6). Legacy rows are not problems (their card says why they are locked). New kinds may be added (the UI shows unknown kinds by severity and message).
 
 ### 2.8 `Status`
 ```
@@ -337,7 +358,7 @@ API / XML editor (P10, `web/build_apitest.py`; edits are `api_*` ops through `/e
 
 | Route | Body / query | Answer |
 |---|---|---|
-| `GET /api/build/api/{name}/tests/{test}?row=&env=` | | `ApiTest`: `{test, row, dataRows, format: json\|xml, method, url, urlFormula, headers: [{name, column, value, secret, ioRow}], body: {kind: typed\|template\|none, text, template: {location, file, replace, updates}}, checks: [{ioRow, kind, label, expected, expectedValue, actual, path, what, outputRow}], saves: [{ioRow, function, path, column}], steps, columns, rowValues, needs, provides, environment, environmentVariables, production}` (a key typed in the sheet shows as `••••••`) |
+| `GET /api/build/api/{name}/tests/{test}?row=&env=` | | `ApiTest`: `{test, row, dataRows, format: json\|xml, method, url, urlFormula, headers: [{name, column, value, secret, ioRow, implied?}], body: {kind: typed\|template\|none, text, template: {location, file, replace, updates}}, checks: [{ioRow, kind, label, expected, expectedValue, actual, path, what: ""\|status\|time\|whole, outputRow, ignore?, ignoreIoRow?}], saves: [{ioRow, function, path, column}], steps, checkKinds (value checks only), statusUnchecked: {expected, row, offRow, offFunction, sharedWith} \| null, columns, rowValues, needs, provides, environment, environmentVariables, production}` (a key typed in the sheet shows as `••••••`; a header this row leaves out, `[BLANK]`, is not listed). `POST /api/build/api/send` answers each check with `differences` too (a whole-response check's list) |
 | `POST /api/build/api/send` | `{workbook, test, row?, env?, values?: {NAME: v}, confirmProd?}` | `{request, response: {status, ms, format, headers, text, tree, treeCut}, outputs, checks: [{expected, actual, kind, expectedValue, actualValue, passed}], notes, missing}`; the **draft** is sent, nothing is written; `missing` (no `response`) = `{NAME}`s only a run would give (send again with `values`); production 400s `prod_confirm` without `confirmProd: "PROD"`. Tree node: `{id, depth, key, type, path, value?, text?, count?, array?: {path, index, count, thisItem, rest, where: [{field, value, unique, path, variable?, variablePath?}]}}` |
 | `POST /api/build/api/curl` | `{workbook, text, test?, row?, env?}` | `{request: {method, url, headers, body, format}, found: [{kind: domain\|secret\|values, text}]}` (not applied) |
 | `POST /api/build/api/postman` | `{workbook, collection, env?}` | `{requests: [{name, folder, request, found}]}` (not applied) |
@@ -410,11 +431,14 @@ API / XML ops (P10, `build/api_builder.OPS`, added through `builder.EXTRA_OPS`; 
 
 | op | fields | effect |
 |---|---|---|
-| `api_add_test` | `name, format?: json\|xml, method?, url?, headers?: [[name, value]], body?, comment?` | new API sheet (`blnExecute TCID TC_Name WEBSERVICE_METHOD WEBSERVICE_URL JSON_FORMAT REQUEST_BODY`), data row 2, DataSheets row |
+| `api_add_test` | `name, format?: json\|xml, method?, url?, headers?: [[name, value]], body?, comment?` | new API sheet (`blnExecute TCID TC_Name WEBSERVICE_METHOD WEBSERVICE_URL JSON_FORMAT REQUEST_BODY`), data row 2, DataSheets row; every header (Content-Type included) is a header row, and `Content-Type: application/json` is added when none is given and the test is JSON (`format` is only a hint for a body with no Content-Type) |
 | `api_set_request` | `test, row, method?, url?, format?, body?` | the row's request cells (`url` cannot be a formula: the grid edits those) |
-| `api_set_header` / `api_remove_header` | `test, row, name, value?, previous?` | `addHeader` row (reused, else `H_<name>`) + the cell; remove = delete the row when no other API sheet has the column, else `[BLANK]` |
-| `api_add_check` | `test, row, path \| "status" \| "time", function?, kind, expected, name?` | output row (reused for the same path) + `<name>_EXP` column holding `expected` + the check row; answers `{actual, expected, reused}` |
-| `api_add_save` | `test, row, path, function?, variable` | output row into a column named `variable` (or the column that path already has: `reused`) |
+| `api_set_header` / `api_remove_header` | `test, row, name, value?, previous?` | `addHeader` row (reused, else `H_<name>`) + the cell (no `value`: the cell this sheet has stays); remove = delete the row when no other API sheet has the column, else `[BLANK]`. `previous` = a rename: the row is renamed in place when no other API sheet has its column (409 `exists` when `name` already has a row), else this sheet moves to the new name with the same value. A Content-Type set / renamed / removed rewrites `JSON_FORMAT` (1.6) |
+| `api_add_check` | `test, row, path \| "status" \| "time", function?, responseFormat?, kind, expected, name?` | output row (reused for the same path) + `<name>_EXP` column holding `expected` + the check row; answers `{actual, expected, reused}`. Typed by hand: a path starting `$` reads with `output_json`, `/` with `Output`. `"status"` / `"time"` on a sheet that already has `RES_STATUS_CD_EXP` / `ELAPSEDTIME_EXP` and no check on it uses that column (and switches a `compareX` row back on). `kind: compare_response` = `api_add_response_check` |
+| `api_add_response_check` | `test, row, expected?, ignore?: [..] \| "a; b", name?` | `RESPONSE_EXP` (unique) holding `expected` + `compare_response` row + `ignore_in_response` row when `ignore` is given (1.6) |
+| `api_set_response_ignore` | `expected, ignore` | the `ignore_in_response` row of that whole-response check: added / changed / removed when empty |
+| `api_add_status_check` | `test` | the fix of `status_never_checked`: answers `{added, ioRow, sharedWith}` (`added: false` when nothing was missing) |
+| `api_add_save` | `test, row, path, function?, responseFormat?, variable` | output row into a column named `variable` (or the column that path already has: `reused`) |
 | `api_update_io` / `api_delete_io` | `ioRow, function?, parameter?, value?` / `ioRows` | edit / delete `InputOutput` rows (the path stays editable) |
 | `api_set_value` | `test, row, column, value` | one cell of the row (column added when missing) |
 | `api_use_template` | `test, row, location, file, format?, mappings: [{placeholder, column? \| value?}]` | template cells + `Replace` rows; a placeholder another sheet already maps keeps its row, and this row's cell for that column becomes `=<column><row>` or the value |

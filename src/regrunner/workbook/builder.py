@@ -384,6 +384,12 @@ def _is_api_sheet(cols: dict[str, int]) -> bool:
     return "BLNEXECUTE" in cols and ("WEBSERVICE_URL" in cols or "ENVIRONMENT_PARAMETER" in cols)
 
 
+def _api_status_unchecked(editor: WorkbookEditor, sheet: str) -> dict | None:
+    """An API test that expects a status nothing checks (``build/api_builder.status_unchecked``; the ``status_never_checked`` problem)."""
+    from ..build.api_builder import status_unchecked             # (the API editor owns how InputOutput is read; imported late: it imports this)
+    return status_unchecked(editor, sheet)
+
+
 def _data_rows(grid: _Grid | None, label_headers: Iterable[str] = ("NOTES", "SCENARIO", "TC_NAME", "TESTCONDITION")) -> list[dict]:
     if grid is None:
         return []
@@ -842,8 +848,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
         else:
             parsed = {"steps": [], "blocks": [], "sections": [], "stored": False, "columns": g.header_names}
             data_rows = _data_rows(g)
-            json_format = [g.text(r["row"], "JSON_FORMAT") for r in data_rows if r["enabled"]]
-            kind = "api" if "JSON_FORMAT" in g.cols and any(is_true(x) for x in json_format) else "xml"
+            kind = "api"                      # (one kind of API test, JSON or XML alike: its Content-Type header says which - feedback item 16)
         tests.append({
             "id": key, "sheet": key, "kind": kind, "listed": d is not None, "dataSheetsRow": d.row if d else None,
             "enabled": bool(d.enabled) if d else False, "paramSheet": params.name if params is not None else (d.param_sheet or None if d else None),
@@ -852,6 +857,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
             "blocks": parsed["blocks"], "steps": parsed["steps"], "sections": parsed["sections"], "needs": [], "provides": [],
             "calls": sorted({s["call"].split("#")[0] for s in parsed["steps"] if s["call"]}), "columns": parsed["columns"],
             "lastRun": last_tests.get(key.upper()), "_params": params, "_variables": variables,
+            "_statusUnchecked": _api_status_unchecked(editor, key) if api and not ui else None,
         })
     # loops over other Params sheets make them variable sources too
     for t in tests:
@@ -966,6 +972,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
         attach_problems(model, builder_problems(model) + scenario_problems(model))
     for t in model["tests"]:
         t.pop("_needs", None)
+        t.pop("_statusUnchecked", None)
     return model
 
 
