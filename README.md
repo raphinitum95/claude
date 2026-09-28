@@ -466,19 +466,19 @@ formatting is lost. Undo/redo and an autosaved draft (`runs/.build/<stem>/`) mea
 **Save** writes the real file (a timestamped backup first, `workbooks/.backups/`); a change made outside the builder
 while it is open (someone else's edit, or Excel) is offered as reload, save-anyway, or a per-row merge.
 
-**All workbooks.** The grid button at the top (or *All workbooks* at the top of the left panel) lists every workbook in
-the folder; click anywhere on a card to open it. The download button (on each card, and beside **Save to Excel**) gives
+**All workbooks.** The **Build** tab always opens on every workbook in the folder (so does the grid button at the top, or
+*All workbooks* at the top of the left panel); click anywhere on a card to open it. The download button (on each card, and beside **Save to Excel**) gives
 you the workbook as a `.xlsx` file to share; with unsaved changes it offers to save them first.
 
 **Workbook map.** Every test as a card - kind, step count, a **last-run pill** (Passed/Failed/Not run), needs/provides,
-tags, its parameter sheet - tick a test on or off from here, open **Templates**, workbook-wide **Find & replace** (skips
+tags, its parameter sheet - click anywhere on it to open the test, tick a test on or off from here, open **Templates**, workbook-wide **Find & replace** (skips
 row 1, formulas and result columns), **Duplicate** (previews "what changes?" before it copies), or start a **New test**.
 A **Variable map** alongside it lists every `{TOKEN}` - from a Params column, the environment table, or a step that
 saves one - with what sets it, what uses it, and flags one that is used but nothing ever sets.
 
 **Test editor.** A block strip (the workbook's own section headings, or the `BLOCK` column once a block has been split)
-with a gate icon on a block that opens behind an `ASSERT_PAGE`; step cards below it (or the same rows as an Excel-like
-**Grid**) show kind, name, side-effect and legacy flags, a problem dot, and a **failed last run** badge in place of the
+with a gate icon on a block that opens behind an `ASSERT_PAGE`; step cards below it (or the sheet itself as a
+**Grid**: Excel row numbers, the header row stuck to the top, the selected step's row marked) show kind, name, side-effect and legacy flags, a problem dot, and a **failed last run** badge in place of the
 plain dot once a step has broken, so it stands out before you open it. The **inspector** on the right edits the
 selected step's name, value/expected/match, save-as, timeout, on-fail and side-effects, and, for every step that
 acts on an element, **On which element**: how it is found (XPath, id, CSS...), the locator itself (type or paste one),
@@ -488,8 +488,12 @@ builder** for computed values (date ± N, unique, a list, math, text join) that 
 screenshot (click to enlarge, or **Open that run** for the full page), and - when it looks like the element could not
 be found - a nudge to pick it again or replay up to it with the tools below (once the build window is open). The
 **Problems** panel lists every lint finding (a missing locator, an unclosed IF, a variable nothing sets...) and jumps
-straight to the step. Select more than one card for a floating bar: bulk enable/disable, stop-on-fail, move to another
-block, copy/paste, or save the selection as a template.
+straight to the step. Select more than one card and a bar opens right under the lowest one: bulk enable/disable,
+stop-on-fail, move to another block (it lands at the end of that block), copy/paste, or save the selection as a template;
+drag the bar by its grip to put it anywhere (it stays there for the session, **put it back** returns it). **Drag a card**
+by its grip to move the step (the ticked ones move together) between two cards, or onto a page in the strip.
+**Start a new page here** (the inspector, or the add-step menu) makes the selected step and the rest of its page a new
+page; **New page** (end of the strip) puts the next step you add on a new page at the end of the test.
 
 **Build window.** **Open the site** opens it in a browser window of its own (Chrome/Edge, visible), on the test's first
 Open step, or else on the environment's **Domain** (the `DOMAIN` row under *Environments*; with none set it opens blank
@@ -515,7 +519,10 @@ list is recognised as PICK_DATE / CHOOSE_SUGGESTION. **Check / Save / Wait until
 an OUTPUT/EXIST/CHECK_*/WAIT_UNTIL step, prefilled from what is actually on the page. **Done** on the pill stops picking
 and recording; the Build tab then says what was recorded (*Recorded 8 steps (steps 4-11)*), jumps to the first one, and
 offers **Remove them** (Undo brings them back). Recording a test that has no steps yet starts it with `OPEN {DOMAIN}`, since
-an address typed in the browser's own address bar is not recorded.
+an address typed in the browser's own address bar is not recorded. When a recorded click lands on another page, the
+test gets a check that it arrived there (ASSERT_PAGE with the page's fingerprint: URL part + main heading, saved under
+*Page fingerprints*) and the steps from there on go on a new page named after it, straight away; a redirect right after it
+moves that same check to where it ended. The card beside it can **Remove the check** or edit the fingerprint.
 
 **API / XML tests.** Their own editor - steps, a request form or paste-a-cURL/Postman/template, and a response tree you
 turn into a JSONPath/XPath check with a click - with **Send now** against the draft; `{NAME}`/`{SECRET:NAME}` work the
@@ -535,7 +542,8 @@ replays, and only the draft you are editing, never the saved file.
 **History** lists every batch and solo run, newest first, with a text/environment/failed-only filter. A **batch page**
 groups its failures by cause (a page gate, an unmet dependency, an element that could not be found, an infra crash...),
 shows what changed since the batch before it, and lists every test with a last-10-runs trend
-(new/flaky/fixed/failing/stable). **Re-run failed** starts a fresh, separately labelled batch of only the workbooks
+(new/flaky/fixed/failing/stable). A single run opened from here shows its full run page without leaving the Results tab.
+**Re-run failed** starts a fresh, separately labelled batch of only the workbooks
 that had a failure (refused on a still-running batch, nothing failed, or PROD - that goes through New run's own
 confirmation instead). A **test page** (opened from any test, in a batch or on its own) shows where the run stopped on
 the workbook's own block map - read fresh from the file, so it always matches what is there now, not what ran - every
