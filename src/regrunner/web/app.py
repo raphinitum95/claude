@@ -40,7 +40,7 @@ from ..engine.ask import write_answer
 from ..engine.order import chains_file, clean_chains, load_chains, plan_order, save_chains
 from ..engine.runner import RunOptions, SelectionError, new_run_id, select_cases
 from ..events import now_iso, read_events
-from ..preflight import browser_check, environment_problem, run_preflight, token_state
+from ..preflight import browser_check, environment_choice_problem, environment_problem, run_preflight, token_state
 from ..runmeta import new_batch_id, read_meta, update_meta
 from ..signin import SignInError, SignInSession
 from ..workbook.model import Workbook
@@ -51,6 +51,7 @@ from .run_batch import register_batch_routes
 from .templates_api import register_templates_routes
 from .refactor_api import register_refactor_routes
 from .scenario_api import register_scenario_routes
+from .variables_api import register_variables_routes
 
 STATIC = Path(__file__).parent / "static"
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._ -]+")
@@ -337,6 +338,10 @@ class RunManager:
             cases = wb.discover()
         except Exception as err:
             raise ApiError(422, f"Could not read workbook: {err}", "unreadable") from err
+        choice = environment_choice_problem(wb, req.env)                   # a workbook with its own environment table has no default one
+        if choice:
+            raise ApiError(422, f"{wb_path.name}: {choice}", "env_required" if not req.env else "env_unknown",
+                           environments=wb.environment_table().names)
         environment = (req.env or str(wb.global_settings().get("Environment", ""))).upper()
         problem, _missing = environment_problem(wb, environment)           # a required environment variable is empty: the run refuses to start
         if problem:
@@ -732,6 +737,7 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
     register_templates_routes(app, mgr, build_store)        # /api/build/templates*: the shared template library (web/templates_api.py)
     register_refactor_routes(app, mgr, build_store)         # duplicate/find-replace/merge (web/refactor_api.py)
     register_scenario_routes(app, mgr, build_store)         # /api/build/workbooks/{name}/scenarios*: concurrency scenarios (web/scenario_api.py)
+    register_variables_routes(app, mgr, build_store)        # the Variables screen's values/rename/secrets + download-info (web/variables_api.py)
     wb_cache: dict[tuple, Any] = {}
 
     # -- request guard -------------------------------------------------------------------------------

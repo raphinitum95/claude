@@ -28,7 +28,7 @@ async def run(make_cfg, wb: Path, tests: list[str]):
     events: list[dict] = []
     bus = EventBus()
     bus.subscribe(events.append)
-    result = await execute(RunOptions(workbook=wb, tests=tests, seed=1), cfg, bus)
+    result = await execute(RunOptions(workbook=wb, tests=tests, seed=1, environment="UAT"), cfg, bus)     # (the books' Global says UAT)
     return result, events, cfg.path(cfg.runs_dir) / result.run_id
 
 
@@ -207,7 +207,7 @@ async def test_a_run_whose_environment_lacks_a_required_variable_refuses_to_star
     bus = EventBus()
     bus.subscribe(events.append)
     with pytest.raises(EnvironmentMissing) as err:
-        await execute(RunOptions(workbook=wb, tests=["T"], seed=1), cfg, bus)
+        await execute(RunOptions(workbook=wb, tests=["T"], seed=1, environment="QA"), cfg, bus)
     assert "DOMAIN" in str(err.value) and "QA" in str(err.value)
     assert [(e["type"], e["environment"], e["variables"]) for e in events] == [("env_missing", "QA", ["DOMAIN"])]
     assert not cfg.path(cfg.runs_dir).exists() or not any(cfg.path(cfg.runs_dir).iterdir())

@@ -3,18 +3,22 @@ import { html, raw, cx } from '../../util.js';
 import { icon } from '../../icons.js';
 import { headerShell } from '../shell.js';
 import { buildRail } from './rail.js';
-import { workbookMap, variableMap } from './workbook.js';
+import { workbookMap } from './workbook.js';
+import { variableMap } from './variables.js';
 import { testEditor } from './editor.js';
 import { buildUrl } from './actions.js';
 import { modified, bytes } from '../../fmt.js';
 import { scenarioBoard } from './scenario.js';
 
+/** The environment the Build tab shows values for and replays in: always named (a workbook with its own environment table has no default,
+ *  so this starts on the table's first one).  A compact picker: the header's middle slot is narrow once the draft status shows. */
 function envSeg(S, m) {
   const names = m.environments.names;
   if (!names.length) return '';
-  return html`<div class="seg" style="width: ${Math.min(280, 70 * names.length)}px" role="group" aria-label="Environment">
-${names.map((n) => html`<button class="${cx(m.environment === n && 'on', m.environment === n && m.environments.production.includes(n) && 'prod')}" data-act="build-env-picker" data-val="${n}" aria-pressed="${String(m.environment === n)}">${n}</button>`)}
-</div>`;
+  const prod = m.environments.production.includes(m.environment);
+  return html`<label class="chip" style="flex: none; height: 30px; gap: 5px; padding: 0 6px 0 10px; ${prod ? 'color: var(--fail); border-color: var(--fail-line); background: var(--fail-soft)' : 'color: var(--tx)'}" title="The environment the Build tab shows values for and replays in">
+${icon('globe', 13)}<select id="build-env" data-key="env-${names.join('|')}-${m.environment}" data-change="build-env-select" aria-label="Environment" style="border: 0; background: transparent; color: inherit; font: inherit; font-weight: 650; cursor: pointer; padding: 0 2px">
+${names.map((n) => html`<option value="${n}" ${n === m.environment ? raw('selected') : ''}>${n}</option>`)}</select></label>`;
 }
 
 export function buildHeader(S) {
@@ -28,10 +32,10 @@ export function buildHeader(S) {
   }
   const status = m.status;
   const middle = html`<a href="#/build/all" class="icon-btn" style="flex: none; width: 30px; height: 30px" aria-label="All workbooks" title="All workbooks: open another one">${icon('grid', 14)}</a>
-<a href="${buildUrl(b.name, 'map')}" class="trunc" style="font-size: 13px; color: var(--tx3); text-decoration: none">${m.name}</a>
-${b.screen === 'test' && b.testId ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp" style="font-size: 16px; font-weight: 700">${b.testId}</span>` : ''}
-${b.screen === 'scenario' && b.scenario ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700">${b.scenario}</span>` : ''}
-${b.screen === 'variables' ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp" style="font-size: 16px; font-weight: 700">Variables</span>` : ''}
+<a href="${buildUrl(b.name, 'map')}" class="trunc" style="font-size: 13px; color: var(--tx3); text-decoration: none; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" title="${m.name}">${m.name}</a>
+${b.screen === 'test' && b.testId ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${b.testId}</span>` : ''}
+${b.screen === 'scenario' && b.scenario ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${b.scenario}</span>` : ''}
+${b.screen === 'variables' ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Variables</span>` : ''}
 <span style="flex: 1"></span>${envSeg(S, m)}`;
   const right = html`
 ${status.externalChange ? html`<button class="chip chip-warn" data-act="build-file-changed" title="The file changed on disk since it was opened here">${icon('warn', 13)} Changed on disk</button>` : ''}

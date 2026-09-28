@@ -4,6 +4,7 @@ import { S, rerender, freshBuild, freshEditor } from '../../state.js';
 import * as buildApi from './api.js';
 import { toast, debounce } from '../../util.js';
 import { loadWorkbooks } from '../../actions.js';
+import { api } from '../../api.js';
 
 const enc = encodeURIComponent;
 
@@ -23,6 +24,10 @@ export function buildUrl(name, screen, testId) {
 }
 
 function ensureSelection() {
+  const m = S.build.model;
+  // A workbook with its own environment table has no default environment: the Build tab works in the one the model says (the one picked,
+  // else the table's first) and every later call names it, so the build window, Send now and "Run it on" never fall back to Global.
+  if (m && m.environments && m.environments.source === 'rr' && m.environment && S.build.env !== m.environment) S.build.env = m.environment;
   const t = currentTest();
   const ed = S.build.ed;
   if (!t) return;
@@ -80,6 +85,14 @@ export async function downloadWorkbook(name) {
       if (S.build.model && S.build.model.status && S.build.model.status.modified) return;       // (the save did not go through: it said why)
     }
   }
+  let secrets = [];
+  try { secrets = (await api(`/api/workbooks/${enc(name)}/download-info`)).secrets || []; } catch (e) { /* (an older server: download as before) */ }
+  if (secrets.length) { S.modal = { kind: 'build-download-secrets', name, secrets }; rerender(); return; }        // say it first: the file has no secret values
+  startDownload(name);
+}
+
+/** Hand the saved file to the browser as a download. */
+export function startDownload(name) {
   const a = document.createElement('a');
   a.href = `/api/workbooks/${encodeURIComponent(name)}/download`;
   a.download = name;
@@ -742,6 +755,7 @@ export const acts = {
   'build-redo': redo,
   'build-save'() { saveToExcel(false); },
   'build-download'(el) { downloadWorkbook(el.dataset.name || S.build.name); },
+  'build-download-go'(el) { const name = el.dataset.name; S.modal = null; rerender(); startDownload(name); },
   'build-history': openHistory,
   'build-toggle-problems': toggleProblems,
   'build-new-workbook': openNewWorkbook,
@@ -838,6 +852,7 @@ export const acts = {
 };
 
 export const changes = {
+  'build-env-select'(el) { setEnv(el.value); },
   'build-nw-env-prod'(el) { S.modal.envs[Number(el.dataset.i)].production = el.checked; rerender(); },
   'build-env-prod'(el) { const n = el.dataset.env; const m = S.modal; m.production = el.checked ? [...new Set([...m.production, n])] : m.production.filter((x) => x !== n); rerender(); },
   'build-env-required'(el) { S.modal.rows[Number(el.dataset.i)].required = el.checked; rerender(); },

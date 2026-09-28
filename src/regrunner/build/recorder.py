@@ -313,26 +313,39 @@ def url_path(url: str) -> str:
     return ((m.group(1) or "/") if m else "").rstrip("/") or "/"
 
 
-def store_secret(path: Path, key: str, value: str) -> str:
+def store_secret(path: Path, key: str, value: str, *, replace: bool = False) -> str:
     """Put ``key=value`` in ``secrets.env`` (a line added, the file created when missing) and load it, so replays see it.  Returns ``same`` when
-    it was already there with that value, ``added`` when written, ``differs`` (and writes nothing) when the key holds another value."""
+    it was already there with that value, ``added`` when written, ``differs`` (and writes nothing) when the key holds another value.
+    ``replace`` (the Variables tab's "new value" for a secret): a key holding another value gets this one instead (``replaced``); every
+    other line of the file stays as it is."""
     if not _SECRET_KEY.match(key):
         raise BuildError(f"{key!r} cannot be a secrets.env key.", "secret", 400)
     if "\n" in value or "\r" in value:
         raise BuildError("A secret cannot hold a line break.", "secret", 400)
     lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
-    for line in lines:
+    quoted = f'"{value}"' if value != value.strip() else value
+    for i, line in enumerate(lines):
         k, sep, v = line.strip().partition("=")
         if sep and k.strip() == key and not line.strip().startswith("#"):
-            return "same" if v.strip().strip('"').strip("'") == value else "differs"
-    quoted = f'"{value}"' if value != value.strip() else value
-    text = "\n".join(lines + [f"{key}={quoted}"]) + "\n"
+            if v.strip().strip('"').strip("'") == value:
+                return "same"
+            if not replace:
+                return "differs"
+            lines[i] = f"{key}={quoted}"
+            _write_secrets(path, lines)
+            return "replaced"
+    _write_secrets(path, lines + [f"{key}={quoted}"])
+    return "added"
+
+
+def _write_secrets(path: Path, lines: list[str]) -> None:
+    """Write ``lines`` as secrets.env (through a temporary file, so a crash never leaves half of it) and load it into this process."""
+    text = "\n".join(lines) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".env.tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
     load_env_file(path)
-    return "added"
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------

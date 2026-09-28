@@ -16,13 +16,15 @@ import * as AB from './views/build/actions.js';
 import * as BS from './views/build/session.js';
 import * as BA from './views/build/api_editor.js';
 import * as SC from './views/build/scenario.js';
+import * as BV from './views/build/variables.js';
 import './views/build/dragsort.js';                       // (drag a step card / the selected bar: document listeners)
 import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
-const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...AR.acts };
-const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes };
-const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...SC.inputs, ...AR.inputs };
+const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...BV.acts, ...AR.acts };
+const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes, ...BV.changes };
+const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...SC.inputs, ...BV.inputs, ...AR.inputs };
+const enters = { ...A.enters, ...BV.enters };
 
 const baseTitle = document.title;
 const appEl = () => document.getElementById('app');
@@ -162,7 +164,7 @@ document.addEventListener('keydown', (ev) => {
   }
   if (ev.key === 'Enter' && ev.target instanceof Element && ev.target.hasAttribute('data-enter')) {
     ev.preventDefault();
-    const fn = A.enters[ev.target.getAttribute('data-enter')];
+    const fn = enters[ev.target.getAttribute('data-enter')];
     if (fn) fn(ev.target);
   }
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.target instanceof Element && ev.target.matches('.shot.zoom')) {

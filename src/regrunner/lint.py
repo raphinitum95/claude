@@ -154,7 +154,7 @@ def builder_problems(model: dict) -> list[dict]:
         out.append({"id": pid, "severity": severity, "kind": kind, "message": message, "test": test, "row": row,
                     "n": step["n"] if step else None, "variable": variable})
 
-    env = model.get("environment", "")
+    env = str(model.get("environment", "")).upper()                 # (a workbook with its own table: spelt as the table spells it)
     envs = model.get("environments") or {"names": [], "production": [], "rows": [], "source": "none"}
     production = {n.upper() for n in envs.get("production", [])}
     on_prod = env in production

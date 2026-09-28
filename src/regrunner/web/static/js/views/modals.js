@@ -10,6 +10,7 @@ import {
   templatesLibraryDialog, saveTemplateDialog, insertTemplateDialog, duplicateWorkbookDialog, findReplaceDialog, valueBuilderDialog,
 } from './build/dialogs.js';
 import { sessionQuestionDialog } from './build/session.js';
+import { downloadSecretsDialog } from './build/variables.js';
 
 /** ``locked``: something is in flight that closing the dialog would not stop, so it cannot be closed until it answers (the X is greyed out, the backdrop does nothing). */
 function frame(title, body, { wide, danger, locked, id = 'dlg-title' } = {}) {
@@ -28,17 +29,18 @@ function prod(S, m) {
   const steps = chosen.reduce((a, t) => a + t.steps, 0);
   const books = f.books;
   const prodBooks = f.env ? books : books.filter((n) => f.bk[n].info && String(f.bk[n].info.environment).toUpperCase() === 'PROD');
-  const set = S.cfg && S.cfg.tokens && S.cfg.tokens.PROD;
+  const env = envList(S)[0] || 'PROD';                             // (a workbook's own table may call its production environment something else)
+  const set = S.cfg && S.cfg.tokens && S.cfg.tokens[env];
   const ok = m.text.trim() === 'PROD';
   const starting = !!f.starting;                                   // confirmed: the server is reading the workbook and starting the runner (seconds on a big workbook)
-  return frame('Run on PROD?', html`
+  return frame(`Run on ${env}?`, html`
 <div style="width: 44px; height: 44px; border-radius: 13px; background: var(--fail-soft); border: 1px solid var(--fail-line); color: var(--fail); display: grid; place-items: center; margin-top: 12px">${icon('warn', 22)}</div>
 <p style="font-size: 13px; color: var(--tx2); margin-top: 12px; line-height: 1.55">PROD runs are real transactions on the live site: real orders, real emails. None of it can be undone from here.</p>
 <div class="kv" style="grid-template-columns: 96px 1fr; margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--line); font-size: 12.5px">
 ${books.length > 1 ? html`<span>Workbooks</span><span class="mono" style="overflow-wrap: anywhere">${books.map((n) => shortName(n)).join(', ')}</span>` : ''}
 ${books.length > 1 && prodBooks.length !== books.length ? html`<span>On PROD</span><span class="mono" style="overflow-wrap: anywhere">${prodBooks.map((n) => shortName(n)).join(', ')}</span>` : ''}
 <span>Tests</span><span class="mono">${chosen.length} · ${num(steps)} steps</span><span>Workers</span><span class="mono">${f.workers}</span>
-<span>Token</span><span><span class="tag ${set ? '' : 'tag-warn'}">${S.cfg ? S.cfg.cookie_name : ''} · PROD: ${set ? 'set' : 'missing'}</span></span></div>
+<span>Token</span><span><span class="tag ${set ? '' : 'tag-warn'}">${S.cfg ? S.cfg.cookie_name : ''} · ${env}: ${set ? 'set' : 'missing'}</span></span></div>
 <div style="margin-top: 18px"><label class="lbl" for="prod-text" style="display: block; margin-bottom: 8px">Type PROD to confirm</label>
 <input id="prod-text" class="fld" type="text" autocomplete="off" spellcheck="false" style="letter-spacing: .1em; border-color: var(--fail-line)" value="${m.text}" data-input="prod-text" data-enter="confirm-prod" ${starting ? raw('readonly') : ''}></div>
 <div style="display: flex; gap: 10px; margin-top: 20px"><button class="btn" style="flex: 1" data-act="close-modal" ${starting ? raw('disabled') : ''}>Cancel</button>
@@ -185,6 +187,7 @@ export function modalView(S) {
     case 'build-new-workbook': return newWorkbookDialog(m);
     case 'build-new-test': return newTestDialog(m);
     case 'build-environments': return environmentsDialog(m);
+    case 'build-download-secrets': return downloadSecretsDialog(m);
     case 'build-fingerprints': return fingerprintsListDialog();
     case 'build-fingerprint': return fingerprintDialog(m);
     case 'build-file-changed': return fileChangedDialog(m);

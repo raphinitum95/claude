@@ -107,7 +107,8 @@ def test_variables_problems_environments_fingerprints_and_the_grid(api):
     assert api.get("/api/build/workbooks/mock.xlsx/fingerprints").json()[0]["urlContains"] == "/payment"
     grid = api.get("/api/build/workbooks/mock.xlsx/sheets/flowa").json()
     assert grid["name"] == "FlowA" and grid["headers"][0] == "blnExecute" and grid["rows"][0][0] == "Open"
-    assert api.get("/api/build/workbooks/mock.xlsx/sheets/_rr_environments").json()["hidden"] is True
+    assert api.get("/api/build/workbooks/mock.xlsx/sheets/_rr_environments").json()["hidden"] is False   # (visible: Excel shows it)
+    assert api.get("/api/build/workbooks/mock.xlsx/sheets/_rr_fingerprints").json()["hidden"] is True
     assert api.get("/api/build/workbooks/mock.xlsx/sheets/Nope").status_code == 404
 
 
