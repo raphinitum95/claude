@@ -280,3 +280,22 @@ async def test_a_cancelled_run_ends_a_wait_at_once():
     c.cancel.set()
     assert await asyncio.wait_for(a, 2) == ""
 
+
+
+def test_the_board_s_last_runs_are_the_newest_runs_of_this_workbook_that_ran_the_scenario(tmp_path):
+    import json
+    from regrunner.runmeta import update_meta
+    from regrunner.web.scenario_api import scenario_runs
+    lane = lambda key, status: {"id": f"{SC} · {key}", "status": status, "lane": {"scenario": SC, "key": key, "label": "", "test": "Edit#1"},
+                                "syncs": [{"item": "Sync 1", "state": "released"}]}
+    for run_id, workbook, tests in (("20260901-000001-UAT", "wb.xlsx", [lane("A", "PASSED"), lane("B", "FAILED")]),
+                                    ("20260902-000001-UAT", "wb.xlsx", [{"id": "Edit", "status": "PASSED"}]),         # a plain run: not listed
+                                    ("20260903-000001-UAT", "other.xlsx", [lane("A", "PASSED")]),                    # another workbook
+                                    ("20260904-000001-UAT", "wb.xlsx", [lane("A", "PASSED"), lane("B", "PASSED")])):
+        d = tmp_path / run_id
+        update_meta(d, run_id=run_id, workbook=str(tmp_path / workbook), status="PASSED")
+        (d / "results.json").write_text(json.dumps({"status": "PASSED", "environment": "UAT", "started_at": run_id, "tests": tests}))
+    runs = scenario_runs(tmp_path, "wb.xlsx", "two AGENTS")
+    assert [r["runId"] for r in runs] == ["20260904-000001-UAT", "20260901-000001-UAT"]
+    assert [(l["key"], l["status"]) for l in runs[1]["lanes"]] == [("A", "PASSED"), ("B", "FAILED")] and runs[1]["lanes"][0]["syncs"]
+    assert len(scenario_runs(tmp_path, "wb.xlsx", SC, limit=1)) == 1
