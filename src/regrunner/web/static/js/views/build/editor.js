@@ -1,12 +1,15 @@
 // Test editor: block map, step cards / Excel grid, inspector, data drawer, problems panel, add-step menu.
 import { html, raw, cx } from '../../util.js';
 import { icon } from '../../icons.js';
+import { runFileUrl } from '../../api.js';
 import { buildRail } from './rail.js';
 import {
   bm, currentTest, selectedStep, buildUrl, effectiveBuildingWith,
 } from './actions.js';
 import { sessionBar, sessionMark, pickPanel, sessionOpen } from './session.js';
 import { apiEditor } from './api_editor.js';
+
+const enc = encodeURIComponent;
 
 const KIND_BADGE = { nav: 'Go', act: 'Click', input: 'Type', check: 'Check', save: 'Save', wait: 'Wait', call: 'Call', flow: 'Flow', legacy: 'Legacy', other: 'Step', empty: '' };
 const BLOCK_KIND_LABEL = { page: 'Page', window: 'Window', call: 'Call', loop: 'Repeat' };
@@ -26,6 +29,26 @@ function tokenParts(text) {
   return out;
 }
 const tokenHtml = (text) => tokenParts(text).map((p) => (p.v ? html`<span class="var${p.secret ? ' secret' : ''}">${p.secret ? '•••• ' : ''}${p.t}</span>` : html`${p.t}`));
+
+// ---- a step's last-run outcome: a passive card badge, plus evidence in the inspector -----------------------------
+function lastRunMark(r) {
+  if (!r) return '';
+  if (r.status !== 'FAILED') return html`<span class="pdot" style="background: var(--pass)" title="PASSED on the last run"></span>`;
+  return html`<span class="tag" style="color: var(--fail); border-color: var(--fail)" title="${r.error || 'Failed'} (run ${r.runId})">${icon('warn', 10)} failed last run</span>`;
+}
+
+function lastRunCard(t, s) {
+  const r = s.lastResult;
+  if (!r || r.status !== 'FAILED') return '';
+  return html`<div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: none; border-color: var(--fail-line)">
+<div style="display: flex; align-items: center; gap: 8px">${lastRunMark(r)}<span class="mono" style="font-size: 11px; color: var(--tx3)">${r.when || r.runId}</span><span style="flex: 1"></span>
+<a class="lnk" style="font-size: 12px" href="#/results/test/${enc(r.runId)}/${enc(t.id)}">Open that run</a></div>
+${r.error ? html`<span style="font-size: 12.5px; color: var(--tx2); overflow-wrap: anywhere">${r.error}</span>` : ''}
+${r.screenshot ? html`<div class="shot zoom" style="max-width: 260px" data-act="zoom" data-src="${runFileUrl(r.runId, r.screenshot)}" role="button" tabindex="0" aria-label="Enlarge the screenshot from the failed run">
+<img src="${runFileUrl(r.runId, r.screenshot)}" alt="Screenshot from the failed run" loading="lazy" decoding="async"></div>` : ''}
+${r.locatorMiss ? html`<span style="font-size: 11.5px; color: var(--tx3)">Looks like the element could not be found. Pick it again below, or open the site and Run up to here to see it live.</span>` : ''}
+</div>`;
+}
 
 // ---- sub-header: kind, needs/provides, cards/grid toggle -----------------------------------------------------
 function subHeader(S, t) {
@@ -97,7 +120,7 @@ ${sessionMark(s.row)}
 ${s.sideEffects ? html`<span class="tag tag-warn">${icon('bolt', 10)} side effects</span>` : ''}
 ${s.legacy ? html`<span class="tag">${icon('lock', 10)} legacy</span>` : ''}
 ${(s.problems || []).length ? html`<span class="pdot" style="background: var(--${s.problems.includes('error') ? 'fail' : 'warn'})" title="Problem on this step"></span>` : ''}
-${s.lastResult ? html`<span class="pdot" style="background: var(--${s.lastResult.status === 'PASSED' ? 'pass' : 'fail'})" title="${s.lastResult.status} on the last run"></span>` : ''}
+${lastRunMark(s.lastResult)}
 </button></div>`;
 }
 
@@ -212,6 +235,7 @@ ${s.sideEffects ? html`<span class="tag tag-warn">${icon('bolt', 10)} side effec
 <div class="disp" style="font-size: 16px; font-weight: 700">${tokenHtml(s.nameAuto ? s.autoName : s.name)}</div>
 </div>
 <div class="scroll" style="flex: 1; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 16px">
+${lastRunCard(t, s)}
 ${pickPanel(S, t, s)}
 ${s.legacy ? html`<div class="bn">${icon('lock', 14, 'color: var(--tx3)')}<span><b>Legacy row, kept exactly as it is.</b> ${s.legacy} Move it with bulk edit; edit its cells in the Excel grid.</span></div>`
   : html`

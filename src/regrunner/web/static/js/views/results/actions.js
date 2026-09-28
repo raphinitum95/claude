@@ -4,6 +4,7 @@ import { S, rerender } from '../../state.js';
 import { api as rawApi } from '../../api.js';
 import { loadRuns } from '../../actions.js';
 import { toast } from '../../util.js';
+import { jumpToStep } from '../build/actions.js';
 import * as api from './api.js';
 
 const enc = encodeURIComponent;
@@ -73,6 +74,8 @@ async function rerunBatchFailed(id) {
 export const acts = {
   'results-tab'() { location.hash = '#/results'; },
   async 'results-rerun-failed'(el) { await rerunBatchFailed(el.dataset.id); },
+  /** Opens the Build tab on this test, with the given step (a failed one, usually) selected - the "Fix in builder" button. */
+  'results-fix-in-builder'(el) { jumpToStep(el.dataset.wb, el.dataset.test, el.dataset.row ? Number(el.dataset.row) : null); },
   'results-toggle-fails'() { S.results.test.showAllFails = !S.results.test.showAllFails; rerender(); },
   'results-toggle-filter'(el) {
     const h = S.results.history;

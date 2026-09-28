@@ -401,8 +401,11 @@ conservative: only attribute-based XPaths whose CSS matches exactly the same ele
 
 ## Web UI
 
-Start it with the double-click launcher or `regrunner serve --open`. The design is the *QA Regression UI* canvas (four
-screens plus a states sheet); nothing in it needs the command line.
+Start it with the double-click launcher or `regrunner serve --open`. Three tabs share one header: **Run** (start a
+regression, watch it, read what it found), **Build** (edit a workbook without opening Excel), **Results** (every past
+run, grouped and compared). Nothing in any of them needs the command line.
+
+### Run tab
 
 **1 · New run.** *Workbook*: drop Excel files on the page (or browse) or **tick one or more** already in `workbooks/` (each ticked workbook becomes a run of its own, all on shared workers; the page opens with the newest one ticked and remembers your last choice); with more than five in the folder a **search box** appears (several words, any order, `_ - .` count as spaces; **Enter** picks the best match, **Esc** clears), the list shows six at a time with *Show more*, can be sorted *Newest* or *A–Z*, keeps your choice pinned above the results, and offers the workbooks you ran lately as *Recently run* chips; the **trash icon** on a row deletes a workbook after a confirmation (it is moved to `workbooks/.trash/`, not erased; past runs keep their own copy; refused while a run is using it); it is read
 immediately and shows how many test sheets it has, which are flagged Y, its `Global!Environment` and any warnings. *Tests*:
@@ -455,23 +458,88 @@ Runs are background processes at low priority (one process per set of workers, h
 or mouse is used anywhere). Light and dark themes follow your system; the fonts come from Google Fonts (system fonts are the
 fallback when offline).
 
-**Build window (Build tab).** In a test's editor, **Open the site** opens the site in a browser window of its own (Chrome/Edge, visible), with a small
-pill on the page: **Pick**, then click an element there (the site never sees that click). The builder works out the most stable locator that finds exactly that
-element (id → test id → a stable attribute → its text → its text inside its card → class + position), checks it on the live page, and keeps up to three
-others as backups; it also describes the element in plain words (*button "Choose" inside card "Max"*). Click a word to make it a variable (`{PLAN}`): the
-locator follows the variable and is checked again with each data row's value. *Which one?* finds every element with a text, numbers them on the page, and
-you choose one. **Use for step N** writes it to the step. **Run up to here** (key `R`) replays steps 1..N with the data row you are building with, using
-exactly the actions a real run uses; the window stays open, so **Run this step** and **Run next 5** carry on from there. A replay stops at its first failed
-step, and before a step flagged *has side effects* it asks *Run it for real?* (production always blocks such steps; a production environment needs `PROD`
-typed to open the window at all). When a step that already ran is changed, the strip says *Earlier steps changed: replay from the start*. The window
-replays the draft you are editing (not the saved file), in its own browser: it is not a run, is not listed with the runs, and a run of the same workbook can
-go on at the same time. One window per workbook (three at most); it closes itself after `build.idle_close_s` without use.
+### Build tab
 
-**Security.** It listens on `127.0.0.1` only and has no login, so instead every state-changing request must come from the
-page itself: the `Host` must be local (blocks DNS rebinding), the `Origin` must match, and a custom header is required (a
-different website in your browser cannot send it). PROD runs are also refused *by the server* unless the request carries the
-typed confirmation. Uploads cannot escape `workbooks/`, run files cannot escape their run folder, and the page runs under a
-strict Content-Security-Policy with everything from the workbook escaped. Do not expose the port to a network.
+Edits a workbook without opening Excel. Every change goes through the same `workbook/writer.py` that a real run's own
+write-back uses (see "How the workbook is interpreted"), so nothing about the file's printer settings, customXml or
+formatting is lost. Undo/redo and an autosaved draft (`runs/.build/<stem>/`) mean a browser refresh loses nothing;
+**Save** writes the real file (a timestamped backup first, `workbooks/.backups/`); a change made outside the builder
+while it is open (someone else's edit, or Excel) is offered as reload, save-anyway, or a per-row merge.
+
+**Workbook map.** Every test as a card - kind, step count, a **last-run pill** (Passed/Failed/Not run), needs/provides,
+tags, its parameter sheet - tick a test on or off from here, open **Templates**, workbook-wide **Find & replace** (skips
+row 1, formulas and result columns), **Duplicate** (previews "what changes?" before it copies), or start a **New test**.
+A **Variable map** alongside it lists every `{TOKEN}` - from a Params column, the environment table, or a step that
+saves one - with what sets it, what uses it, and flags one that is used but nothing ever sets.
+
+**Test editor.** A block strip (the workbook's own section headings, or the `BLOCK` column once a block has been split)
+with a gate icon on a block that opens behind an `ASSERT_PAGE`; step cards below it (or the same rows as an Excel-like
+**Grid**) show kind, name, side-effect and legacy flags, a problem dot, and a **failed last run** badge in place of the
+plain dot once a step has broken, so it stands out before you open it. The **inspector** on the right edits the
+selected step's name, locator, value/expected/match, save-as, timeout, on-fail and side-effects, with an ƒ **Value
+builder** for computed values (date ± N, unique, a list, math, text join) that writes a real Excel formula. A step that
+**failed on its last run** gets a card of its own at the top of the inspector: the error, a thumbnail of the failure
+screenshot (click to enlarge, or **Open that run** for the full page), and - when it looks like the element could not
+be found - a nudge to pick it again or replay up to it with the tools below (once the build window is open). The
+**Problems** panel lists every lint finding (a missing locator, an unclosed IF, a variable nothing sets...) and jumps
+straight to the step. Select more than one card for a floating bar: bulk enable/disable, stop-on-fail, move to another
+block, copy/paste, or save the selection as a template.
+
+**Build window.** **Open the site** opens it in a browser window of its own (Chrome/Edge, visible), with a small pill
+on the page: **Pick**, then click an element there (the site never sees that click). The builder works out the most
+stable locator that finds exactly that element (id → test id → a stable attribute → its text → its text inside its
+card → class + position), checks it on the live page, and keeps up to three others as backups; it also describes the
+element in plain words (*button "Choose" inside card "Max"*). Click a word to make it a variable (`{PLAN}`): the
+locator follows the variable and is checked again with each data row's value. *Which one?* finds every element with a
+text, numbers them on the page, and you choose one. **Use for step N** writes it to the step. **Run up to here** (key
+`R`) replays steps 1..N with the data row you are building with, using exactly the actions a real run uses; the window
+stays open, so **Run this step** and **Run next 5** carry on from there. A replay stops at its first failed step, and
+before a step flagged *has side effects* it asks *Run it for real?* (production always blocks such steps; a production
+environment needs `PROD` typed to open the window at all). When a step that already ran is changed, the strip says
+*Earlier steps changed: replay from the start*. The window replays the draft you are editing (not the saved file), in
+its own browser: it is not a run, is not listed with the runs, and a run of the same workbook can go on at the same
+time. One window per workbook (three at most); it closes itself after `build.idle_close_s` without use.
+
+**Recording.** With the build window open, **Rec** turns your own clicks/typing/selects into steps after the cursor:
+typed text becomes `{VARIABLE}` (a password becomes `{SECRET:NAME}`, kept in `secrets.env`, never in the workbook), a
+click in another window or frame gets its own SWITCHTOWINDOW/SWITCHTOFRAME step first, and a calendar or a suggestions
+list is recognised as PICK_DATE / CHOOSE_SUGGESTION. **Check / Save / Wait until** turn a picked element straight into
+an OUTPUT/EXIST/CHECK_*/WAIT_UNTIL step, prefilled from what is actually on the page.
+
+**API / XML tests.** Their own editor - steps, a request form or paste-a-cURL/Postman/template, and a response tree you
+turn into a JSONPath/XPath check with a click - with **Send now** against the draft; `{NAME}`/`{SECRET:NAME}` work the
+same as in UI steps, and a production send needs the same typed confirmation as a UI one.
+
+**Concurrency scenarios.** A board of lanes (a test, or the same test twice with its own data row) laid out across
+sync-line columns ("all wait here", "A before B"). Every lane of a scenario runs together on one worker, so a sync can
+never wait for a lane that has nowhere to run; one lane failing or ending never hangs the others, and a wait that never
+sees a step from the lanes it is waiting for gives up after the time limit.
+
+Everything above talks to the server through `/api/build/*` (`dev/plan/CONTRACT.md` is its exact shape: a full ops +
+undo/redo/save model). Nothing in the Build tab ever runs a real test against a real site - only the build window
+replays, and only the draft you are editing, never the saved file.
+
+### Results tab
+
+**History** lists every batch and solo run, newest first, with a text/environment/failed-only filter. A **batch page**
+groups its failures by cause (a page gate, an unmet dependency, an element that could not be found, an infra crash...),
+shows what changed since the batch before it, and lists every test with a last-10-runs trend
+(new/flaky/fixed/failing/stable). **Re-run failed** starts a fresh, separately labelled batch of only the workbooks
+that had a failure (refused on a still-running batch, nothing failed, or PROD - that goes through New run's own
+confirmation instead). A **test page** (opened from any test, in a batch or on its own) shows where the run stopped on
+the workbook's own block map - read fresh from the file, so it always matches what is there now, not what ran - every
+failed step with its expected/actual, locator and screenshot, the backup locators the step defines, and this test's own
+trend. **Fix in builder** - on the page header (the first failed step) and on each failed step's own card - opens the
+Build tab already on that exact step, not just the test: the same error and screenshot show again at the top of the
+inspector, next to the tools to pick the element again or replay up to it. **Compare** is a tests-by-last-N-runs grid
+per workbook with the same verdicts and change markers.
+
+**Security.** The server listens on `127.0.0.1` only and has no login, so instead every state-changing request must
+come from the page itself: the `Host` must be local (blocks DNS rebinding), the `Origin` must match, and a custom
+header is required (a different website in your browser cannot send it). PROD runs and PROD sends are also refused *by
+the server* unless the request carries the typed confirmation. Uploads cannot escape `workbooks/`, run files cannot
+escape their run folder, and the page runs under a strict Content-Security-Policy with everything from the workbook
+escaped. Do not expose the port to a network.
 
 ### API (what the page uses)
 
@@ -479,7 +547,13 @@ strict Content-Security-Policy with everything from the workbook escaped. Do not
 `POST /api/workbooks/{name}/lint|plan|audit` `GET /api/workbooks/{name}/start-url` `POST /api/runs/command` `POST /api/runs`
 `GET /api/runs` `GET /api/runs/{id}` `POST /api/runs/{id}/cancel|answer|report|reveal` `GET /api/runs/{id}/events|log|selectors`
 `POST /api/runs/{id}/selectors/apply` `GET /api/auth` `POST /api/auth/login|save|cancel` `WS /ws/runs/{id}`
-Build window: `GET /api/build/session/{name}[?since=]` `POST /api/build/session/{name}/start|pick|which|choose|variable|use|run-to-here|run-step|run-next|stop|answer|close`
+Build tab: `GET|POST /api/build/workbooks` `GET /api/build/workbooks/{name}[/status|/problems|/history|/environments|/fingerprints|/variables|/sheets/{sheet}|/diff|/duplicate-candidates]`
+`POST /api/build/workbooks/{name}/edit|undo|redo|save|reload|restore|find|find/apply|merge|templates/insert` `GET /api/build/keywords`
+`GET|POST /api/build/templates[/{name}[/mapping]]` `DELETE /api/build/templates/{name}` `GET /api/build/workbooks/{name}/scenarios[/{scenario}/runs]`
+`GET /api/build/api/{name}/tests/{test}|templates[/fields]` `POST /api/build/api/send|curl|postman`
+Build window: `GET /api/build/session/{name}[?since=]` `POST /api/build/session/{name}/start|pick|which|choose|variable|use|run-to-here|run-step|run-next|stop|answer|close|record|check|save|prompt`
+Results tab: `GET /api/batches` `POST /api/batches/last-durations` `GET /api/results/batches/{id}` `POST /api/results/batches/{id}/rerun-failed`
+`GET /api/results/runs/{id}/tests/{test}` `GET /api/results/compare`
 
 ## Evidence (`runs/<run-id>/`)
 

@@ -207,7 +207,8 @@ API/XML tests have `steps: []` and `blocks: []` (their editor reads `GET /api/bu
   legacy: "" | "why it is locked",
   uses: [ { token: "DT_LASTNAME_IN", column: "VALUE", form: "cell" | "inline" | "secret" | "flag" } ],
   sets: ["DT_POLICYNUMBER"], notes: "",
-  lastResult: null | { status: "PASSED" | "FAILED", error: "", runId, when, locatorMiss: false },
+  lastResult: null | { status: "PASSED" | "FAILED", error: "", runId, when, locatorMiss: false,
+                       screenshot: null | "tests/Test#1/003.jpg", screenshotFull: null | "..." },   // paths relative to that run's folder (P13)
   problems: ["error" | "warning" | "info", ...] }                  // severities of the problems on this step (dots)
 ```
 Field → column mapping for writes (`builder.FIELD_COLUMNS`): `name`→`Step_Name`, `method`→`Method`, `page`→`Page`, `findBy`→`FindBy`,

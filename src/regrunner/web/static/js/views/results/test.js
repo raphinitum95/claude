@@ -4,9 +4,12 @@ import { icon, pill } from '../../icons.js';
 import { dur, timeOf } from '../../fmt.js';
 import { banner } from '../shell.js';
 import { failedStepCard } from '../results.js';
-import { buildUrl } from '../build/actions.js';
 import { resultsUrl } from './actions.js';
 import { trendStrip } from './batch.js';
+
+function fixInBuilder(wb, testSheet, row, label = 'Fix in builder', cls = 'btn btn-pri') {
+  return html`<button class="${cls}" data-act="results-fix-in-builder" data-wb="${wb}" data-test="${testSheet}" data-row="${row || ''}">${icon('pencil', cls.includes('btn-sm') ? 12 : 14)} ${label}</button>`;
+}
 
 const BLOCK_COLOR = { pass: 'var(--pass)', fail: 'var(--fail)', warn: 'var(--warn)', pend: 'var(--pend)' };
 
@@ -21,8 +24,9 @@ ${b.status === 'fail' ? 'box-shadow: 0 0 0 2px var(--fail)' : ''}">
 </div>`;
 }
 
-function stepRow(runId, s) {
-  if (s.status === 'FAILED') return failedStepCard({}, runId, s);
+function stepRow(runId, s, wb, testSheet) {
+  if (s.status === 'FAILED') return html`<div style="display: flex; flex-direction: column; gap: 4px">${failedStepCard({}, runId, s)}
+<div style="display: flex; justify-content: flex-end">${fixInBuilder(wb, testSheet, s.row, 'Fix this step in builder', 'btn btn-sm btn-ghost')}</div></div>`;
   return html`<div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 9px">
 <span class="mono" style="width: 46px; font-size: 11.5px; color: var(--tx3)">${s.seq}</span>
 <span class="pdot" style="background: ${s.status === 'PASSED' ? 'var(--pass)' : 'var(--tx3)'}"></span>
@@ -54,7 +58,9 @@ ${banner('fail', 'failc', t.error.message)}</div>`;
   if (!test) return html`<div class="page">${banner('fail', 'failc', `${t.testId} is not in run ${t.runId}.`)}</div>`;
   const failedSteps = (test.steps || []).filter((s) => s.status === 'FAILED');
   const shown = t.showAllFails ? failedSteps : failedSteps.slice(0, 5);
-  const wb = String(meta.workbook || '').split(/[\\/]/).pop().replace(/\.(xlsx|xlsm)$/i, '');
+  const wbFile = String(meta.workbook || '').split(/[\\/]/).pop();
+  const wb = wbFile.replace(/\.(xlsx|xlsm)$/i, '');
+  const testSheet = test.sheet || t.testId;
   return html`<div class="page">
 <div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--tx3)">
 <a href="#/run/${t.runId}">${t.runId}</a>${icon('chevr', 12)}<span style="color: var(--tx)">${t.testId}</span></div>
@@ -63,7 +69,7 @@ ${banner('fail', 'failc', t.error.message)}</div>`;
 <h1 class="disp" style="font-size: 28px; font-weight: 700; margin: 0">${test.status === 'PASSED' ? `${t.testId} passed` : `${t.testId} ${test.status.toLowerCase()}${failedSteps.length ? ` at step ${failedSteps[0].seq}` : ''}`}</h1>
 <span class="mono" style="font-size: 12.5px; color: var(--tx3)">${wb} · ${meta.environment || ''} · ${dur(test.duration_s)}${test.ended_at ? ' · ' + timeOf(test.ended_at) : ''}</span>
 </div><span style="flex-grow: 1"></span>${pill(test.status)}
-<a class="btn btn-pri" href="${buildUrl(wb, 'test', test.sheet || t.testId)}" style="text-decoration: none">${icon('pencil', 14)} Fix in builder</a>
+${fixInBuilder(wbFile, testSheet, failedSteps[0] && failedSteps[0].row)}
 </div>
 <section class="card" style="padding: 14px; display: flex; flex-direction: column; gap: 10px">
 <span class="lbl">Where it stopped</span>${blockMap(t.page.blocks)}
@@ -71,7 +77,7 @@ ${banner('fail', 'failc', t.error.message)}</div>`;
 <div style="display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start">
 <section class="card" style="padding: 14px; display: flex; flex-direction: column; gap: 4px">
 <span class="ttl" style="font-size: 16px; padding: 0 4px 8px">${failedSteps.length ? `Failed steps · ${failedSteps.length}` : 'No failed steps'}</span>
-${shown.map((s) => stepRow(t.runId, s))}
+${shown.map((s) => stepRow(t.runId, s, wbFile, testSheet))}
 ${failedSteps.length > 5 ? html`<button class="lnk" data-act="results-toggle-fails">${t.showAllFails ? 'Show fewer' : `Show all ${failedSteps.length} failed steps`}</button>` : ''}
 </section>
 <div style="display: flex; flex-direction: column; gap: 14px">

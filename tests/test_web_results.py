@@ -219,3 +219,24 @@ async def test_the_results_tab_can_be_browsed_from_history_to_batch_to_test_to_c
         await page.get_by_role("link", name="Compare runs", exact=False).first.click()
         await page.wait_for_selector("text=Last 8 runs")
         assert not page.errors, page.errors
+
+
+@pytest.mark.browser
+async def test_fix_in_builder_opens_the_build_tab_on_the_failed_step_with_its_last_run_evidence(web):
+    """``bad.xlsx``'s FlowX fails deterministically on its extra ``failing_step`` (web_fixtures.py): "Fix in builder"
+    on the Results test page should land the Build tab on exactly that step, with the last run's error, screenshot
+    and a passive badge on the step's card - not just the test."""
+    with web.client() as c:
+        started = c.post("/api/runs", json={"workbook": "bad.xlsx", "tests": ["FlowX"]})
+        assert started.status_code == 200, started.text
+        run_id = started.json()["run_id"]
+    detail = web.wait_finished(run_id, 240)
+    assert detail["meta"]["status"] == "FAILED"
+
+    async with open_ui(web, path=f"/#/results/test/{run_id}/FlowX") as page:
+        await page.wait_for_selector("text=Where it stopped")
+        await page.get_by_role("button", name="Fix in builder", exact=True).click()
+        await page.wait_for_function("location.hash.startsWith('#/build/bad.xlsx/test/FlowX')")
+        await page.wait_for_selector("img[alt='Screenshot from the failed run']")           # the inspector's evidence card
+        assert await page.locator("text=failed last run").count() >= 1                      # the passive badge on the step's card
+        assert not page.errors, page.errors
