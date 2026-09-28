@@ -474,6 +474,9 @@ Gotchas:
   worker cards.
 - `tests/test_web_workbook_search.py::test_enter_picks_the_best_match...` can flake under load: Playwright's `.uncheck(force=True)` races a
   checkbox whose row is removed (filtered out) the instant it unchecks. Confirmed pre-existing (identical on the pre-P04 tree); a solo re-run passes.
+- `tests/test_web_multi_run.py::test_a_new_run_joins_the_workers_that_are_going_and_the_same_workbook_cannot_run_twice` can flake in the full
+  suite (one `pool_changed` event missed a `run_id` under load): failed once in P13's full-suite run, passed alone and unrelated to anything P13
+  touched (same pattern as the other documented timing flakes above).
 - Mock pages: an element's `id` is also a `window` global (`id="paid"` makes `window.paid` the element), so name JS counters differently.
 - `runner.allow_prod` / `--allow-prod` only guards an environment literally named PROD; one the workbook's `_rr_environments` marks production
   (`#PRODUCTION` row) is not guarded there, but its SIDE_EFFECTS steps are still blocked by the engine (`engine/gates.py`).

@@ -32,3 +32,7 @@ Close the loop and finish.
 - 2026-09-28 · README: added `### Run tab` / `### Build tab` / `### Results tab` under `## Web UI` (the Workbook
   Builder's UI had never been documented there, only in `dev/plan/`), extended the `/api/build/*` and `/api/results/*`
   endpoint list, updated AGENTS.md section 8's heading summary. AGENTS.md section 9 got a P13 paragraph. Next: full suite.
+- 2026-09-28 · Full suite: `.venv/bin/pytest -q` → 983 passed, 1 failed, 5 skipped (2899.88s). The one failure
+  (`test_web_multi_run.py::test_a_new_run_joins_the_workers_that_are_going_and_the_same_workbook_cannot_run_twice`, a
+  missed `pool_changed` event under load) is unrelated to anything this phase touched and passed alone on a solo
+  re-run - a timing flake, documented in AGENTS.md section 9's gotchas alongside the other known ones. Phase done.
