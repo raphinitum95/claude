@@ -240,3 +240,19 @@ async def test_fix_in_builder_opens_the_build_tab_on_the_failed_step_with_its_la
         await page.wait_for_selector("img[alt='Screenshot from the failed run']")           # the inspector's evidence card
         assert await page.locator("text=failed last run").count() >= 1                      # the passive badge on the step's card
         assert not page.errors, page.errors
+
+
+@pytest.mark.browser
+async def test_a_run_opened_from_the_results_history_stays_in_the_results_tab(web):
+    fake_run(web, "solo-ui-mock", workbook="mock.xlsx", status="FAILED", started_at="2026-03-02T00:00:00")
+    (web.run_dir("solo-ui-mock") / "results.json").write_text(json.dumps({"environment": "UAT", "workbook": "mock.xlsx",
+        "tests": [{"id": "FlowA", "sheet": "FlowA", "status": "FAILED", "duration_s": 1.0,
+                  "steps": [{"row": 4, "seq": 1, "status": "FAILED", "name": "Bypass cookie", "action": "OUTPUT", "error": "Comparison Failed"}]}]}),
+        encoding="utf-8")
+    async with open_ui(web, path="/#/results") as page:
+        await page.wait_for_selector("text=Pick a batch or run")
+        await page.locator('a[href="#/results/run/solo-ui-mock"]').first.click()
+        await page.wait_for_function("location.hash === '#/results/run/solo-ui-mock'")
+        await page.wait_for_selector("text=Bypass cookie")                                         # the run's own page...
+        assert await page.locator(".tab-btn.on").inner_text() == "Results"                          # ...inside the Results tab
+        assert not page.errors, page.errors

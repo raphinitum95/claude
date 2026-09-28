@@ -4,7 +4,7 @@ import { icon } from '../../icons.js';
 import { runFileUrl } from '../../api.js';
 import { buildRail } from './rail.js';
 import {
-  bm, currentTest, selectedStep, buildUrl, effectiveBuildingWith,
+  bm, currentTest, selectedStep, buildUrl, effectiveBuildingWith, loadGrid,
 } from './actions.js';
 import { sessionBar, sessionMark, pickPanel, sessionOpen } from './session.js';
 import { apiEditor } from './api_editor.js';
@@ -136,14 +136,20 @@ ${b.returnsTo ? html`<div style="margin-top: 12px; display: flex; align-items: c
 }
 
 // ---- Excel grid view -----------------------------------------------------------------------------------------
+// The test's sheet as it is in Excel: a real table (row numbers = Excel rows, header row stuck to the top), the selected step's row marked,
+// long cells cut short with the whole text on hover. Read-only: edits go through the cards and the inspector. Reloads after an edit.
 function gridView(S, t) {
   const ed = S.build.ed;
   if (ed.grid === 'loading' || !ed.grid) return html`<div style="flex: 1; display: flex; align-items: center; justify-content: center; color: var(--tx3)">Loading the sheet…</div>`;
   const g = ed.grid;
-  return html`<div class="scroll" style="flex: 1; overflow: auto; margin: 0 16px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface)">
-<table class="mono" style="border-collapse: collapse; font-size: 11.5px; white-space: nowrap">
-<thead><tr>${g.headers.map((h) => html`<th class="gcell" style="position: sticky; top: 0; background: var(--surface2); font-weight: 600; color: var(--tx3)">${h}</th>`)}</tr></thead>
-<tbody>${g.rows.map((row, i) => html`<tr data-key="grow-${i}">${row.map((c) => html`<td class="gcell">${c == null ? '' : String(c)}</td>`)}</tr>`)}</tbody>
+  const m = bm();
+  if (m && g.version !== m.version) setTimeout(loadGrid, 0);                    // (an edit since it was read: read it again, show this meanwhile)
+  const text = (c) => (c == null ? '' : String(c));
+  return html`<div class="scroll gwrap">
+<table class="mono gtable">
+<thead><tr><th class="gnum">1</th>${g.headers.map((h) => html`<th title="${text(h)}">${text(h)}</th>`)}</tr></thead>
+<tbody>${g.rows.map((row, i) => html`<tr data-key="grow-${i}" class="${cx(ed.sel === i + 2 && 'on')}"><td class="gnum">${i + 2}</td>
+${g.headers.map((_h, j) => html`<td title="${text(row[j])}">${text(row[j])}</td>`)}</tr>`)}</tbody>
 </table></div>`;
 }
 

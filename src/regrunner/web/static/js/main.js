@@ -61,7 +61,7 @@ ${S.online ? html`<div class="skel" style="height: 30px; width: 260px; margin-to
   if (S.route.name === 'build') {
     morph(appEl(), html`${buildHeader(S)}${buildView(S)}`);
   } else if (S.route.name === 'results') {
-    morph(appEl(), html`${resultsHeader()}${resultsTabView(S)}`);
+    morph(appEl(), html`${resultsHeader()}${resultsTabView(S, runScreen)}`);
   } else {
     const content = S.route.name === 'new' ? newRunView(S) : runScreen();
     morph(appEl(), html`${header(S)}<div class="app-body">${sidebar(S)}<main class="main"><div class="gridbg"></div>${content}</main></div>`);
@@ -101,6 +101,7 @@ function route() {
   const resultsBatch = location.hash.match(/^#\/results\/batch\/([A-Za-z0-9._-]+)$/);
   const resultsTest = location.hash.match(/^#\/results\/test\/([A-Za-z0-9._-]+)\/([^/]+)$/);
   const resultsCompare = location.hash === '#/results/compare';
+  const resultsRun = location.hash.match(/^#\/results\/run\/([A-Za-z0-9._-]+)$/);
   if (mRun) {
     S.route = { name: 'run', id: mRun[1] };
     A.openRun(mRun[1]);
@@ -115,7 +116,11 @@ function route() {
     else if (buildVars) AB.openBuild(decodeURIComponent(buildVars[1]), 'variables');
     else if (buildScenario) AB.openBuild(decodeURIComponent(buildScenario[1]), 'scenario', decodeURIComponent(buildScenario[2]));
     else if (buildWb) AB.openBuild(decodeURIComponent(buildWb[1]), 'map');
-    else { const name = AB.defaultBuildName(); if (name) AB.openBuild(name, 'map'); else AB.openWorkbookList(); }
+    else AB.openWorkbookList();                              // (plain #/build: the list of every workbook, like the Build tab button)
+  } else if (resultsRun) {
+    S.route = { name: 'results', id: null };
+    AR.openResults('run', resultsRun[1]);
+    A.openRun(resultsRun[1]);
   } else if (resultsBatch || resultsTest || resultsCompare || location.hash === '#/results') {
     S.route = { name: 'results', id: null };
     A.closeRun();

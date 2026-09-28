@@ -10,10 +10,10 @@ const LAST = { PASSED: ['p-pass', 'check', 'Passed'], FAILED: ['p-fail', 'x', 'F
 
 function testCard(S, t) {
   const last = t.lastRun && LAST[t.lastRun.status];
-  return html`<div class="card" data-key="tc-${t.id}" style="padding: 14px; display: flex; flex-direction: column; gap: 9px; ${t.enabled ? '' : 'opacity: .6'}">
+  return html`<div class="card tcard" data-key="tc-${t.id}" style="padding: 14px; display: flex; flex-direction: column; gap: 9px; ${t.enabled ? '' : 'opacity: .6'}">
 <div style="display: flex; align-items: center; gap: 8px">
 <span style="color: var(--k-${t.kind === 'web' ? 'nav' : t.kind}); display: inline-flex">${icon(KIND_ICON[t.kind] || 'grid', 16)}</span>
-<a href="${buildUrl(S.build.name, 'test', t.id)}" class="disp trunc" style="font-size: 16px; font-weight: 700; color: var(--tx)">${t.id}</a>
+<a href="${buildUrl(S.build.name, 'test', t.id)}" class="disp trunc tcard-open" style="font-size: 16px; font-weight: 700; color: var(--tx)">${t.id}</a>
 <span style="flex: 1"></span>
 <input type="checkbox" class="sw" ${t.enabled ? raw('checked') : ''} data-change="build-toggle-test" data-test="${t.id}" aria-label="Run ${t.id} in this workbook">
 </div>

@@ -470,13 +470,16 @@ function timelineView(S) {
   });
   const { lanes, end } = planTimeline(nodes, Math.max(1, S.nr.workers));
   const scale = end || 1;
+  // wide enough that the shortest bar still shows its name (~96 px): on a small screen the plan scrolls sideways instead of squashing
+  const shortest = Math.min(...lanes.flatMap((l) => l.bars.map((b) => b.dur / scale)).filter((f) => f > 0), 1);
+  const trackPx = Math.min(Math.ceil(96 / shortest), 8000);
   return html`<div style="padding: 12px 22px 6px; display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--tx2); flex-wrap: wrap">
 <span>${est.unit === 'seconds' ? 'Estimated from each test’s last run.' : 'No run history yet: laid out by step count instead of time.'} Longest chains start first.</span>
 <span style="flex-grow: 1"></span><b style="color: var(--tx)">${est.unit === 'seconds' ? `≈ ${dur(end)}` : `${num(end)} steps, longest lane`}</b><span style="color: var(--tx3)">on ${lanes.length} worker${lanes.length === 1 ? '' : 's'}</span></div>
-<div style="padding: 6px 22px 18px; display: flex; flex-direction: column; gap: 5px">
-${lanes.map((l) => html`<div style="display: flex; align-items: center; gap: 8px" data-key="tl-${l.n}"><span class="mono" style="width: 64px; font-size: 11px; color: var(--tx3)">worker ${l.n}</span>
-<div style="flex: 1; position: relative; height: 26px; border-radius: 6px; background: var(--track)">
-${l.bars.map((b) => html`<span title="${shortName(b.wb)} · ${b.label}" style="position: absolute; left: ${(100 * b.start / scale).toFixed(2)}%; width: ${Math.max((100 * b.dur / scale) - 0.4, 0.6).toFixed(2)}%; top: 2px; bottom: 2px; border-radius: 5px; padding: 0 6px; display: flex; align-items: center; font-size: 11px; font-weight: 600; color: var(--acc-tx); background: ${b.color}; overflow: hidden; white-space: nowrap">${(b.dur / scale) > 0.06 ? b.label : ''}</span>`)}
+<div class="tl-scroll scroll" style="--tl-width: ${trackPx}px">
+${lanes.map((l) => html`<div class="tl-row" data-key="tl-${l.n}"><span class="tl-worker mono">worker ${l.n}</span>
+<div class="tl-track">
+${l.bars.map((b) => html`<span class="tl-bar" title="${shortName(b.wb)} · ${b.label}" style="left: ${(100 * b.start / scale).toFixed(2)}%; width: ${Math.max((100 * b.dur / scale) - 0.4, 0.6).toFixed(2)}%; background: ${b.color}">${b.label}</span>`)}
 </div></div>`)}
 </div>`;
 }

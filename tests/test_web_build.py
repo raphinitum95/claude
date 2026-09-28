@@ -54,12 +54,18 @@ async def test_the_build_tab_shows_the_workbook_map_and_a_test_opens_its_editor(
         await js_until(page, "document.querySelectorAll('main a.disp').length >= 2")           # FlowA, FlowB cards
         names = await page.locator('main a.disp').evaluate_all("els => els.map(e => e.textContent)")
         assert set(names) >= {"FlowA", "FlowB"}
-        await page.locator('main a.disp', has_text="FlowA").click()
+        card = page.locator('.tcard', has_text="FlowA").first
+        box = await card.bounding_box()
+        await page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] - 8)        # anywhere on the card, not only its name
         await js_until(page, "location.hash.includes('/test/FlowA')")
         await js_until(page, "document.querySelectorAll('.scard').length > 0")
         await page.get_by_role("button", name=re.compile("^Grid$")).click()
         await js_until(page, "document.querySelector('table.mono thead') != null")
         assert "Method" in await page.locator("table.mono thead").inner_text()
+        assert await page.evaluate("getComputedStyle(document.querySelector('table.gtable tbody td')).display") == "table-cell"
+        assert await page.locator("table.gtable tbody tr").first.locator("td").first.inner_text() == "2"     # Excel row numbers
+        header_cells = await page.locator("table.gtable thead th").count()
+        assert await page.locator("table.gtable tbody tr").first.locator("td").count() == header_cells    # every row lines up with the header
         assert not page.errors, page.errors
     finally:
         await browser.close()
@@ -221,6 +227,20 @@ async def test_the_selected_bar_wraps_inside_a_narrow_window(web, build_copy):
         column = await page.locator(".bulk-bar").evaluate("el => el.offsetParent.getBoundingClientRect().toJSON()")
         assert bar["x"] >= column["x"] and bar["x"] + bar["width"] <= column["x"] + column["width"] + 1      # nothing cut off at the sides
         assert await page.evaluate("document.documentElement.scrollWidth") <= page_width                      # the bar never widens the page
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_the_build_tab_button_always_opens_all_workbooks(web, build_copy):
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 0")
+        await page.locator('.tab-btn', has_text="Run").click()
+        await js_until(page, "!location.hash.startsWith('#/build')")
+        await page.locator('.tab-btn', has_text="Build").click()
+        await js_until(page, "location.hash === '#/build/all' && document.querySelectorAll('.wb-card').length >= 2")
         assert not page.errors, page.errors
     finally:
         await browser.close()

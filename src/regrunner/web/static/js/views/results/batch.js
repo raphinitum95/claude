@@ -66,7 +66,7 @@ ${!bt.active ? html`<button class="btn" data-act="results-rerun-failed" data-id=
 ${d.what_changed.length ? html`<div class="bn">${icon('info', 15, 'color: var(--tx3)')}
 <span><b>What changed since last time:</b> ${d.what_changed.join(' · ')}</span></div>` : ''}
 <div style="display: flex; flex-wrap: wrap; gap: 8px">
-${bt.run_ids.map((id, i) => html`<a class="tag" href="#/run/${id}" style="text-decoration: none">${bt.workbooks[i] || id}</a>`)}
+${bt.run_ids.map((id, i) => html`<a class="tag" href="${resultsUrl('run', id)}" style="text-decoration: none">${bt.workbooks[i] || id}</a>`)}
 </div>
 ${d.groups.length ? html`<div style="display: flex; flex-direction: column; gap: 12px">
 <div style="display: flex; align-items: center; gap: 10px"><span class="ttl">Failures, grouped by cause</span>

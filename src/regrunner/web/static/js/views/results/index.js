@@ -13,8 +13,10 @@ export function resultsHeader() {
     html`<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`);
 }
 
-export function resultsTabView(S) {
+/** ``runPage``: main.js's run screen (the one Run shows), for a single run opened from here: it stays in this tab. */
+export function resultsTabView(S, runPage) {
   const screen = S.results.screen;
-  const main = screen === 'batch' ? batchView(S) : screen === 'test' ? testView(S) : screen === 'compare' ? compareView(S) : historyView(S);
+  const main = screen === 'run' && runPage ? runPage() : screen === 'batch' ? batchView(S) : screen === 'test' ? testView(S)
+    : screen === 'compare' ? compareView(S) : historyView(S);
   return html`<div class="app-body">${resultsRail(S)}<main class="main scroll" style="overflow: auto">${main}</main></div>`;
 }

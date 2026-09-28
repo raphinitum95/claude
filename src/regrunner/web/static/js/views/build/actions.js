@@ -38,8 +38,6 @@ function ensureSelection() {
 }
 
 // ---- loading ----------------------------------------------------------------------------------------------------
-function remember(name) { try { localStorage.setItem('rr.build.workbook', name); } catch (e) { /* storage unavailable */ } }
-export function rememberedBuildWorkbook() { try { return localStorage.getItem('rr.build.workbook') || ''; } catch (e) { return ''; } }
 
 /** Open (or switch screen within) a workbook. Called by main.js on every #/build... route. */
 export async function openBuild(name, screen = 'map', testId = null) {
@@ -53,7 +51,6 @@ export async function openBuild(name, screen = 'map', testId = null) {
   b.scenario = screen === 'scenario' ? testId : null;       // (P12: the scenario board's scenario name)
   if (screen === 'test' && testId !== prevTest) b.ed = freshEditor();
   b.error = null;
-  remember(name);
   const wasLoaded = !switching && b.model;
   b.loading = !wasLoaded;
   rerender();
@@ -91,12 +88,6 @@ export async function downloadWorkbook(name) {
   a.remove();
 }
 
-/** Where the "Build" tab goes: the workbook last open there, else the newest workbook in the folder. */
-export function defaultBuildName() {
-  const remembered = S.build.name || rememberedBuildWorkbook();
-  if (remembered && S.workbooks.some((w) => w.name === remembered)) return remembered;
-  return S.workbooks[0] ? S.workbooks[0].name : null;
-}
 
 export async function refreshModel() {
   const b = S.build;
@@ -217,9 +208,13 @@ export async function loadGrid() {
   const t = currentTest();
   const b = S.build;
   if (!t) return;
-  b.ed.grid = 'loading'; rerender();
-  try { const g = await buildApi.sheet(b.name, t.sheet); if (currentTest() === t) b.ed.grid = g; }
+  if (b.ed.gridLoading) return;
+  b.ed.gridLoading = true;
+  if (!b.ed.grid || b.ed.grid === 'loading') { b.ed.grid = 'loading'; rerender(); }      // (a reload after an edit keeps showing the old one)
+  const version = b.model ? b.model.version : null;
+  try { const g = await buildApi.sheet(b.name, t.sheet); if (currentTest() === t) b.ed.grid = { ...g, version }; }
   catch (e) { if (currentTest() === t) b.ed.grid = null; }
+  b.ed.gridLoading = false;
   rerender();
 }
 export function effectiveBuildingWith(t) { return S.build.ed.buildingWith != null ? S.build.ed.buildingWith : t.buildingWith; }
@@ -644,10 +639,8 @@ function goResults() {
   else toast('No results yet. Run a test first.');
 }
 
-function goBuildTab() {
-  const name = defaultBuildName();
-  location.hash = name ? buildUrl(name, 'map') : '#/build';
-}
+/** The Build tab button always starts from every workbook (a link that names a workbook or a step still goes straight there). */
+function goBuildTab() { location.hash = '#/build/all'; }
 
 // ---- environments dialog: local edits, applied together on Done -------------------------------------------------
 function envAddColumn() {
