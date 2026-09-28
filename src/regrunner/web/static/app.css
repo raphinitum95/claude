@@ -298,3 +298,15 @@ details.more > summary::-webkit-details-marker { display: none }
 .tl-track { flex: 1; position: relative; height: 26px; border-radius: 6px; background: var(--track) }
 .tl-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 5px; padding: 0 6px; display: block; line-height: 22px; font-size: 11px;
   font-weight: 600; color: var(--acc-tx); overflow: hidden; white-space: nowrap; text-overflow: ellipsis }
+
+/* --- Build tab: dragging step cards, the "selected" bar beside the selection (or where it was dragged) ---------------------------- */
+.sgrip { flex: none; width: 12px; color: var(--tx3); cursor: grab; font-size: 13px; line-height: 1; user-select: none; opacity: .55 }
+.scard:hover .sgrip { opacity: 1 }
+.scard.dragging { opacity: .45 }
+.scard.drop-before { box-shadow: 0 -3px 0 0 var(--acc) }
+.scard.drop-after { box-shadow: 0 3px 0 0 var(--acc) }
+.drop-into { outline: 2px dashed var(--acc); outline-offset: 1px }
+.bulk-anchor { display: flex; justify-content: center; padding: 2px 0 4px }
+.bulk-anchor .bulk-bar { position: static; transform: none; max-width: 100% }
+.bulk-grip { cursor: grab; color: var(--tx3); padding: 0 2px; user-select: none; touch-action: none }
+.bulk-bar.moved { box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)), 0 0 0 1px var(--acc-line) }

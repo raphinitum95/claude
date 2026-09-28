@@ -52,6 +52,7 @@ export function freshEditor() {
     drawer: false, drawerGrid: undefined, drawerSheetName: null,
     buildingWith: null,       // which data row the inspector previews with (client-side only; no build session yet)
     problems: false, menu: false, menuQuery: '',
+    pendingBlock: null,       // "New page": the title the next added step's block gets (it goes at the end of the test)
   };
 }
 

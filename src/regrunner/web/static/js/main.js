@@ -16,6 +16,7 @@ import * as AB from './views/build/actions.js';
 import * as BS from './views/build/session.js';
 import * as BA from './views/build/api_editor.js';
 import * as SC from './views/build/scenario.js';
+import './views/build/dragsort.js';                       // (drag a step card / the selected bar: document listeners)
 import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
