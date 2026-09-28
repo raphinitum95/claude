@@ -23,7 +23,7 @@ what was found in the code, so the next session does not have to re-derive it.
    Open step; none set = blank page + a notice with a link to Environments. Recording an empty test starts it with `OPEN {DOMAIN}`.
 8. **"Selected" bar** wraps inside its column (`.bulk-bar` in app.css) instead of overflowing a narrow window.
 
-## Batch 2: to do
+## Batch 2: to do (items 9-19)
 
 9. **Run plan Timeline** (Run tab, `views/newrun.js` `timelineView`): cut off and unreadable on small screens. Scroll sideways at least, test
    names stay readable.
@@ -47,5 +47,10 @@ what was found in the code, so the next session does not have to re-derive it.
     open as API tests with their XML Content-Type.
 17. **Test map cards clickable as a whole** (`views/build/workbook.js` `testCard`): today only the title opens the test; the run toggle and
     other buttons on the card keep doing only their own job.
+18. **Run tab environment picker for builder workbooks**: no "Workbook default" choice; offer the environments the workbook's own
+    `_rr_environments` table defines (today `views/newrun.js` `envDefs` is a fixed Workbook default / QA / UAT / PROD list).
+19. **Results tab stays the Results tab**: a solo run opened from the Results history (`views/results/history.js` `itemUrl`, also
+    `results/batch.js` and `results/test.js` links, `results/actions.js` after a re-run) goes to `#/run/<id>`, which switches to the Run
+    tab. Show that run inside the Results tab instead.
 
 Also told the user: `workbooks/qantas-test 2.xlsx` is saved with Global Environment = PROD.
