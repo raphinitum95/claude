@@ -326,6 +326,46 @@ async def test_an_open_step_whose_domain_has_no_scheme_opens_the_site(site, tmp_
         await s.close()
 
 
+def builder_book_without_environment_row(tmp_path, site) -> Path:
+    """A workbook the Build tab made: Global has its header only (no ``Environment`` row), the addresses live in ``_rr_environments``."""
+    import openpyxl
+    bare = site.rstrip("/").split("://", 1)[1]
+    envs = [["Variable", "Required", "Secret", "UAT"], ["DOMAIN", "Y", "", bare]]
+    path = book(tmp_path / "nog.xlsx", {"Plans": [("Open", "open plans", {"Page": "chrome", "Value": "{DOMAIN}/build_pick.html"})]},
+                params={"Plans": [{"PLAN": "Basic"}]}, environments=envs)
+    wb = openpyxl.load_workbook(path)
+    wb["Global"].delete_rows(2, wb["Global"].max_row)
+    wb.save(path)
+    return path
+
+
+async def test_the_environment_chosen_in_the_build_tab_fills_domain_although_global_has_no_environment_row(site, tmp_path):
+    cfg = Config(base_dir=tmp_path)
+    cfg.build.headless = True
+    cfg.build.idle_close_s = 0
+    path = builder_book_without_environment_row(tmp_path, site)
+    s = BuildSession(BuildDocument(path, tmp_path / "runs"), cfg, tmp_path / "runs" / ".build" / "nog", environment="UAT", headless=True)
+    await s.start("Plans", None)
+    try:
+        assert results(await settled(s)) == [(1, "PASSED")]
+    finally:
+        await s.close()
+
+
+async def test_a_window_still_opens_when_the_first_step_cannot_run(site, tmp_path):
+    cfg = Config(base_dir=tmp_path)
+    cfg.build.headless = True
+    cfg.build.idle_close_s = 0
+    path = builder_book_without_environment_row(tmp_path, site)
+    s = BuildSession(BuildDocument(path, tmp_path / "runs"), cfg, tmp_path / "runs" / ".build" / "nog2", environment="", headless=True)
+    await s.start("Plans", None)
+    try:
+        state = await settled(s)
+        assert state["open"] and s._open_pages() and state["replay"]["stopped"]      # nothing ran, but there is a window to work in
+    finally:
+        await s.close()
+
+
 async def test_closing_the_last_build_window_closes_the_session_so_it_can_be_opened_again(session):
     s = session
     for page in s._open_pages():

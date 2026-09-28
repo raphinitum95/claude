@@ -275,19 +275,23 @@ class BuildSession:
         if first and first["method"] == "OPEN":
             self._launch("to", row=first["row"])
         elif not self._open_pages():
-            await self._open_blank()
-            domain = await asyncio.to_thread(self.domain)
-            if not domain:
-                self.notice = (f"No Domain is set for {self.environment or 'this environment'}, so the window opened blank. "
-                               "Set it under Environments (the DOMAIN row).")
-                return
-            page = self._open_pages()[-1] if self._open_pages() else None
-            if page is None:
-                return
-            try:
-                await page.goto(site_url(domain), wait_until="domcontentloaded", timeout=float(self.cfg.timeouts.navigation_s) * 1000)
-            except Exception as err:                              # (the window stays open: the person can type the address themselves)
-                self.notice = f"Could not open {domain}: {(str(err).splitlines() or [str(err)])[0]}"
+            await self._open_on_domain()
+
+    async def _open_on_domain(self) -> None:
+        """A window of its own on the environment's Domain, or a blank one with a note saying where to set it."""
+        await self._open_blank()
+        domain = await asyncio.to_thread(self.domain)
+        if not domain:
+            self.notice = (f"No Domain is set for {self.environment or 'this environment'}, so the window opened blank. "
+                           "Set it under Environments (the DOMAIN row).")
+            return
+        page = self._open_pages()[-1] if self._open_pages() else None
+        if page is None:
+            return
+        try:
+            await page.goto(site_url(domain), wait_until="domcontentloaded", timeout=float(self.cfg.timeouts.navigation_s) * 1000)
+        except Exception as err:                              # (the window stays open: the person can type the address themselves)
+            self.notice = f"Could not open {domain}: {(str(err).splitlines() or [str(err)])[0]}"
 
     def domain(self) -> str:
         """The environment's Domain: the ``DOMAIN`` row of the environment table, for the environment this window uses ("" when none)."""
@@ -843,6 +847,8 @@ class BuildSession:
                       stopped=stopped)
             self.touch()
             if kind == "to":
+                if self.status == "ready" and self._browser is not None and not self._open_pages():
+                    await self._open_on_domain()              # the first step could not open the site (e.g. it was refused before it ran): still give a window
                 await self._to_front()
             try:
                 await self.broadcast()

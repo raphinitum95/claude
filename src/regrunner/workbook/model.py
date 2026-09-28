@@ -231,16 +231,20 @@ class Workbook:
             return {}
         sheet = book.sheet("Global")
         overrides = {"ENVIRONMENT": self.environment, "HEADLESSMODE": "Y" if self.headless else "N"}
+        seen: set[str] = set()
         for row in range(2, sheet.data.max_row + 1):
             key = cell_text(sheet.get(row, 1)).strip().upper()
             if key in overrides and overrides[key] is not None:
                 sheet.set(row, 2, overrides[key])
+                seen.add(key)
         sheet.freeze()
         settings: dict[str, Any] = {}
         for row in range(2, sheet.data.max_row + 1):
             name = cell_text(sheet.get(row, 1)).strip()
             if name:
                 settings[name] = sheet.read(row, 2)
+        if overrides["ENVIRONMENT"] and "ENVIRONMENT" not in seen:
+            settings["Environment"] = overrides["ENVIRONMENT"]     # (a builder workbook has no Environment row in Global: the environment chosen is still the environment)
         return settings
 
     def discover(self) -> list[TestCase]:
