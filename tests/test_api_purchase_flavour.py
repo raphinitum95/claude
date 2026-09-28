@@ -125,7 +125,7 @@ def test_a_webservice_url_in_the_row_wins_and_a_missing_parameter_is_said(tmp_pa
 def test_the_api_test_runs_before_the_ui_test_that_reads_its_output_and_the_ui_test_sees_the_cell_it_filled(tmp_path, site):
     wb = Workbook(build(tmp_path, site), seed=1)
     order = plan_order(analyse(wb), ["Flow", "Purchase"])
-    assert order.deps == {"Flow": ["Purchase"], "Purchase": []} and order.after_ui == []               # not "after every UI test"
+    assert order.deps == {"Flow": ["Purchase"], "Purchase": []} and order.after_stream == {}           # nothing to wait for after it
     assert order.cells["Flow"]["DT_URL"] == ("Purchase", 3, COL["SiteUrl_OUT"])
     (ui,) = [c for c in wb.discover() if c.kind == "ui"]
     assert wb.runtime(ui).params["DT_URL"] in (None, "")                                              # nothing has run yet
