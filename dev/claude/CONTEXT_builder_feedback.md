@@ -23,7 +23,7 @@ what was found in the code, so the next session does not have to re-derive it.
    Open step; none set = blank page + a notice with a link to Environments. Recording an empty test starts it with `OPEN {DOMAIN}`.
 8. **"Selected" bar** wraps inside its column (`.bulk-bar` in app.css) instead of overflowing a narrow window.
 
-## Batch 2: to do (items 9-22)
+## Batch 2: to do (items 9-23)
 
 9. **Run plan Timeline** (Run tab, `views/newrun.js` `timelineView`): cut off and unreadable on small screens. Scroll sideways at least, test
    names stay readable.
@@ -64,5 +64,8 @@ what was found in the code, so the next session does not have to re-derive it.
     (fixed height via line-height/padding, borders, sticky header), plus what makes a sheet readable: a row-number column that matches the
     step's Excel row, the selected step's row highlighted, zebra rows, wide columns (FindBy_Value, Value) truncated with the full text on
     hover. Check it with a screenshot.
+23. **The Build tab button always opens All workbooks** (`#/build/all`), never the last workbook/test edited. Today `goBuildTab` in
+    `views/build/actions.js` goes to `defaultBuildName()`'s map (and plain `#/build` in `main.js` does the same). Links that name a
+    workbook or step (Fix in builder, jumpToStep, a workbook card) keep going straight there.
 
 Also told the user: `workbooks/qantas-test 2.xlsx` is saved with Global Environment = PROD.
