@@ -10,6 +10,9 @@ The same workbook format the legacy web-service runner used, JSON over HTTP:
   ``compare_ignore_case`` / ``contains`` / ``contains_ignore_case`` expected column -> actual column, ``DisableCheckpoint`` test name -> the actual
   columns not to check.  A row with no function name is ignored (the legacy runner did), and so is anything else (``compareX`` is how authors
   switch a check off).
+* the Workbook Builder adds a whole-response check: ``compare_response`` expected column -> ``RESPONSE_OUT`` (the entire body against the
+  expected column's text, ``workbook/api_compare.py``) and ``ignore_in_response`` expected column -> ``timestamp; $.meta.id`` (the fields it
+  leaves out).  Both are functions the legacy runner did not know, so it skipped them.
 
 Nothing here touches the network; ``engine/api_runner.py`` sends the request.
 """
@@ -22,16 +25,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from .api_compare import ignore_list
 from .sheet import BookState, ErrorText, cell_text
 
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
-CHECK_KINDS = ("compare", "compare_ignore_case", "contains", "contains_ignore_case", "greater_than", "less_than", "between", "matches")
-# (the last four are written by the Workbook Builder, P10: only the new runner reads them; the legacy runner skipped unknown functions)
+CHECK_KINDS = ("compare", "compare_ignore_case", "contains", "contains_ignore_case", "greater_than", "less_than", "between", "matches",
+               "compare_response")
+# (the last five are written by the Workbook Builder - P10, and compare_response for the whole response: only the new runner reads them; the
+# legacy runner skipped unknown functions)
+RESPONSE_CHECK = "compare_response"     # expected column -> RESPONSE_OUT: the whole response body against the expected column's text
+RESPONSE_ACTUAL = "RESPONSE_OUT"        # the actual column a whole-response check names (a label: the body is never written into a cell)
 _FUNCTIONS = {"addheader": "add_header", "add_header": "add_header", "update_json": "update_json", "output_json": "output_json",
               "compare": "compare", "compare_ignore_case": "compare_ignore_case", "contains": "contains",
               "contains_ignore_case": "contains_ignore_case", "disablecheckpoint": "disable", "disable_checkpoint": "disable",
               "replace": "replace", "output": "output", "greater_than": "greater_than", "less_than": "less_than", "between": "between",
-              "matches": "matches"}
+              "matches": "matches", "compare_response": "compare_response", "ignore_in_response": "ignore_in_response"}
 
 
 def is_api_sheet(headers) -> bool:
@@ -45,10 +53,16 @@ class Checkpoint:
     kind: str                     # one of CHECK_KINDS
     expected_column: str
     actual_column: str
+    ignore: list[str] = field(default_factory=list)       # compare_response: the fields left out (``ignore_in_response``)
 
     @property
     def name(self) -> str:
         return self.actual_column
+
+    @property
+    def step_name(self) -> str:
+        """The step's name in the report: ``Check Premium_OUT``, or ``Check the whole response``."""
+        return "Check the whole response" if self.kind == RESPONSE_CHECK else f"Check {self.actual_column}"
 
 
 @dataclass
@@ -60,6 +74,7 @@ class InputOutput:
     output: dict[str, str] = field(default_factory=dict)              # element path (a/b[2]/c) in the response -> column
     checks: dict[str, dict[str, str]] = field(default_factory=lambda: {k: {} for k in CHECK_KINDS})   # kind -> {expected column: actual column}
     disabled: dict[str, str] = field(default_factory=dict)            # test name -> "col;col"
+    ignore_in_response: dict[str, str] = field(default_factory=dict)  # a compare_response's expected column (UPPER) -> "field; $.path; /x/@y"
     ignored_rows: list[tuple[int, str]] = field(default_factory=list)  # (row, why) for rows the legacy runner skipped
 
 
@@ -83,6 +98,8 @@ def read_input_output(book: BookState) -> InputOutput:
             io.checks[kind][param] = value
         elif kind == "disable":
             io.disabled[param] = value
+        elif kind == "ignore_in_response":
+            io.ignore_in_response[param.upper()] = value
         else:
             getattr(io, kind)[param] = value
     return io
@@ -298,6 +315,9 @@ class ApiRuntime:
         self.values: dict[str, Any] = {name: self.sheet.read(self.row, col) for name, col in self.columns.items()}
         self.io = read_input_output(book)
         self.outputs: dict[str, str] = {}
+        self.response_text = ""                                      # the body of the response (read_response): what compare_response reads
+        self.response_data: Any = None
+        self.response_is_json = False
         self.written: dict[tuple[str, int, int], str] = {}          # cells of the row the response filled in: handed to the tests that read them
         self.blocked_reason = ""
 
@@ -564,14 +584,48 @@ class ApiRuntime:
             for expected, actual in self.io.checks[kind].items():
                 if expected.upper() not in self.values or actual.upper() in skip:
                     continue                                            # no expected value column in this sheet, or switched off for this test
-                out.append(Checkpoint(kind, expected, actual))
+                ignore = ignore_list(self.io.ignore_in_response.get(expected.upper(), "")) if kind == RESPONSE_CHECK else []
+                out.append(Checkpoint(kind, expected, actual, ignore))
         return out
+
+    def expected_value(self, point: Checkpoint) -> Any:
+        """The expected cell of a check, ``{NAME}``s filled in (the builder writes ``{PLAN}``).  A whole expected response is filled with each
+        value escaped for the response's format, so a quote in a value cannot break the expected JSON / XML."""
+        raw = self.values.get(point.expected_column.upper())
+        if not (isinstance(raw, str) and "{" in raw):
+            return raw
+        if point.kind != RESPONSE_CHECK:
+            return self.fill(raw).text
+        from xml.sax.saxutils import escape as xml_escape
+        return self.fill(raw, escape=(lambda v: json.dumps(v)[1:-1]) if self.response_is_json else xml_escape).text
+
+    def verdict(self, point: Checkpoint) -> tuple[bool, str, str, list[str]]:
+        """``(passed, expected, actual, notes)`` of one check, the way a run reports it and Send now shows it (secrets masked).  A whole-response
+        check compares the body ``record_response`` kept and lists its differences in the notes (the first ``MAX_DIFFERENCES``)."""
+        expected_raw = self.expected_value(point)
+        if point.kind == RESPONSE_CHECK:
+            from .api_compare import compare_response
+            result = compare_response(cell_text(expected_raw), self.response_text, ignore=point.ignore, actual_data=self.response_data,
+                                      actual_is_json=self.response_is_json)
+            ignoring = f" (ignoring {'; '.join(point.ignore)})" if point.ignore else ""
+            expected = f"the whole response in {point.expected_column}{ignoring}"
+            if result.problem:
+                return False, expected, "", [self.mask(result.problem)]
+            if result.same:
+                return True, expected, "the same" + (f" ({result.ignored} ignored)" if result.ignored else ""), []
+            actual = f"{result.count} difference{'s' if result.count != 1 else ''}: {result.differences[0]}"
+            notes = [self.mask(d) for d in result.differences]
+            if result.count > len(result.differences):
+                notes.append(f"... and {result.count - len(result.differences)} more")
+            return False, expected, self.mask(actual[:300]), notes
+        actual = self.actual(point.actual_column)
+        return check(point.kind, expected_raw, actual), self.mask(cell_text(expected_raw)), actual, []
 
     def plan(self) -> list[tuple[int, str, str]]:
         """Dry run: the request, then each check (used for progress totals and the previews)."""
         req = self.request()
         steps = [(self.row, f"{req.method} {req.url}".strip(), req.method)]
-        steps += [(self.row, f"Check {c.actual_column}", c.kind.upper()) for c in self.checkpoints()]
+        steps += [(self.row, c.step_name, c.kind.upper()) for c in self.checkpoints()]
         return steps
 
     def record_output(self, column: str, value: str) -> None:
@@ -584,6 +638,11 @@ class ApiRuntime:
             if self.pool is not None and column.upper() in self.pool_sets():
                 self.pool.set(column.upper(), value, self.case.id)          # {COLUMN} in any later test of the run
         self.values[column.upper()] = value
+
+    def record_response(self, text: str, data: Any, is_json: bool) -> None:
+        """Keep the whole response for a ``compare_response`` check.  Never written into a cell: a body can be far longer than Excel's 32,767
+        characters, and the evidence folder already holds it (``response.json`` / ``.xml``)."""
+        self.response_text, self.response_data, self.response_is_json = text or "", data, bool(is_json)
 
     def actual(self, column: str) -> str:
         return cell_text(self.values.get(column.upper())).strip() if column.upper() in self.outputs else ""

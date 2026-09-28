@@ -77,6 +77,11 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, {"transactionStatus": "Success", "siteUrl": f"http://{self.headers.get('Host')}/", "purchaseResponse": {"policyResponses": [
                     {"policyDetail": {"policyNumber": "P-777", "policyHolder": {"firstName": "Claim", "lastName": body.get("lastName")}}},
                     {"policyDetail": {"policyNumber": "P-778", "policyHolder": {"firstName": "Duplicate", "lastName": "Second"}}}]}})
+        elif method == "GET" and self.path.split("?")[0] == "/policy/quote/v1":    # a quote: open, and its id / time / item ids change on every call
+            import time as _t
+            n = API_SEEN["count"]
+            self._json(200, {"quoteId": f"Q-{n}-{int(_t.time() * 1000)}", "createdAt": _t.strftime("%Y-%m-%dT%H:%M:%S") + f".{n:03d}Z",
+                             "plan": {"code": "Basic", "price": 12.5}, "items": [{"id": n * 10 + 1, "name": "Trip"}, {"id": n * 10 + 2, "name": "Bags"}]})
         elif method == "POST" and self.path == "/policy/xml/v1":            # a SOAP policy service: the key only; XML in, XML (with namespaces) out
             if self.headers.get("apiKey") != "KEY-123":
                 self._json(401, {"message": "Unauthorized"})

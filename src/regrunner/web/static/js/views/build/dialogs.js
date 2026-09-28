@@ -36,14 +36,14 @@ ${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)'
 
 export function newTestDialog(m) {
   const kind = m.testKind || 'web';
-  const kinds = [['web', 'Website'], ['api', 'API (JSON)'], ['xml', 'XML (SOAP)']];
+  const kinds = [['web', 'Website'], ['api', 'API test']];            // (one kind of API test: JSON or XML is its Content-Type header)
   const inner = html`<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Test name</span>
 <input class="fld" value="${m.name}" placeholder="Purchase" data-input="build-nt-name" autofocus autocomplete="off"></div>
 <div class="seg" role="group" aria-label="Kind of test">${kinds.map(([k, label]) => html`<button class="${kind === k ? 'on' : ''}" aria-pressed="${String(kind === k)}" data-act="build-nt-kind" data-val="${k}">${label}</button>`)}</div>
 ${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : ''}`;
   const footer = html`<span style="flex: 1"></span><button class="btn" data-act="close-modal">Cancel</button>
 <button class="btn btn-pri ${m.busy ? 'busy' : ''}" data-act="build-nt-create" ${m.busy ? raw('disabled') : ''}>Create test</button>`;
-  return backdrop(dialogShell('New test', kind === 'web' ? 'A new sheet with the 26 standard columns.' : 'A new API sheet: one data row, the request built in the next screen.', inner, footer, { width: 460 }));
+  return backdrop(dialogShell('New test', kind === 'web' ? 'A new sheet with the 26 standard columns.' : 'A new API sheet: one data row (Content-Type: application/json to start with), the request built in the next screen.', inner, footer, { width: 460 }));
 }
 
 // ---- environments -----------------------------------------------------------------------------------------------

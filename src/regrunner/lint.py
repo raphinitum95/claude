@@ -178,6 +178,14 @@ def builder_problems(model: dict) -> list[dict]:
 
     for t in model.get("tests", []):
         tid = t["id"]
+        unchecked = t.get("_statusUnchecked")
+        if unchecked:                                              # (API tests: the status is expected but never compared - feedback item 15)
+            others = unchecked.get("sharedWith") or []
+            add("warning", "status_never_checked",
+                f"expects HTTP status {unchecked['expected']} (RES_STATUS_CD_EXP) but InputOutput has no check for it"
+                + (f" (its row says {unchecked['offFunction']}, which switches it off)" if unchecked.get("offRow") else "")
+                + ", so any status passes. Add the check in the API editor" + (f"; it also checks {', '.join(others)}, which have that column"
+                                                                                 if others else ""), tid)
         needs = t.get("_needs", {})
         stack: list[tuple[str, dict]] = []
         for s in t.get("steps", []):

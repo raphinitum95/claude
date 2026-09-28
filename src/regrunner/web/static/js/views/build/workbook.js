@@ -4,8 +4,8 @@ import { icon } from '../../icons.js';
 import { buildUrl, bm } from './actions.js';
 import { scenarioCards } from './scenario.js';
 
-const KIND_ICON = { web: 'grid', api: 'api', xml: 'xml' };
-const KIND_LABEL = { web: 'Website', api: 'API', xml: 'XML' };
+const KIND_ICON = { web: 'grid', api: 'xml', xml: 'xml' };            // (an API test gets the <> icon, JSON or XML alike)
+const KIND_LABEL = { web: 'Website', api: 'API', xml: 'API' };
 const LAST = { PASSED: ['p-pass', 'check', 'Passed'], FAILED: ['p-fail', 'x', 'Failed'] };
 
 function testCard(S, t) {

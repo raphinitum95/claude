@@ -9,7 +9,11 @@ sheet.  The builder writes only that format, plus a few additions the new runner
   the value (secrets.env gives it: ``RR_SECRET_<NAME>``);
 * a clicked value becomes an ``output_json`` (JSONPath, ``$.a.b``) or ``Output`` (XPath, ``/a/b/@c``) row into a column; a check adds the
   expected column (``<name>_EXP``, the value in the row) and a ``compare`` / ``contains`` / ``greater_than`` / ``less_than`` / ``between`` /
-  ``matches`` row; a save is an output row into a column named for the variable, which the run's shared variables get.
+  ``matches`` row; a save is an output row into a column named for the variable, which the run's shared variables get;
+* a whole-response check: ``compare_response | RESPONSE_EXP | RESPONSE_OUT`` + the expected body in ``RESPONSE_EXP`` + an optional
+  ``ignore_in_response | RESPONSE_EXP | timestamp; $.meta.id`` (``workbook/api_compare.py`` compares them);
+* one kind of API test: ``Content-Type`` is a header row like any other and ``JSON_FORMAT`` (the runner's JSON / XML switch) follows it
+  (``_sync_json_format``); a legacy JSON test with no such row shows the ``application/json`` the runner sends for it as an implied row.
 
 ``InputOutput`` rows are shared by every API sheet of the workbook (a row applies to a sheet that has its columns), and the reader keys them by
 path / header / placeholder.  So a path, header or placeholder that already has a row reuses that row's column instead of adding a second row that
@@ -33,7 +37,8 @@ from urllib.parse import urlparse
 
 from ..config import Config, workbook_secrets
 from ..workbook import builder as B
-from ..workbook.api import CHECK_KINDS, METHODS, check
+from ..workbook.api import CHECK_KINDS, METHODS, RESPONSE_ACTUAL, RESPONSE_CHECK
+from ..workbook.api_compare import ignore_list
 from ..workbook.api_paths import filter_literal, json_path_of, xpath_of
 from ..workbook.api_template import xml_to_tree
 from ..workbook.builder import BuildDocument, BuildError, _Grid, _Ops, _sheet_key, is_formula, is_true, text_of
@@ -45,7 +50,9 @@ IO_HEADERS = ("Function", "Parameter", "Value")
 API_COLUMNS = ("blnExecute", "TCID", "TC_Name", "WEBSERVICE_METHOD", "WEBSERVICE_URL", "JSON_FORMAT", "REQUEST_BODY")
 OUTPUT_FUNCTIONS = {"output_json": "output_json", "output": "Output"}
 CHECK_LABELS = {"compare": "is", "compare_ignore_case": "is (any case)", "contains": "contains", "contains_ignore_case": "contains (any case)",
-                "greater_than": "is greater than", "less_than": "is less than", "between": "is between", "matches": "matches"}
+                "greater_than": "is greater than", "less_than": "is less than", "between": "is between", "matches": "matches",
+                "compare_response": "is the whole response"}
+VALUE_CHECK_KINDS = tuple(k for k in CHECK_KINDS if k != RESPONSE_CHECK)      # what a single value can be checked with (the "How" choice)
 STATUS_COLUMNS = {"status": ("RES_STATUS_CD_EXP", "RES_STATUS_CD_OUT"), "time": ("ELAPSEDTIME_EXP", "ELAPSEDTIME_OUT")}
 SECRET_HEADER = re.compile(r"authori[sz]ation|api[-_ ]?key|token|secret|password|passwd|cookie|session|signature", re.I)
 TREE_LIMIT = 4000                    # nodes of a response tree sent to the page (a huge response is cut, and says so)
@@ -53,7 +60,7 @@ TEXT_LIMIT = 400_000                 # characters of a raw response sent to the 
 
 _FUNCTION_KIND = {"addheader": "add_header", "add_header": "add_header", "update_json": "update_json", "output_json": "output_json",
                   "output": "output", "replace": "replace", "disablecheckpoint": "disable", "disable_checkpoint": "disable",
-                  **{k: k for k in CHECK_KINDS}}
+                  "ignore_in_response": "ignore_in_response", **{k: k for k in CHECK_KINDS}}
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
@@ -146,7 +153,11 @@ def api_view(editor: WorkbookEditor, sheet_name: str, row: Any = None, *, enviro
             outputs_by_col.setdefault(r.value.upper(), r)
 
     headers = [{"name": r.parameter, "column": r.value, "value": _shown(r.parameter, raw(r.value)), "secret": _is_secret_header(r.parameter, raw(r.value)),
-                "ioRow": r.row} for r in io if r.kind == "add_header" and has(r.value)]
+                "ioRow": r.row} for r in io if r.kind == "add_header" and has(r.value) and raw(r.value).upper() != "[BLANK]"]
+    if not any(h["name"].lower() == "content-type" for h in headers):
+        implied = _implied_content_type(editor, grid, row, json_format)            # (what the runner sends without a Content-Type row)
+        if implied:
+            headers.insert(0, {"name": "Content-Type", "column": "", "value": implied[0], "secret": False, "ioRow": None, "implied": implied[1]})
     template = {"location": raw("XML_LOCATION") or raw("TEMPLATES_PATH"), "file": raw("XML_REQUESTFILE") or raw("REQUESTFILE") or raw("TEMPLATE_FILE"),
                 "replace": [{"placeholder": r.parameter, "column": r.value, "value": raw(r.value), "ioRow": r.row}
                             for r in io if r.kind == "replace" and has(r.value)],
@@ -157,6 +168,7 @@ def api_view(editor: WorkbookEditor, sheet_name: str, row: Any = None, *, enviro
 
     checks, used_outputs = [], set()
     skip = _disabled_columns(io, raw(_global_text(editor, "TC_Name_Column") or "TC_Name"))
+    ignore_rows = {r.parameter.upper(): r for r in io if r.kind == "ignore_in_response"}
     for r in io:
         if r.kind not in CHECK_KINDS or not has(r.parameter):
             continue
@@ -164,16 +176,23 @@ def api_view(editor: WorkbookEditor, sheet_name: str, row: Any = None, *, enviro
         source = outputs_by_col.get(actual)
         if source is not None:
             used_outputs.add(source.row)
-        what = "status" if actual == "RES_STATUS_CD_OUT" else "time" if actual == "ELAPSEDTIME_OUT" else ""
-        checks.append({"ioRow": r.row, "kind": r.kind, "label": CHECK_LABELS.get(r.kind, r.kind), "expected": r.parameter,
-                       "expectedValue": raw(r.parameter), "actual": r.value, "path": source.parameter if source else "", "what": what,
-                       "outputRow": source.row if source else None, "function": source.kind if source else "", "disabled": actual in skip,
-                       "lastValue": raw(r.value) if has(r.value) else ""})
+        whole = r.kind == RESPONSE_CHECK
+        what = "whole" if whole else "status" if actual == "RES_STATUS_CD_OUT" else "time" if actual == "ELAPSEDTIME_OUT" else ""
+        item = {"ioRow": r.row, "kind": r.kind, "label": CHECK_LABELS.get(r.kind, r.kind), "expected": r.parameter,
+                 "expectedValue": raw(r.parameter), "actual": r.value, "path": source.parameter if source else "", "what": what,
+                 "outputRow": source.row if source else None, "function": source.kind if source else "", "disabled": actual in skip,
+                 "lastValue": raw(r.value) if has(r.value) and not whole else ""}
+        if whole:
+            found = ignore_rows.get(r.parameter.upper())
+            item.update(ignore=ignore_list(found.value if found else ""), ignoreIoRow=found.row if found else None)
+        checks.append(item)
     saves = [{"ioRow": r.row, "function": r.kind, "path": r.parameter, "column": r.value, "lastValue": raw(r.value)}
              for r in outputs_by_col.values() if r.row not in used_outputs]
     steps = [{"n": 1, "kind": "send", "label": f"{(raw('WEBSERVICE_METHOD') or 'POST').upper()} request"}]
     steps += [{"n": len(steps) + i + 1, "kind": "check", "ioRow": c["ioRow"],
-               "label": f"{c['what'] or c['path'] or c['actual']} {c['label']} {c['expectedValue'] or '(empty)'}"} for i, c in enumerate(checks)]
+               "label": (f"the whole response is as expected{' (ignoring %d)' % len(c['ignore']) if c['ignore'] else ''}" if c["what"] == "whole"
+                         else f"{c['what'] or c['path'] or c['actual']} {c['label']} {c['expectedValue'] or '(empty)'}")}
+              for i, c in enumerate(checks)]
     steps += [{"n": len(steps) + i + 1, "kind": "save", "ioRow": s["ioRow"], "label": f"{s['path']} as {{{s['column']}}}"} for i, s in enumerate(saves)]
 
     env = environments or B.read_environments(editor)
@@ -190,7 +209,8 @@ def api_view(editor: WorkbookEditor, sheet_name: str, row: Any = None, *, enviro
         "url": raw("WEBSERVICE_URL"), "urlFormula": is_formula(grid.get(row, "WEBSERVICE_URL")),
         "environmentParameter": raw("ENVIRONMENT_PARAMETER"), "hasUrlColumn": "WEBSERVICE_URL" in cols,
         "headers": headers, "body": {"kind": body_kind, "text": typed, "template": template},
-        "checks": checks, "saves": saves, "steps": steps, "checkKinds": [{"kind": k, "label": CHECK_LABELS[k]} for k in CHECK_KINDS],
+        "checks": checks, "saves": saves, "steps": steps, "checkKinds": [{"kind": k, "label": CHECK_LABELS[k]} for k in VALUE_CHECK_KINDS],
+        "statusUnchecked": status_unchecked(editor, sheet, io=io),
         "columns": [h for h in grid.header_names if h],
         "rowValues": {k: _shown(k, v) for k, v in row_values.items()},
         "needs": needs, "provides": provides, "environment": environment,
@@ -215,6 +235,78 @@ def _disabled_columns(io: list[IoRow], test_name: str) -> set[str]:
         if r.kind == "disable" and test_name and r.parameter.strip().upper() == test_name.strip().upper():
             out.update(c.strip().upper() for c in r.value.split(";") if c.strip())
     return out
+
+
+# -- one kind of API test (feedback item 16): Content-Type is a header row, JSON_FORMAT follows it -----------------------------------------------
+def _implied_content_type(editor: WorkbookEditor, grid: _Grid, row: int, json_format: bool) -> tuple[str, str] | None:
+    """``(value, why)`` of the Content-Type the runner sends for a row with no Content-Type header row: ``application/json`` when JSON_FORMAT is
+    Y, else the Environments sheet's ``<prefix>_ContentHeader`` (a legacy SOAP sheet), else none.  Shown as a header row the person can change."""
+    if json_format:
+        return "application/json", "sent for a JSON body (JSON_FORMAT = Y)"
+    parameter = grid.raw(row, "ENVIRONMENT_PARAMETER")
+    name = _sheet_key(editor, "Environments")
+    if not parameter or name is None:
+        return None
+    environment = _global_text(editor, "Environment").upper()
+    wanted = f"{parameter.split('_')[0]}_CONTENTHEADER"
+    for values in editor.rows(name)[1:]:
+        cells = [text_of(values[i]).strip() if i < len(values) else "" for i in range(3)]
+        if cells[0].upper() == environment and cells[1].upper() == wanted and cells[2]:
+            return cells[2], f"from the Environments sheet ({cells[1]})"
+    return None
+
+
+def _content_type_of(e: WorkbookEditor, sheet: str, row: int) -> str | None:
+    """The Content-Type header row this data row sends, as typed (``None``: no such row, or this row leaves it out)."""
+    found = _header_row(read_io(e), "Content-Type")
+    col = e.column(sheet, found.value) if found is not None else None
+    if col is None:
+        return None
+    value = text_of(e.get(sheet, row, col)).strip()
+    return None if not value or value.upper() in ("[BLANK]", "NONE") else value
+
+
+def _sync_json_format(e: WorkbookEditor, sheet: str, row: int, response_format: str = "") -> None:
+    """Write ``JSON_FORMAT`` (what the runner reads: the default Content-Type, how ``{NAME}``s are escaped in the body, which output function a
+    clicked value gets) from the test's Content-Type header: ``json`` in it = Y, ``xml`` = N.  With no such header (or another type), from what
+    the response looked like (``response_format``), else from the body typed in the form (``{`` / ``[`` or ``<``); otherwise left as it is."""
+    content_type = (_content_type_of(e, sheet, row) or "").lower()
+    fmt = "json" if "json" in content_type else "xml" if "xml" in content_type else ""
+    if not fmt and response_format in ("json", "xml"):
+        fmt = response_format
+    if not fmt and not content_type:
+        col = e.column(sheet, "REQUEST_BODY")
+        body = text_of(e.get(sheet, row, col)).lstrip() if col else ""
+        fmt = "json" if body.startswith(("{", "[")) else "xml" if body.startswith("<") else ""
+    if fmt:
+        _put(e, sheet, row, "JSON_FORMAT", "Y" if fmt == "json" else "N")
+
+
+# -- the status nobody checks (feedback item 15) -------------------------------------------------------------------------------------------------
+def status_unchecked(editor: WorkbookEditor, sheet: str, *, io: list[IoRow] | None = None) -> dict | None:
+    """An API sheet that expects an HTTP status (``RES_STATUS_CD_EXP`` holds a value in an enabled data row) but has no check row for it: the
+    runner records ``RES_STATUS_CD_OUT`` and compares it with nothing, so a 500 passes.  ``{expected, row, offRow, sharedWith}`` or ``None``.
+    ``offRow``: an ``InputOutput`` row that names it under a function the runner ignores (``compareX``, how authors switched a check off);
+    ``sharedWith``: the other API sheets with that column, which the one shared check row would check too.  A ``DisableCheckpoint`` for the
+    row's test name is a deliberate "do not check" and is respected."""
+    grid = _Grid(editor, sheet)
+    if "RES_STATUS_CD_EXP" not in grid.cols:
+        return None
+    rows = [d["row"] for d in B._data_rows(grid) if d["enabled"] is not False and grid.raw(d["row"], "RES_STATUS_CD_EXP")]
+    if not rows:
+        return None
+    io = read_io(editor) if io is None else io
+    if any(r.kind in CHECK_KINDS and r.parameter.strip().upper() == "RES_STATUS_CD_EXP" for r in io):
+        return None
+    name_column = _global_text(editor, "TC_Name_Column") or "TC_Name"
+    rows = [r for r in rows if "RES_STATUS_CD_OUT" not in _disabled_columns(io, grid.raw(r, name_column.upper()))]
+    if not rows:
+        return None
+    off = next((r for r in io if not r.kind and r.parameter.strip().upper() == "RES_STATUS_CD_EXP"
+                and r.value.strip().upper() == "RES_STATUS_CD_OUT"), None)
+    shared = [n for n in _other_api_sheets_with(editor, "RES_STATUS_CD_EXP", sheet)]
+    return {"expected": grid.raw(rows[0], "RES_STATUS_CD_EXP"), "row": rows[0], "offRow": off.row if off else None,
+            "offFunction": off.function if off else "", "sharedWith": shared}
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
@@ -289,7 +381,9 @@ def _row_of(e: WorkbookEditor, sheet: str, op: dict) -> int:
 
 
 def op_set_request(e: WorkbookEditor, op: dict) -> dict:
-    """``{test, row, method?, url?, format?: json|xml, body?}``: the request cells of the data row (a missing column is added)."""
+    """``{test, row, method?, url?, format?: json|xml, body?}``: the request cells of the data row (a missing column is added).  ``format``
+    writes JSON_FORMAT as given (a cURL command or template said which); without it, a new body sets JSON_FORMAT the way the Content-Type
+    header does (``_sync_json_format``: the header first, the body's own shape only when there is no header)."""
     sheet = api_sheet(e, op.get("test"))
     row = _row_of(e, sheet, op)
     if "method" in op:
@@ -307,6 +401,8 @@ def op_set_request(e: WorkbookEditor, op: dict) -> dict:
     if "body" in op:
         body = op["body"]
         _put(e, sheet, row, "REQUEST_BODY", str(body) if body not in (None, "") else "")
+        if "format" not in op:
+            _sync_json_format(e, sheet, row)
     return {"op": "api_set_request", "test": sheet, "row": row}
 
 
@@ -315,19 +411,40 @@ def _header_row(io: list[IoRow], name: str) -> IoRow | None:
 
 
 def op_set_header(e: WorkbookEditor, op: dict) -> dict:
-    """``{test, row, name, value, previous?}``: send header ``name`` with ``value`` (``{SECRET:X}`` for a key).  A header another sheet already
-    sends keeps its ``InputOutput`` row and column; a new one gets ``addHeader | name | H_<name>``."""
+    """``{test, row, name, value?, previous?}``: send header ``name`` with ``value`` (``{SECRET:X}`` for a key).  A header another sheet already
+    sends keeps its ``InputOutput`` row and column; a new one gets ``addHeader | name | H_<name>``.  No ``value`` keeps the value this sheet
+    already has for that header (a new header is then sent empty).  ``previous``: the header's old name (the
+    person renamed it): its row is renamed in place when no other API sheet sends it (the value, even a key typed in the sheet, stays where it
+    is); otherwise this sheet stops sending the old one and sends the new one with the same value.  A Content-Type header also sets JSON_FORMAT."""
     sheet = api_sheet(e, op.get("test"))
     row = _row_of(e, sheet, op)
     name = str(op.get("name") or "").strip()
     if not name or re.search(r"[\s:]", name):
         raise BuildError("A header name has no spaces or colons (Content-Type, x-api-key).")
+    value = op.get("value")
+    keep_value = value is None or value == MASK                  # (a rename that does not retype the value keeps the one in the sheet)
+    value = "" if value is None else str(value)
     previous = str(op.get("previous") or "").strip()
     if previous and previous.lower() != name.lower():
-        op_remove_header(e, {"test": sheet, "row": row, "name": previous})
-    value = op.get("value")
-    value = "" if value is None else str(value)
-    if value == MASK:
+        io = read_io(e)
+        old = _header_row(io, previous)
+        old_col = e.column(sheet, old.value) if old is not None else None
+        if old is not None and old_col is not None:
+            if _header_row(io, name) is not None:
+                raise BuildError(f"This workbook already has a {name} header row: change that one, or remove {previous} first.", "exists", 409)
+            if keep_value:
+                kept = e.get(sheet, row, old_col)
+            if not _other_api_sheets_with(e, old.value, sheet):
+                e.set(io_sheet(e), old.row, 2, name)                  # renamed in place: same column, same cells
+                if not keep_value:
+                    e.set(sheet, row, old_col, value if value != "" else "None")
+                if "content-type" in (name.lower(), previous.lower()):
+                    _sync_json_format(e, sheet, row)
+                return {"op": "api_set_header", "test": sheet, "row": row, "column": old.value, "renamed": True}
+            op_remove_header(e, {"test": sheet, "row": row, "name": previous})
+            if keep_value:
+                value, keep_value = ("" if kept is None else kept), False
+    if keep_value and value == MASK:
         raise BuildError("Type the new value (or {SECRET:NAME} to take it from secrets.env).")
     io = read_io(e)
     found = _header_row(io, name)
@@ -337,16 +454,21 @@ def op_set_header(e: WorkbookEditor, op: dict) -> dict:
         _append_io(e, "addHeader", name, column)
     else:
         column = found.value
-    e.set(sheet, row, _column(e, sheet, column), value if value != "" else "None")      # (the runner sends "None" as an empty value)
+    has_cell = found is not None and e.column(sheet, column) is not None
+    if not (keep_value and has_cell):                         # (no value given for a header this sheet already sends: its value stays)
+        e.set(sheet, row, _column(e, sheet, column), value if value != "" else "None")  # (the runner sends "None" as an empty value)
+    if "content-type" in (name.lower(), previous.lower()):
+        _sync_json_format(e, sheet, row)
     return {"op": "api_set_header", "test": sheet, "row": row, "column": column}
 
 
 def op_remove_header(e: WorkbookEditor, op: dict) -> dict:
     """``{test, row, name}``: stop sending it.  The ``InputOutput`` row goes when no other API sheet has its column; otherwise this row's cell
-    says ``[BLANK]`` (the runner's "leave this header out")."""
+    says ``[BLANK]`` (the runner's "leave this header out").  Removing Content-Type lets JSON_FORMAT follow the body again."""
     sheet = api_sheet(e, op.get("test"))
     row = _row_of(e, sheet, op)
-    found = _header_row(read_io(e), str(op.get("name") or ""))
+    name = str(op.get("name") or "")
+    found = _header_row(read_io(e), name)
     if found is None or e.column(sheet, found.value) is None:
         return {"op": "api_remove_header", "test": sheet, "row": row, "removed": False}
     if _other_api_sheets_with(e, found.value, sheet):
@@ -354,15 +476,23 @@ def op_remove_header(e: WorkbookEditor, op: dict) -> dict:
     else:
         e.set(sheet, row, e.column(sheet, found.value), None)
         e.delete_rows(io_sheet(e), found.row, 1)
+    if name.strip().lower() == "content-type":
+        _sync_json_format(e, sheet, row)
     return {"op": "api_remove_header", "test": sheet, "row": row, "removed": True}
 
 
 def _function_of(op: dict, e: WorkbookEditor, sheet: str, row: int) -> str:
-    """``output_json`` for a JSON response, ``Output`` for XML: given, else from the row's format."""
-    f = str(op.get("function") or "").strip().lower()
+    """``output_json`` for a JSON response, ``Output`` for XML: given (``function``, else ``responseFormat``: what the response the value was
+    clicked in looked like), else from the path typed (``$...`` is a JSONPath, ``/...`` an XPath), else from the row's JSON_FORMAT."""
+    f = str(op.get("function") or op.get("responseFormat") or "").strip().lower()
     if f in ("output_json", "json"):
         return "output_json"
     if f in ("output", "xml", "xpath"):
+        return "Output"
+    path = str(op.get("path") or "").strip()
+    if path.startswith("$"):
+        return "output_json"
+    if path.startswith("/"):
         return "Output"
     fmt = e.get(sheet, row, e.column(sheet, "JSON_FORMAT")) if e.column(sheet, "JSON_FORMAT") else None
     return "output_json" if is_true(fmt) else "Output"
@@ -385,41 +515,119 @@ def _output_column(e: WorkbookEditor, sheet: str, function: str, path: str, want
 
 
 def op_add_check(e: WorkbookEditor, op: dict) -> dict:
-    """``{test, row, path, function?, kind, expected, name?}``: check a value of the response.  ``path`` ``"status"`` / ``"time"`` checks the HTTP
-    status / the time taken (``RES_STATUS_CD_OUT`` / ``ELAPSEDTIME_OUT``).  Adds the output row (or reuses it), the expected column
-    (``<name>_EXP``) holding ``expected`` in this row, and the check row."""
+    """``{test, row, path, function?, responseFormat?, kind, expected, name?}``: check a value of the response - clicked in a response, or typed
+    by hand (a JSONPath ``$...`` or an XPath ``/...``).  ``path`` ``"status"`` / ``"time"`` checks the HTTP status / the time taken
+    (``RES_STATUS_CD_OUT`` / ``ELAPSEDTIME_OUT``): a sheet that already has that expected column and no check for it gets its check on that
+    column (a switched-off ``compareX`` row is switched back on) instead of a second column.  Otherwise adds the output row (or reuses it), the
+    expected column (``<name>_EXP``) holding ``expected`` in this row, and the check row.  ``kind: compare_response`` is the whole-response
+    check (``op_add_response_check``)."""
+    kind = str(op.get("kind") or "compare").strip().lower()
+    if kind == RESPONSE_CHECK:
+        return {**op_add_response_check(e, op), "op": "api_add_check"}
     sheet = api_sheet(e, op.get("test"))
     row = _row_of(e, sheet, op)
-    kind = str(op.get("kind") or "compare").strip().lower()
     if kind not in CHECK_KINDS:
-        raise BuildError(f"{kind!r} is not a check ({', '.join(CHECK_KINDS)}).")
+        raise BuildError(f"{kind!r} is not a check ({', '.join(VALUE_CHECK_KINDS)}).")
     path = str(op.get("path") or "").strip()
     if not path:
         raise BuildError("Which value? Click one in the response, or type its path.")
+    if op.get("responseFormat") in ("json", "xml"):
+        _sync_json_format(e, sheet, row, str(op["responseFormat"]))
     io = read_io(e)
     reused = False
+    expected = str(op.get("expected") if op.get("expected") is not None else "")
     if path.lower() in STATUS_COLUMNS:
         exp_wanted, actual = STATUS_COLUMNS[path.lower()]
+        checked = any(r.kind in CHECK_KINDS and r.parameter.strip().upper() == exp_wanted for r in io)
+        if e.column(sheet, exp_wanted) is not None and not checked:
+            _put(e, sheet, row, exp_wanted, expected)
+            off = next((r for r in io if not r.kind and r.parameter.strip().upper() == exp_wanted and r.value.strip().upper() == actual), None)
+            if off is not None:
+                e.set(io_sheet(e), off.row, 1, kind)
+                io_row = off.row
+            else:
+                io_row = _append_io(e, kind, exp_wanted, actual)
+            return {"op": "api_add_check", "test": sheet, "row": row, "ioRow": io_row, "expected": exp_wanted, "actual": actual, "reused": True}
     else:
         base = _column_name(op.get("name") or _base_of_path(path))
         actual, reused = _output_column(e, sheet, _function_of(op, e, sheet, row), path, base + "_OUT")
         exp_wanted = re.sub(r"_OUT$", "", actual, flags=re.I) + "_EXP"
     taken = {r.parameter.upper() for r in read_io(e) if r.kind in CHECK_KINDS} | {r.value.upper() for r in io}
     expected_col = exp_wanted if exp_wanted.upper() not in taken and e.column(sheet, exp_wanted) is None else _unique_column(e, sheet, exp_wanted, taken)
-    _put(e, sheet, row, expected_col, str(op.get("expected") if op.get("expected") is not None else ""))
+    _put(e, sheet, row, expected_col, expected)
     _column(e, sheet, expected_col)
     io_row = _append_io(e, kind, expected_col, actual)
     return {"op": "api_add_check", "test": sheet, "row": row, "ioRow": io_row, "expected": expected_col, "actual": actual, "reused": reused}
 
 
+def op_add_response_check(e: WorkbookEditor, op: dict) -> dict:
+    """``{test, row, expected?, ignore?: [..] | "a; b", name?}``: check the whole response against ``expected`` (the body as it should come back,
+    typed or pasted from a Send now), leaving out the ``ignore`` fields.  Writes the expected column (``RESPONSE_EXP``, made unique per workbook
+    because check rows are shared by every API sheet), ``compare_response | RESPONSE_EXP | RESPONSE_OUT`` and, with an ignore list,
+    ``ignore_in_response | RESPONSE_EXP | <the list>``."""
+    sheet = api_sheet(e, op.get("test"))
+    row = _row_of(e, sheet, op)
+    io = read_io(e)
+    wanted = _column_name(op.get("name") or "RESPONSE") + "_EXP"
+    taken = {r.parameter.upper() for r in io if r.kind in CHECK_KINDS or r.kind == "ignore_in_response"} | {r.value.upper() for r in io}
+    expected_col = wanted if wanted.upper() not in taken and e.column(sheet, wanted) is None else _unique_column(e, sheet, wanted, taken)
+    expected = op.get("expected")
+    _put(e, sheet, row, expected_col, "" if expected is None else str(expected))
+    _column(e, sheet, expected_col)
+    io_row = _append_io(e, RESPONSE_CHECK, expected_col, RESPONSE_ACTUAL)
+    ignore = ignore_list(op.get("ignore"))
+    if ignore:
+        _append_io(e, "ignore_in_response", expected_col, "; ".join(ignore))
+    return {"op": "api_add_response_check", "test": sheet, "row": row, "ioRow": io_row, "expected": expected_col, "actual": RESPONSE_ACTUAL,
+            "reused": False}
+
+
+def op_set_response_ignore(e: WorkbookEditor, op: dict) -> dict:
+    """``{expected, ignore: [..] | "a; b"}``: the fields a whole-response check leaves out (its ``ignore_in_response`` row, added / changed /
+    removed when the list is empty).  Keyed by the check's expected column, like the check row itself."""
+    expected = str(op.get("expected") or "").strip()
+    if not expected:
+        raise BuildError("Which whole-response check? (its expected column)")
+    io = read_io(e)
+    if not any(r.kind == RESPONSE_CHECK and r.parameter.strip().upper() == expected.upper() for r in io):
+        raise BuildError(f"There is no whole-response check on {expected}.", "not_found", 404)
+    ignore = ignore_list(op.get("ignore"))
+    found = next((r for r in io if r.kind == "ignore_in_response" and r.parameter.strip().upper() == expected.upper()), None)
+    if found is None and ignore:
+        _append_io(e, "ignore_in_response", expected, "; ".join(ignore))
+    elif found is not None and ignore:
+        e.set(io_sheet(e), found.row, 3, "; ".join(ignore))
+    elif found is not None:
+        e.delete_rows(io_sheet(e), found.row, 1)
+    return {"op": "api_set_response_ignore", "expected": expected, "ignore": ignore}
+
+
+def op_add_status_check(e: WorkbookEditor, op: dict) -> dict:
+    """``{test}``: the one-click fix of ``status_never_checked`` - the sheet's ``RES_STATUS_CD_EXP`` becomes checked: its switched-off row
+    (``compareX``) is switched back on, else ``compare | RES_STATUS_CD_EXP | RES_STATUS_CD_OUT`` is added.  The row is shared, so every API
+    sheet with that column is checked from then on (answered in ``sharedWith``); the expected values already in the sheet stay as they are."""
+    sheet = api_sheet(e, op.get("test"))
+    state = status_unchecked(e, sheet)
+    if state is None:
+        return {"op": "api_add_status_check", "test": sheet, "added": False, "sharedWith": []}
+    if state["offRow"]:
+        e.set(io_sheet(e), state["offRow"], 1, "compare")
+        io_row = state["offRow"]
+    else:
+        io_row = _append_io(e, "compare", "RES_STATUS_CD_EXP", "RES_STATUS_CD_OUT")
+    return {"op": "api_add_status_check", "test": sheet, "added": True, "ioRow": io_row, "sharedWith": state["sharedWith"]}
+
+
 def op_add_save(e: WorkbookEditor, op: dict) -> dict:
-    """``{test, row, path, function?, variable}``: keep a value of the response under a name the rest of the run can use as ``{NAME}``.  When the
-    path is already read into a column, that column is the name (said in ``reused``)."""
+    """``{test, row, path, function?, responseFormat?, variable}``: keep a value of the response under a name the rest of the run can use as
+    ``{NAME}``.  When the path is already read into a column, that column is the name (said in ``reused``)."""
     sheet = api_sheet(e, op.get("test"))
     row = _row_of(e, sheet, op)
     path = str(op.get("path") or "").strip()
     if not path:
         raise BuildError("Which value? Click one in the response, or type its path.")
+    if op.get("responseFormat") in ("json", "xml"):
+        _sync_json_format(e, sheet, row, str(op["responseFormat"]))
     variable = B.make_token(str(op.get("variable") or _base_of_path(path)))
     column, reused = _output_column(e, sheet, _function_of(op, e, sheet, row), path, variable)
     return {"op": "api_add_save", "test": sheet, "row": row, "column": column, "reused": reused and column.upper() != variable.upper()}
@@ -471,7 +679,10 @@ def op_set_value(e: WorkbookEditor, op: dict) -> dict:
 
 
 def op_add_test(e: WorkbookEditor, op: dict) -> dict:
-    """``{name, format?: json|xml, method?, url?, headers?: [[name, value]], body?}``: a new API test (sheet, first data row, DataSheets row)."""
+    """``{name, format?: json|xml, method?, url?, headers?: [[name, value]], body?}``: a new API test (sheet, first data row, DataSheets row).
+    There is one kind of API test: ``Content-Type`` is a header row like any other, ``application/json`` when nothing says otherwise (the
+    runner would send it for JSON_FORMAT = Y anyway, so showing it changes nothing), and JSON_FORMAT follows it.  ``format`` is only a hint for
+    an import with no Content-Type (a cURL / Postman body)."""
     name = str(op.get("name") or "").strip()
     if not name:
         raise BuildError("Give the test a name.")
@@ -485,13 +696,18 @@ def op_add_test(e: WorkbookEditor, op: dict) -> dict:
         e.set(name, 1, c, h)
     for h, v in (("blnExecute", "Y"), ("TCID", "1"), ("TC_Name", name)):
         e.set(name, 2, e.column(name, h), v)
-    fmt = str(op.get("format") or "json").lower()
-    op_set_request(e, {"test": name, "row": 2, "method": op.get("method") or ("GET" if not op.get("body") else "POST"),
-                       "url": op.get("url") or "", "format": fmt, "body": op.get("body") or ""})
-    for header in op.get("headers") or []:
-        hname, hvalue = (header.get("name"), header.get("value")) if isinstance(header, dict) else header
-        if str(hname).lower() == "content-type" and fmt == "json" and "json" in str(hvalue).lower():
-            continue                                                                 # (JSON_FORMAT = Y sends it)
+    headers = [(h.get("name"), h.get("value")) if isinstance(h, dict) else tuple(h) for h in op.get("headers") or []]
+    content_type = next((str(v or "") for n, v in headers if str(n).strip().lower() == "content-type"), None)
+    body = str(op.get("body") or "")
+    fmt = str(op.get("format") or "").lower()
+    if content_type is not None and ("json" in content_type.lower() or "xml" in content_type.lower()):
+        fmt = "json" if "json" in content_type.lower() else "xml"
+    fmt = fmt if fmt in ("json", "xml") else "xml" if body.lstrip().startswith("<") else "json"
+    if content_type is None and fmt == "json":
+        headers.insert(0, ("Content-Type", "application/json"))
+    op_set_request(e, {"test": name, "row": 2, "method": op.get("method") or ("GET" if not body else "POST"),
+                       "url": op.get("url") or "", "format": fmt, "body": body})
+    for hname, hvalue in headers:
         op_set_header(e, {"test": name, "row": 2, "name": hname, "value": hvalue})
     _Ops(e).set_test({"test": name, "enabled": True, **({"comment": op["comment"]} if op.get("comment") else {})})
     return {"op": "api_add_test", "test": name}
@@ -542,7 +758,8 @@ def op_use_template(e: WorkbookEditor, op: dict) -> dict:
 
 OPS = {"api_set_request": op_set_request, "api_set_header": op_set_header, "api_remove_header": op_remove_header, "api_add_check": op_add_check,
        "api_add_save": op_add_save, "api_update_io": op_update_io, "api_delete_io": op_delete_io, "api_set_value": op_set_value,
-       "api_add_test": op_add_test, "api_use_template": op_use_template}
+       "api_add_test": op_add_test, "api_use_template": op_use_template, "api_add_response_check": op_add_response_check,
+       "api_set_response_ignore": op_set_response_ignore, "api_add_status_check": op_add_status_check}
 B.EXTRA_OPS.update(OPS)
 
 
@@ -811,13 +1028,9 @@ async def send_now(doc: BuildDocument, cfg: Config, folder: Path, *, test: str, 
         fmt = "xml" if tree else "text"
     results = []
     for point in runtime.checkpoints():
-        expected_raw = runtime.values.get(point.expected_column.upper())
-        if isinstance(expected_raw, str) and "{" in expected_raw:
-            expected_raw = runtime.fill(expected_raw).text
-        actual = runtime.actual(point.actual_column)
+        passed, expected, actual, differences = runtime.verdict(point)            # (the run's own verdict: same code, same wording)
         results.append({"expected": point.expected_column, "actual": point.actual_column, "kind": point.kind,
-                        "expectedValue": runtime.mask(text_of(expected_raw)), "actualValue": runtime.mask(actual),
-                        "passed": check(point.kind, expected_raw, actual)})
+                        "expectedValue": expected, "actualValue": runtime.mask(actual), "passed": passed, "differences": differences})
     content_type = next((v for k, v in response.headers.items() if k.lower() == "content-type"), "")
     out.update({
         "response": {"status": response.status, "ms": response.elapsed_ms, "contentType": content_type, "format": fmt,
