@@ -23,7 +23,7 @@ what was found in the code, so the next session does not have to re-derive it.
    Open step; none set = blank page + a notice with a link to Environments. Recording an empty test starts it with `OPEN {DOMAIN}`.
 8. **"Selected" bar** wraps inside its column (`.bulk-bar` in app.css) instead of overflowing a narrow window.
 
-## Batch 2: to do (items 9-24)
+## Batch 2: to do (items 9-25)
 
 9. **Run plan Timeline** (Run tab, `views/newrun.js` `timelineView`): cut off and unreadable on small screens. Scroll sideways at least, test
    names stay readable.
@@ -77,5 +77,13 @@ what was found in the code, so the next session does not have to re-derive it.
     e.g. "Environments (builder)": every reader of `_rr_environments` must follow the rename, including `engine/gates.py` and
     `workbook/variables.py`), and have Download say when the workbook uses `{SECRET:NAME}` values, which live in secrets.env, not in the
     file.
+25. **API tests wait for every website test even when they are independent.** `engine/order.py` (`plan_order`, `order.after_ui`): an
+    API test that no chain names and that no UI test reads from gets a dependency on *every* UI test of the run ("an API test reads what
+    those tests produce"), so with 3 workers the user's test-functionality workbook runs the website test first and the API/XML tests
+    after it. The real links are already detected separately (an API row's formula reading another sheet's cell, `{NAME}` Needs/Provides).
+    Make an API test wait only for the tests it actually reads from; otherwise it runs at once like any other test. Check first why the
+    blanket rule was added (legacy runner order? `~/Downloads/TG_Testing_Framework_py3_v4.2.zip` is only on the user's Mac) and whether
+    the real workbooks (Qantas PolicySearch reads `AgentPortal_Params` cells) still get their wait from the detected links. Update the
+    "starts after every UI test" note, the Run plan Order/Timeline views follow `deps`. Tests: `test_run_order.py`, `test_api_tests.py`.
 
 Also told the user: `workbooks/qantas-test 2.xlsx` is saved with Global Environment = PROD.
