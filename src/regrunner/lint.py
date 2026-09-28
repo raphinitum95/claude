@@ -41,8 +41,6 @@ def lint_api(workbook: Workbook, case, seen_io: set[int]) -> list[Finding]:
         add("error", f"WEBSERVICE_URL {request.url!r} is not an http(s) address")
     if request.method not in METHODS:
         add("error", f"WEBSERVICE_METHOD {request.method!r} is not one of {', '.join(METHODS)}")
-    if not request.json_format:
-        add("warning", "JSON_FORMAT is not Y: regrunner's API tests send and read JSON only (XML / SOAP sheets are not supported)")
     for header, column in runtime.io.add_header.items():
         if column.upper() not in runtime.values:
             add("warning", f"addHeader {header}: the row has no column {column!r}, so the header is not sent")
