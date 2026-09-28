@@ -29,6 +29,7 @@ export function freshResults() {
 export function freshBuild() {
   return {
     name: null, model: null, loading: false, error: null,
+    listing: false,           // the "All workbooks" page (#/build/all) is showing, whatever workbook is open behind it
     screen: 'map',            // 'map' | 'variables' | 'test' | 'scenario'
     testId: null,
     scenario: null,           // the scenario board's scenario (views/build/scenario.js)

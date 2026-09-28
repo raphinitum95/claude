@@ -44,6 +44,7 @@ export function rememberedBuildWorkbook() { try { return localStorage.getItem('r
 /** Open (or switch screen within) a workbook. Called by main.js on every #/build... route. */
 export async function openBuild(name, screen = 'map', testId = null) {
   const b = S.build;
+  b.listing = false;
   const switching = b.name !== name;
   const stagedSel = b.pendingSel;                            // jumpToStep may have staged this just before the workbook switched
   if (switching) { const kw = b.keywords; Object.assign(b, freshBuild(), { name, keywords: kw, pendingSel: stagedSel }); }
@@ -67,6 +68,27 @@ export async function openBuild(name, screen = 'map', testId = null) {
     b.loading = false; b.error = e;
   }
   rerender();
+}
+
+/** The "All workbooks" page: every workbook in the folder, to open another one (the one open stays loaded behind it). */
+export function openWorkbookList() { S.build.listing = true; rerender(); }
+
+/** Download a workbook as it is saved on disk. The one being edited with unsaved changes can be saved first (Save to Excel). */
+export async function downloadWorkbook(name) {
+  const b = S.build;
+  if (!name) return;
+  if (b.name === name && b.model && b.model.status && b.model.status.modified) {
+    if (window.confirm('This workbook has changes that are not saved to Excel yet.\n\nOK: save them, then download.\nCancel: download the last saved version.')) {
+      await saveToExcel(false);
+      if (S.build.model && S.build.model.status && S.build.model.status.modified) return;       // (the save did not go through: it said why)
+    }
+  }
+  const a = document.createElement('a');
+  a.href = `/api/workbooks/${encodeURIComponent(name)}/download`;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 /** Where the "Build" tab goes: the workbook last open there, else the newest workbook in the folder. */
@@ -672,6 +694,7 @@ export const acts = {
   'build-undo': undo,
   'build-redo': redo,
   'build-save'() { saveToExcel(false); },
+  'build-download'(el) { downloadWorkbook(el.dataset.name || S.build.name); },
   'build-history': openHistory,
   'build-toggle-problems': toggleProblems,
   'build-new-workbook': openNewWorkbook,
@@ -770,6 +793,7 @@ export const changes = {
   'build-env-secret'(el) { S.modal.rows[Number(el.dataset.i)].secret = el.checked; rerender(); },
   'build-step-onfail'(el) { updateStep(Number(el.dataset.row), { onFail: el.value }); },
   'build-step-match'(el) { updateStep(Number(el.dataset.row), { match: el.value }); },
+  'build-step-findby'(el) { if (el.value) updateStep(Number(el.dataset.row), { findBy: el.value }); },
   'build-dup-toggle'(el) { S.modal.rows[Number(el.dataset.i)].on = el.checked; rerender(); },
   'build-fr-toggle'(el) { S.modal.hits[Number(el.dataset.i)].on = el.checked; rerender(); },
 };
@@ -788,6 +812,12 @@ export const inputs = {
   'build-fp-notes'(el) { S.modal.notes = el.value; },
   'build-step-name'(el) { updateStepDebounced(Number(el.dataset.row), { name: el.value, nameAuto: false }); },
   'build-step-value'(el) { updateStepDebounced(Number(el.dataset.row), { value: el.value }); },
+  'build-step-locator'(el) {
+    const value = el.value.trim();
+    // a step with no FindBy yet gets the one the text looks like: //… or (//…) is XPath, #/./[ or a space is CSS, a bare word an id
+    const findBy = el.dataset.findby || (!value ? '' : /^\(*\//.test(value) ? 'BY_XPATH' : /[#.[\s>:]/.test(value) ? 'BY_CSSSELECTOR' : 'BY_ID');
+    updateStepDebounced(Number(el.dataset.row), findBy ? { locator: value, findBy } : { locator: value });
+  },
   'build-step-expected'(el) { updateStepDebounced(Number(el.dataset.row), { expected: el.value }); },
   'build-step-saveas'(el) { updateStepDebounced(Number(el.dataset.row), { saveAs: el.value }); },
   'build-step-timeout'(el) { const n = Number(el.value); updateStepDebounced(Number(el.dataset.row), { timeout: Number.isFinite(n) && el.value !== '' ? n : null }); },

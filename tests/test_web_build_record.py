@@ -74,6 +74,9 @@ async def test_the_editor_has_rec_check_save_and_wait_and_adds_a_check_from_its_
         assert "Recording after step 1" in await page.locator("aside:not(.b-rail)").inner_text()
         await page.locator('[data-act="build-rec-toggle"]').first.click()
         await js_until(page, "!document.querySelector('.sess-bar [data-act=\"build-rec-toggle\"]').textContent.includes('Recording')")
+        await js_until(page, "document.body.textContent.includes('Recording stopped: no steps were recorded.')")   # the summary strip
+        await page.locator('[data-act="build-sess-summary-close"]').click()
+        await js_until(page, "!document.querySelector('[data-act=\"build-sess-summary-close\"]')")
         await page.locator('[data-act="build-rec-mode"][data-mode="check"]').click()
         await page.locator('input[data-input="build-sess-which-text"]').fill("$1,234.50")
         await page.locator('[data-act="build-sess-which"]').click()

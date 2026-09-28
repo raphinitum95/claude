@@ -6,6 +6,7 @@ import { buildRail } from './rail.js';
 import { workbookMap, variableMap } from './workbook.js';
 import { testEditor } from './editor.js';
 import { buildUrl } from './actions.js';
+import { modified, bytes } from '../../fmt.js';
 import { scenarioBoard } from './scenario.js';
 
 function envSeg(S, m) {
@@ -21,12 +22,13 @@ export function buildHeader(S) {
   const m = b.model;
   const dark = document.documentElement.getAttribute('data-theme') !== 'light';
   const newWbBtn = html`<button class="btn btn-sm" data-act="build-new-workbook">${icon('plus', 13)} New workbook</button>`;
-  if (!m) {
-    return headerShell('Build', html`<span style="color: var(--tx3); font-size: 13px">workbooks/</span>`,
+  if (!m || b.listing) {
+    return headerShell('Build', html`<span style="color: var(--tx3); font-size: 13px">All workbooks</span>`,
       html`${newWbBtn}<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`);
   }
   const status = m.status;
-  const middle = html`<a href="${buildUrl(b.name, 'map')}" class="trunc" style="font-size: 13px; color: var(--tx3); text-decoration: none">${m.name}</a>
+  const middle = html`<a href="#/build/all" class="icon-btn" style="flex: none; width: 30px; height: 30px" aria-label="All workbooks" title="All workbooks: open another one">${icon('grid', 14)}</a>
+<a href="${buildUrl(b.name, 'map')}" class="trunc" style="font-size: 13px; color: var(--tx3); text-decoration: none">${m.name}</a>
 ${b.screen === 'test' && b.testId ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp" style="font-size: 16px; font-weight: 700">${b.testId}</span>` : ''}
 ${b.screen === 'scenario' && b.scenario ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700">${b.scenario}</span>` : ''}
 ${b.screen === 'variables' ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp" style="font-size: 16px; font-weight: 700">Variables</span>` : ''}
@@ -38,20 +40,37 @@ ${!status.externalChange && status.hasDraft ? html`<span style="display: flex; a
 <button class="icon-btn" data-act="build-redo" aria-label="Redo" title="Redo" ${status.canRedo ? '' : raw('disabled')}>${icon('redo', 15)}</button>
 ${m.problemCounts.error || m.problemCounts.warning ? html`<button class="chip chip-warn" data-act="build-toggle-problems">${icon('warn', 13)} ${m.problemCounts.error + m.problemCounts.warning} problems</button>` : ''}
 <button class="icon-btn" data-act="build-history" aria-label="History" title="History">${icon('history', 15)}</button>
-<button class="btn btn-pri btn-sm ${b.busy ? 'busy' : ''}" data-act="build-save" title="Save ⌘S">${icon('download', 14)} Save to Excel</button>
+<button class="btn btn-pri btn-sm ${b.busy ? 'busy' : ''}" data-act="build-save" title="Save ⌘S">${icon('check', 14)} Save to Excel</button>
+<button class="icon-btn" data-act="build-download" aria-label="Download the workbook" title="Download the workbook (.xlsx) to share it">${icon('download', 15)}</button>
 ${newWbBtn}
 <button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`;
   return headerShell('Build', middle, right);
 }
 
-export function buildView(S) {
-  const b = S.build;
-  if (!b.name) {
+/** The "All workbooks" page (#/build/all): every workbook in the folder as a card; the whole card opens it. */
+function workbookList(S) {
+  const open = S.build.name;
+  if (!S.workbooks.length) {
     return html`<div class="app-body"><main class="main"><div class="page" style="max-width: 640px; margin: 8vh auto; text-align: center">
 <div style="color: var(--tx3); display: inline-flex">${icon('grid', 30)}</div><h1 class="disp" style="font-size: 26px; margin-top: 10px">No workbook to build yet</h1>
-<p style="color: var(--tx2)">Pick one from the New run screen, or start a new one.</p>
+<p style="color: var(--tx2)">Start a new one, or add one on the New run screen.</p>
 <button class="btn btn-pri" style="margin: 10px auto" data-act="build-new-workbook">${icon('plus', 15)} New workbook</button></div></main></div>`;
   }
+  return html`<div class="app-body"><main class="main scroll" style="overflow: auto"><div class="page" style="display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap"><h1 class="disp" style="font-size: 22px; margin: 0; flex: 1; min-width: 0">All workbooks</h1>
+<button class="btn btn-sm" data-act="build-new-workbook">${icon('plus', 13)} New workbook</button></div>
+<div class="wb-grid">${S.workbooks.map((w) => html`<div class="card wb-card ${w.name === open ? 'on' : ''}" data-key="wb-${w.name}">
+<a class="wb-card-open" href="${buildUrl(w.name, 'map')}" aria-label="Open ${w.name}"></a>
+<span style="color: var(--acc); display: inline-flex">${icon('grid', 18)}</span>
+<div style="display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0"><b class="trunc" style="font-size: 14px" title="${w.name}">${w.name}</b>
+<span style="font-size: 12px; color: var(--tx3)">${w.name === open ? 'Open now · ' : ''}saved ${modified(w.modified)} · ${bytes(w.size)}</span></div>
+<button class="icon-btn wb-card-btn" data-act="build-download" data-name="${w.name}" aria-label="Download ${w.name}" title="Download (.xlsx)">${icon('download', 14)}</button>
+</div>`)}</div></div></main></div>`;
+}
+
+export function buildView(S) {
+  const b = S.build;
+  if (!b.name || b.listing) return workbookList(S);
   if (b.loading) {
     return html`<div class="app-body">${buildRail(S)}<main class="main"><div class="page"><div class="skel" style="height: 40px; width: 300px"></div><div class="skel" style="height: 400px"></div></div></main></div>`;
   }

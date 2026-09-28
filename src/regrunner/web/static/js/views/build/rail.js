@@ -31,8 +31,9 @@ ${S.workbooks.map((w) => html`<button class="rail-item" data-act="build-open-wb"
   const params = m.sheets.filter((s) => s.role === 'params');
   const dataRowsOf = (sheetName) => { const t = m.tests.find((x) => x.paramSheet === sheetName); return t ? t.dataRows.length : null; };
   return html`<aside class="b-rail scroll" aria-label="Workbook">
+<a href="#/build/all" class="lbl" style="display: flex; align-items: center; gap: 5px; padding: 2px 6px; color: var(--tx3); text-decoration: none">${icon('chevl', 11)} All workbooks</a>
 <a href="${buildUrl(S.build.name, 'map')}" style="display: flex; flex-direction: column; gap: 5px; padding: 2px 6px; color: inherit; text-decoration: none">
-<span class="lbl" style="display: flex; align-items: center; gap: 5px">${icon('chevl', 11)} Workbook map</span>
+<span class="lbl" style="display: flex; align-items: center; gap: 5px">${icon('grid', 11)} Workbook map</span>
 <span class="disp trunc" style="font-size: 14.5px; font-weight: 700">${m.name}</span>
 <span style="display: flex; gap: 5px; flex-wrap: wrap"><span class="tag tag-acc">${m.environment}</span><span class="tag">${m.tests.length} tests</span><span class="tag">${m.variables.length} variables</span></span></a>
 <div style="display: flex; flex-direction: column; gap: 2px">

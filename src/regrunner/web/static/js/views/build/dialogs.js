@@ -18,15 +18,16 @@ ${sub ? html`<span style="font-size: 13px; color: var(--tx2)">${sub}</span>` : '
 export function newWorkbookDialog(m) {
   const envs = m.envs.map((e, i) => html`<tr data-key="e-${i}"><td><input class="fld mono" style="height: 30px; font-size: 12px" value="${e.name}" placeholder="ENV" data-input="build-nw-env-name" data-i="${i}"></td>
 <td><input class="fld mono" style="height: 30px; font-size: 12px" value="${e.domain}" placeholder="example.com" data-input="build-nw-env-domain" data-i="${i}"></td>
-<td style="text-align: center"><input type="checkbox" class="cb" ${e.production ? raw('checked') : ''} data-change="build-nw-env-prod" data-i="${i}" aria-label="${e.name || 'Environment'} is production"></td>
+<td><label style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--${e.production ? 'fail' : 'tx3'}); white-space: nowrap; cursor: pointer">
+<input type="checkbox" class="cb" ${e.production ? raw('checked') : ''} data-change="build-nw-env-prod" data-i="${i}" aria-label="${e.name || 'Environment'} is production">${e.production ? 'Production' : 'Not production'}</label></td>
 <td><button class="icon-btn" style="width: 26px; height: 26px" data-act="build-nw-remove-env" data-i="${i}" aria-label="Remove environment">${icon('x', 12)}</button></td></tr>`);
   const inner = html`<div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Name</span>
 <input class="fld" value="${m.name}" placeholder="My regression" data-input="build-nw-name" autofocus>
 <span class="mono" style="font-size: 12px; color: var(--tx3)">Saved as workbooks/${m.name || '(name)'}.xlsx</span></div>
 <div style="display: flex; flex-direction: column; gap: 6px"><div style="display: flex; align-items: center; gap: 8px"><span class="lbl">Environments and their domain</span><span style="flex: 1"></span>
 <button class="btn btn-ghost btn-sm" data-act="build-nw-add-env">${icon('plus', 12)} Environment</button></div>
-<div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><thead><tr><th>Environment</th><th>Domain</th><th>Production</th><th></th></tr></thead><tbody>${envs}</tbody></table></div>
-<span style="font-size: 12px; color: var(--tx3)">Production always blocks steps with side effects and asks for a typed confirmation.</span></div>
+<div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><thead><tr><th>Environment</th><th>Domain</th><th style="width: 150px">Is it production?</th><th></th></tr></thead><tbody>${envs}</tbody></table></div>
+<span style="font-size: 12px; color: var(--tx3)">Tick only the live site (usually PROD). On production, steps with side effects are always blocked and a run asks for a typed confirmation.</span></div>
 ${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${m.error}</span></div>` : ''}`;
   const footer = html`<span style="flex: 1"></span><button class="btn" data-act="close-modal">Cancel</button>
 <button class="btn btn-pri ${m.busy ? 'busy' : ''}" data-act="build-nw-create" ${m.busy ? raw('disabled') : ''}>Create workbook</button>`;
@@ -47,7 +48,9 @@ ${m.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)'
 
 // ---- environments -----------------------------------------------------------------------------------------------
 export function environmentsDialog(m) {
-  const head = html`<tr><th style="width: 190px">Variable</th>${m.names.map((n) => html`<th>${n}${m.production.includes(n) ? html` <span class="tag tag-fail">production</span>` : ''}</th>`)}<th style="width: 40px"></th></tr>`;
+  const head = html`<tr><th style="width: 190px">Variable</th>${m.names.map((n) => html`<th>${n}</th>`)}<th style="width: 40px"></th></tr>
+<tr><td style="font-size: 12px; color: var(--tx2)">Is it production?</td>${m.names.map((n) => html`<td><label style="display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--${m.production.includes(n) ? 'fail' : 'tx3'}); white-space: nowrap; cursor: pointer">
+<input type="checkbox" class="cb" ${m.production.includes(n) ? raw('checked') : ''} data-change="build-env-prod" data-env="${n}" aria-label="${n} is production">${m.production.includes(n) ? 'Production' : 'Not production'}</label></td>`)}<td></td></tr>`;
   const body = m.rows.map((r, i) => html`<tr data-key="r-${i}"><td><input class="fld mono" style="height: 30px; font-size: 12px" value="${r.variable}" placeholder="DOMAIN" data-input="build-env-var" data-i="${i}"></td>
 ${m.names.map((n) => html`<td><input class="fld mono" style="height: 30px; font-size: 11.5px" value="${r.values[n] || ''}" data-input="build-env-cell" data-i="${i}" data-env="${n}"></td>`)}
 <td><button class="icon-btn" style="width: 26px; height: 26px" data-act="build-env-remove-row" data-i="${i}" aria-label="Remove row">${icon('x', 12)}</button></td></tr>`);

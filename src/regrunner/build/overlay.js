@@ -378,7 +378,9 @@ input.fld:focus { border-color: #5cc8ff; }
     for (const [mode, label] of [['pick', 'Pick'], ['check', 'Check'], ['save', 'Save'], ['wait', 'Wait until']]) pill.appendChild(btn(label, mode, st.mode === mode ? 'on' : ''));
     pill.appendChild(el('span', 'sep'));
     pill.appendChild(el('span', 'what', st.label || 'Build window'));
-    pill.appendChild(btn('Done', 'done', 'pri'));
+    const done = btn('Done', 'done', 'pri');
+    done.title = 'Finish: stop picking and recording (the Build tab shows what was recorded)';
+    pill.appendChild(done);
     root.appendChild(pill);
   }
 
@@ -728,7 +730,9 @@ input.fld:focus { border-color: #5cc8ff; }
     if (!b || b.hasAttribute('disabled')) return;
     const act = b.getAttribute('data-rr-act');
     if (['pick', 'check', 'save', 'wait'].includes(act)) setMode(act);
-    else if (act === 'done') { st.mode = 'browse'; st.card = null; st.form = null; hoverEl = null; redraw(); call({ kind: 'mode', mode: 'browse' }); }
+    else if (act === 'done') {                    // finish what is going on: picking / checking, and recording (the server says what was recorded)
+      st.mode = 'browse'; st.card = null; st.form = null; hoverEl = null; st.rec = false; redraw(); call({ kind: 'done' });
+    }
     else if (act === 'close-card') { st.card = null; st.form = null; redraw(); }
     else if (act === 'rec') { st.rec = !st.rec; redraw(); call({ kind: 'record', on: st.rec }); }
     else if (act === 'kind' && st.form) {

@@ -38,7 +38,7 @@ from ..engine.outcome import FAILED
 from ..engine.test_runner import TestRunner
 from ..events import EventBus
 from ..selectors.resolve import SelectorMap
-from ..workbook.builder import BuildDocument, BuildError, parse_test_sheet
+from ..workbook.builder import BuildDocument, BuildError, parse_test_sheet, read_environments
 from ..workbook.model import TestCase, Workbook
 from ..workbook.sheet import cell_text
 from ..workbook.variables import MARKERS
@@ -50,6 +50,7 @@ BINDING = "__rrBuildCall"
 MAX_SESSIONS = 3                         # build windows open at once (one per workbook)
 LOG_KEEP = 400                           # events kept for the Build tab (it asks for the ones after the last it saw)
 CHECK_S = 3.0                            # a locator check on the live page may take this long
+WINDOWLESS_GRACE_S = 1.0                 # a window closed: if none is left this much later (and nothing is opening one), the person closed it
 NEXT_DEFAULT = 5
 LOG_TYPES = {"step_started", "step_passed", "step_failed", "step_skipped", "log", "side_effect_paused", "side_effect_blocked", "page_gate",
              "popup_dismissed", "backup_locator_suggestion", "variable_set", "user_input_needed", "user_input_received", "user_input_closed",
@@ -169,6 +170,9 @@ class BuildSession:
         self._picked_frame = None                                 # the frame the picked element lives in
         self._meta: dict = {}                                     # the test's sheet, parameter sheet and data rows (from the model, at start)
         self._steps_cache: tuple[int, list[dict]] | None = None
+        self._opening = False                                     # start / switch are between windows (one closed, the next not open yet)
+        self._closing = False
+        self.notice = ""                                          # a plain-words note for the Build tab's strip (no Domain to open, ...)
         self.asker = BuildAsker(self)
         self.key = uuid.uuid4().hex + uuid.uuid4().hex            # the overlay's proof that a call is its own (P09)
         self.recorder = Recorder(self)
@@ -239,7 +243,11 @@ class BuildSession:
         self._browser.on("disconnected", lambda *_: self._browser_gone())
         self.status = "ready"
         self.emit("build_session_started", workbook=self.name, test=self.test_id, environment=self.environment, data_row=self.data_row)
-        await self._open_site()
+        self._opening = True
+        try:
+            await self._open_site()
+        finally:
+            self._opening = False
         if self.cfg.build.idle_close_s:
             self._watch = asyncio.create_task(self._close_when_idle())
         self.touch()
@@ -260,12 +268,40 @@ class BuildSession:
         self.data_row = int(data_row) if data_row is not None else test["buildingWith"]
 
     async def _open_site(self) -> None:
-        """A page to pick on: the test's first step when it is an Open step (it only opens the site), else a blank window."""
+        """A page to pick on: the test's first step when it is an Open step (it only opens the site), else a window of its own on the
+        environment's Domain (the ``DOMAIN`` row of the environment table), else a blank one with a note saying where to set the Domain."""
+        self.notice = ""
         first = await asyncio.to_thread(self._first_step)
         if first and first["method"] == "OPEN":
             self._launch("to", row=first["row"])
         elif not self._open_pages():
             await self._open_blank()
+            domain = await asyncio.to_thread(self.domain)
+            if not domain:
+                self.notice = (f"No Domain is set for {self.environment or 'this environment'}, so the window opened blank. "
+                               "Set it under Environments (the DOMAIN row).")
+                return
+            page = self._open_pages()[-1] if self._open_pages() else None
+            if page is None:
+                return
+            try:
+                await page.goto(site_url(domain), wait_until="domcontentloaded", timeout=float(self.cfg.timeouts.navigation_s) * 1000)
+            except Exception as err:                              # (the window stays open: the person can type the address themselves)
+                self.notice = f"Could not open {domain}: {(str(err).splitlines() or [str(err)])[0]}"
+
+    def domain(self) -> str:
+        """The environment's Domain: the ``DOMAIN`` row of the environment table, for the environment this window uses ("" when none)."""
+        with self.doc.lock:
+            table = read_environments(self.doc.editor)
+        row = next((r for r in table["rows"] if str(r.get("variable") or "").strip().upper() == "DOMAIN"), None)
+        if row is None:
+            return ""
+        values = row.get("values") or {}
+        env = (self.environment or "").upper()
+        value = next((v for n, v in values.items() if n.upper() == env), "") if env else ""
+        if not value and not env and table.get("names"):
+            value = values.get(table["names"][0], "")
+        return str(value or "").strip()
 
     def _first_step(self) -> dict | None:
         steps = [s for s in self._steps() if s["enabled"] is not False]
@@ -279,11 +315,15 @@ class BuildSession:
         if environment and environment != self.environment:
             self.environment = environment
         await self.recorder.stop()
-        await self._drop_runner()
-        self.pick = self.which = None
-        self.replay = None
-        self.touch()
-        await self._open_site()
+        self._opening = True
+        try:
+            await self._drop_runner()
+            self.pick = self.which = None
+            self.replay = None
+            self.touch()
+            await self._open_site()
+        finally:
+            self._opening = False
 
     def _browser_gone(self) -> None:
         if self.status != "closed":
@@ -302,7 +342,8 @@ class BuildSession:
                 return
 
     async def close(self) -> None:
-        self.recorder.on = False
+        self._closing = True
+        self.recorder.finish()
         if self._cancel is not None:
             self._cancel.set()
         task, self._task = self._task, None
@@ -346,9 +387,35 @@ class BuildSession:
 
     # -- the overlay ---------------------------------------------------------------------------------------------------------------------
     async def arm(self, context) -> None:
-        """Every context the build browser opens gets the overlay and the way back to the builder."""
+        """Every context the build browser opens gets the overlay and the way back to the builder, and its windows are watched: when the
+        person closes the last one, the build window is gone."""
         await context.expose_binding(BINDING, self._on_call)
         await context.add_init_script(script=OVERLAY_JS.replace("__RR_KEY__", self.key))
+        context.on("page", self._watch_page)
+
+    def _watch_page(self, page) -> None:
+        page.on("close", lambda *_: self._page_closed())
+
+    def _page_closed(self) -> None:
+        """A window closed.  Closing the last one leaves the browser running with no window at all (it never says "disconnected"), so
+        without this the Build tab would go on showing the window as open, and Pick would have no page.  Checked a moment later: a replay,
+        a switch or the test's own Open step closes and opens windows as it goes."""
+        if self.status == "closed" or self._closing:
+            return
+        asyncio.get_running_loop().call_later(WINDOWLESS_GRACE_S, lambda: asyncio.ensure_future(self._close_if_windowless()))
+
+    async def _close_if_windowless(self) -> None:
+        if self.status != "ready" or self._closing or self._opening:
+            return
+        if self._task is not None and not self._task.done():
+            return
+        browser = self._browser
+        if browser is None or not browser.is_connected():
+            return
+        if any(not p.is_closed() for c in browser.contexts for p in c.pages):
+            return
+        self.error = "The build window was closed."
+        await self.close()
 
     async def _open_blank(self) -> None:
         context = await self._browser.new_context(viewport=None if not self.headless else {"width": 1280, "height": 800})
@@ -398,6 +465,8 @@ class BuildSession:
             label = f"running step {self._n_of(cur) or '…'}"
         elif self.recorder.on:
             label = self.recorder.label()
+        elif self.recorder.just_finished():
+            label = self.recorder.finished_label()
         else:
             n, total = self._n_of(self.cursor_row), len(self._steps())
             label = f"step {n} of {total}" if n else f"{self.test_id} · not run yet"
@@ -418,6 +487,12 @@ class BuildSession:
             if kind == "mode":
                 mode = payload.get("mode")
                 await self.set_mode(mode if mode in ("pick", "browse", "check", "save", "wait") else "browse", self.pick_for)
+            elif kind == "done":
+                # the pill's Done: finish whatever is going on - picking / checking, and recording (only the overlay itself can stop that)
+                self.which = None
+                if self.recorder.on and trusted:
+                    asyncio.ensure_future(self._quietly(self.recorder.stop()))
+                await self.set_mode("browse", None)
             elif kind == "rec" and trusted and not self.recorder.replaying():       # (a replay's own clicks are not the person's)
                 asyncio.ensure_future(self.recorder.handle(source, payload))
             elif kind == "record" and trusted:
@@ -868,7 +943,13 @@ class BuildSession:
                 "replay": self.replay, "cursor": {"row": self.cursor_row, "n": self._n_of(self.cursor_row)} if self.cursor_row else None,
                 "next": {"row": self.next_row, "n": self._n_of(self.next_row)} if self.next_row and self._runner is not None else None,
                 "stale": self.stale(), "version": self.version, "modelVersion": self.doc.version, "record": self.recorder.state(),
-                "log": [e for e in self.log if e["seq"] > since], "seq": self._seq}
+                "notice": self.notice, "log": [e for e in self.log if e["seq"] > since], "seq": self._seq}
+
+
+def site_url(domain: str) -> str:
+    """A Domain as the environment table holds it, as an address a browser opens (``example.com`` -> ``https://example.com``)."""
+    domain = domain.strip()
+    return domain if re.match(r"^[a-z][a-z0-9+.-]*://", domain, re.I) else "https://" + domain
 
 
 def _public_pick(pick: dict | None) -> dict | None:
