@@ -417,7 +417,7 @@ request the button sends**, so they cannot disagree:
 |---|---|
 | Tests ticked / *All* (per workbook) | `--tests A,B` / `--all` after that workbook's name (tag chips just tick their tests) |
 | Several workbooks ticked | `regrunner run A.xlsx --tests X B.xlsx --all ...` (each workbook keeps its own tests and `--chain`s; the settings below are shared) |
-| Environment | `--env QA\|UAT\|PROD` (default: the workbook's own) |
+| Environment | `--env QA\|UAT\|PROD` (default: the workbook's own). A workbook made in the Build tab (it has an `_rr_environments` table) has **no default**: the choice lists its own environments, one must be picked, and `regrunner run` without `--env` refuses and lists them |
 | PROD confirmation dialog (type `PROD`) | `--allow-prod` |
 | Workers | `--workers N` |
 | Screenshots | `--screenshots every_step\|on_failure\|off` |
@@ -473,8 +473,12 @@ you the workbook as a `.xlsx` file to share; with unsaved changes it offers to s
 **Workbook map.** Every test as a card - kind, step count, a **last-run pill** (Passed/Failed/Not run), needs/provides,
 tags, its parameter sheet - click anywhere on it to open the test, tick a test on or off from here, open **Templates**, workbook-wide **Find & replace** (skips
 row 1, formulas and result columns), **Duplicate** (previews "what changes?" before it copies), or start a **New test**.
-A **Variable map** alongside it lists every `{TOKEN}` - from a Params column, the environment table, or a step that
-saves one - with what sets it, what uses it, and flags one that is used but nothing ever sets.
+The **Variables** screen lists every `{TOKEN}` - from a Params column, the environment table, or a step that saves one -
+with what sets it, what uses it, and flags one that is used but nothing ever sets; it is also where they are **added,
+edited, renamed and deleted**: test data (a value per data row), per-environment values, and secrets (their value goes to
+`secrets.env` only, never the workbook, and is never shown back). A rename shows every cell it will change first and is
+one undo step. The environment table is a normal visible sheet (right after Global), so a downloaded workbook shows every
+environment; Download also says when the workbook uses secrets, which are not in the file.
 
 **Test editor.** A block strip (the workbook's own section headings, or the `BLOCK` column once a block has been split)
 with a gate icon on a block that opens behind an `ASSERT_PAGE`; step cards below it (or the sheet itself as a
@@ -524,9 +528,15 @@ test gets a check that it arrived there (ASSERT_PAGE with the page's fingerprint
 *Page fingerprints*) and the steps from there on go on a new page named after it, straight away; a redirect right after it
 moves that same check to where it ended. The card beside it can **Remove the check** or edit the fingerprint.
 
-**API / XML tests.** Their own editor - steps, a request form or paste-a-cURL/Postman/template, and a response tree you
-turn into a JSONPath/XPath check with a click - with **Send now** against the draft; `{NAME}`/`{SECRET:NAME}` work the
-same as in UI steps, and a production send needs the same typed confirmation as a UI one.
+**API tests.** One kind of test for JSON and XML (SOAP) alike: `Content-Type` is an ordinary header row
+(`application/json` for a new test) and decides how the answer is read. Their own editor - steps, a request form or
+paste-a-cURL/Postman/template (headers are rows you type into, names included), and a response tree you turn into a
+JSONPath/XPath check with a click, or a check typed by hand without sending anything. A **whole-response check** compares
+the entire answer with an expected one, with an *ignore these fields* list (a bare name, a JSONPath or an XPath) for what
+changes every time, such as timestamps and ids. **Send now** sends a real request to the chosen environment (it says so)
+against the draft; `{NAME}`/`{SECRET:NAME}` work the same as in UI steps (*Insert variable* can create a new one), and a
+production send needs the same typed confirmation as a UI one. A test that expects a status (`RES_STATUS_CD_EXP`) that
+nothing checks gets a warning with a one-click fix.
 
 **Concurrency scenarios.** A board of lanes (a test, or the same test twice with its own data row) laid out across
 sync-line columns ("all wait here", "A before B"). Every lane of a scenario runs together on one worker, so a sync can

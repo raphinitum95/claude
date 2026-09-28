@@ -29,7 +29,7 @@ Short doesn't mean incomplete: always include failures, risks, required actions 
    Reports are shared with a QA team (`publish.dir`).
 5. **Python 3.9 must keep working** (`requires-python >= 3.9`; the work computer uses 3.9). Create `asyncio.Event/Lock/Queue`
    inside coroutines only (guarded by `tests/test_py39_compat.py`). Annotations use `from __future__ import annotations`.
-6. **Run only the tests your change touches** (section 5). The full suite is 988 tests / 40+ min: only when the user asks.
+6. **Run only the tests your change touches** (section 5). The full suite is 1042 tests / 40+ min: only when the user asks.
    Always tell the user which tests you ran.
 7. **Do not edit the user's workbooks** (`workbooks/*.xlsx`). If a cell is wrong, tell the user which cell and why.
 8. **Changes to server code** (`src/regrunner/web/app.py` or anything it imports at server start) **need the user to restart the UI**.
@@ -86,15 +86,17 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Workbook reading, token substitution, blnExecute, write-back, Params rows | `workbook/model.py`, `workbook/sheet.py` | `test_model.py` (fast), `test_blank_params.py`, `test_variables_set.py`, `test_real_workbook.py` (fast, skips without the file) |
 | Writing workbooks (edit cells/rows/columns, hidden `_rr_*` sheets, save + backup, drafts, lock/external-change checks) | `workbook/writer.py` (`WorkbookEditor`) | `test_workbook_roundtrip.py` (`-k "not real"` = 2 s; the real-workbook cases take ~2.5 min) |
 | Workbook Builder model (tests/blocks/steps/variables JSON, ops, undo/draft/save/history/diff), builder problems, `/api/build/*` | `workbook/builder.py`, `lint.py` (`builder_problems`), `web/build_api.py`; the shapes are fixed in `dev/plan/CONTRACT.md` | `test_builder_model.py` (~10 s, real workbooks included), `test_build_api.py` (2 s). **Restart UI** for build_api changes |
-| Build tab UI (Run · Build · Results tabs, workbook map, variable map, test editor: block map/cards/inspector/grid/drawer/problems/add-step menu, new-workbook/environments/fingerprint/history/file-changed dialogs) | `web/static/js/views/build/*.js` (state in `state.js`'s `freshBuild`/`freshEditor`), `views/shell.js` (`tabs`, `headerShell`), `views/modals.js` (routes `build-*` modal kinds to `build/dialogs.js`), `main.js` (`#/build...` routes, merges `build/actions.js` into the action tables), `icons.js`, `app.css` ("Build tab" section) | `test_web_build.py`, `test_web_ui.py -k theme`. JS only: reload the page, no UI restart |
+| Build tab UI (Run · Build · Results tabs, `#/build/all` workbook list, workbook map, test editor: block map/cards/inspector/grid/drawer/problems/add-step menu, drag to reorder + the movable selected bar (`dragsort.js`), new pages (`split_block`), new-workbook/environments/fingerprint/history/file-changed dialogs) | `web/static/js/views/build/*.js` (state in `state.js`'s `freshBuild`/`freshEditor`), `views/shell.js` (`tabs`, `headerShell`), `views/modals.js` (routes `build-*` modal kinds to `build/dialogs.js`), `main.js` (`#/build...` routes, merges `build/actions.js` into the action tables), `icons.js`, `app.css` ("Build tab" section) | `test_web_build.py`, `test_web_ui.py -k theme`. JS only: reload the page, no UI restart |
 | Recording + Check/Save/Wait until in the build window (Rec toggle, steps at the cursor, typed text → variable, password → secret in secrets.env, switch window/frame/Back steps, calendar → PICK_DATE, suggestion → CHOOSE_SUGGESTION, fingerprint + gate proposal, check card with every kind prefilled) | `build/recorder.py` (`Recorder`; pure helpers `check_kinds`/`check_step`/`token_for`/`store_secret` at the top), `build/overlay.js` (recording listeners, page-side locator counts, pill, cards, prompts), `build/session.py` (`_on_call` routing, modes), `web/record_api.py`, `web/static/js/views/build/record.js` | `test_build_recorder.py` (fast), `test_build_recording.py` (mock site `build_record*.html`, `widgets.html`), `test_web_build_record.py`. **Restart UI** for recorder/session/record_api; overlay.js is read at server start |
 | Build window (Build tab's live browser: overlay pill/pick/which-one, locator + backups + plain words, word → variable, run up to here / this step / next N, side-effect pause, "earlier steps changed", opens on the environment's DOMAIN, closes when its window is closed) | `build/session.py` (`BuildSession`, `SessionStore`, `BuildAsker`), `build/locators.py` (pure), `build/overlay.js`, `web/build_api.py` (`register_session_routes`), `web/static/js/views/build/session.js`, `engine/test_runner.py` (`prepare_runtime`/`open_session`) | `test_build_locators.py` (fast), `test_build_session.py` (mock site `build_pick.html`), `test_web_build_session.py`. **Restart UI** for session.py/build_api changes; overlay.js is read at server start too |
 | Templates: save a section as a template, insert one with variable mapping (Q15-17) | `workbook/templates.py` (new), `web/templates_api.py` (new, `register_templates_routes`; needs `web/app.py`'s `register_build_routes` return value, the shared `BuildStore`), `web/static/js/views/build/dialogs.js` (`templatesLibraryDialog`/`saveTemplateDialog`/`insertTemplateDialog`), `views/build/actions.js` (`openSaveTemplate`/`openInsertTemplate`/...), `formula.py`'s `{?TOKEN}` marker for anything left unmapped | `test_templates.py` (fast), `test_templates_api.py`, `test_web_build_p11.py` |
 | Copy/paste a step or block, duplicate a workbook ("what changes?"), workbook-wide find & replace, per-step merge of a change made outside the builder (Q26, Q29) | `workbook/refactor.py` (new: `find_replace_preview`, `duplicate_candidates`, `merge_ops` - all return existing op kinds, never a new one), `web/refactor_api.py` (new, `register_refactor_routes`), `web/static/js/views/build/dialogs.js` (`duplicateWorkbookDialog`/`findReplaceDialog`, the merge picks in `fileChangedDialog`), `views/build/actions.js` (`copySelected`/`pasteClipboard` are pure client-side ops composition, no Python) | `test_refactor.py` (fast), `test_refactor_api.py`, `test_web_build_p11.py` |
 | Value builder (computed values: date ± N, unique, pick from list, math, text join - Q23), a new Excel function | `workbook/formula.py` (`@function`), `web/static/js/views/build/dialogs.js` (`valueBuilderDialog`), `views/build/actions.js` (`refreshValueBuilderFormula` builds the formula string; it is written via the existing `update_step`/`set_cell` ops, no new backend) | `test_formula.py` (fast) |
 | API (web-service) sheets: WEBSERVICE_URL / Environment_Parameter, InputOutput, templates; `{NAME}` / `REQUEST_BODY` / JSONPath + XPath paths / XML (SOAP) templates / greater_than-between-matches checks | `workbook/api.py`, `workbook/api_template.py`, `workbook/api_paths.py`, `engine/api_runner.py` (`prepare_body`, `fetch`, `read_response`) | `test_api_tests.py`, `test_api_purchase_flavour.py`, `test_api_paths_and_xml.py` |
-| Build tab API / XML editor (form, Send now, response tree with "this item" / "item where", cURL, Postman, templates; `api_*` ops) | `build/api_builder.py`, `web/build_apitest.py` (`/api/build/api/*`), `web/static/js/views/build/api_editor.js`; CONTRACT.md 1.6 | `test_api_builder.py` (Send now hits the mock APIs), `test_web_api_builder.py`. **Restart UI** for api_builder/build_apitest changes |
+| Build tab API editor (one API kind, Content-Type header -> JSON_FORMAT; headers table, Send now, response tree with "this item" / "item where", checks by hand, whole-response check + ignore list, status-never-checked fix, cURL, Postman, templates; `api_*` ops) | `build/api_builder.py`, `workbook/api_compare.py` (whole-response comparison), `web/build_apitest.py` (`/api/build/api/*`), `web/static/js/views/build/api_editor.js`; CONTRACT.md 1.6 | `test_api_builder.py` (Send now hits the mock APIs), `test_web_api_builder.py`. **Restart UI** for api_builder/build_apitest changes |
 | Concurrency scenarios (Q35/36): `_rr_scenarios` table, lanes (a test, or one test twice with its own data row) run together on one worker, sync lines / order markers, a failed lane releases the others, per-lane results, shared sign-in codes; the Build tab's scenario board; live / finished lanes | `workbook/scenarios.py` (table, board model, problems, deadlock check, `set_scenario`/`delete_scenario` ops), `engine/scenario.py` (`pick`, `LaneCase`, `Coordinator`, `run_scenario`), `engine/runner.py` (`_load_and_plan`, worker → `run_scenario`, `run_one`/`record`, `run_case(lane=)`), `engine/schedule.py` (groups), `engine/test_runner.py` (`lane.before_step`), `web/scenario_api.py`, `views/build/scenario.js`, `views/scenario_lanes.js`, `insight.py` (`scenario_entries`), `web/app.py` (`RunManager._validate`) | `test_scenarios.py` (fast), `test_scenario_run.py` (mock site `scenario_policy.html`, `okta.html`), `test_web_scenario.py`. **Restart UI** for scenario_api / app.py / insight changes |
+| Variables screen (add / edit / rename with a preview / delete test-data, per-environment and secret variables; secrets only in secrets.env) | `web/variables_api.py`, `web/static/js/views/build/variables.js`, `workbook/builder.py` (`add_variable`, `delete_variable`, rename), `build/recorder.py` (`store_secret(replace=)`) | `test_builder_variables.py` (fast), `test_web_build_variables.py`. **Restart UI** for variables_api/builder changes |
+| Environment of a run (a builder workbook with `_rr_environments` has no default: the run must name one; 422 `env_required`/`env_unknown`, CLI exits 2) | `engine/runner.py` (`_load_and_plan`), `web/app.py` (`RunManager._validate`), `cli.py`, `web/static/js/views/newrun.js` (environment choice), `views/build/index.js` (Build tab's picker) | `test_builder_variables.py`, `test_cli.py`, `test_web_api.py -k "run or env"`, `test_web_ui.py -k env` |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
 | Workers, several workbooks at once, joining a run, progress, shutdown/cancel | `engine/runner.py`, `engine/pool.py`, `engine/inbox.py`, `engine/diagnostics.py` | `test_multi_run.py`, `test_progress_and_parked_worker.py`, `test_shutdown.py`, `test_py39_compat.py` |
 | WAF 403/429, cool-down, pacing per site | `engine/throttle.py`, `engine/session.py` (`raise_if_blocked`), `engine/runner.py` (`run_case`) | `test_waf.py`, `test_web_paused_banner.py` |
@@ -188,6 +190,7 @@ src/regrunner/
     writer.py 1400 (WorkbookEditor: patches only the XML an edit touches; row insert/delete/move rewrite every reference)
     builder.py 1850 (Workbook Builder model: build_model, apply_ops, BuildDocument undo/draft/save/history/diff, BuildStore; CONTRACT.md)
     api.py 617 · api_template.py 113 · api_paths.py 236 (JSONPath with [?(@.k=='v')] filters, stdlib XPath + /@attr, text(), prefixes; paths the builder writes)
+    api_compare.py (whole-response check: JSON as data, XML as elements, text; an ignore list of names / JSONPaths / XPaths; pure functions)
     templates.py 274 (P11: the shared template library, templates.xlsx; save_as_template, match_variables, insert_template_ops - all
                   compose existing ops, no new op kind) · refactor.py 151 (P11: find_replace_preview, duplicate_candidates, merge_ops -
                   same: hits/candidates the caller turns into set_cell/update_step ops, never writes a workbook itself)
@@ -221,6 +224,8 @@ src/regrunner/
                   other edit)
     scenario_api.py  /api/build/workbooks/{name}/scenarios* (P12, register_scenario_routes: one line in create_app, same shared BuildStore):
                   the board and a scenario's last runs per lane (`scenario_runs`, plain paths); edits are set_scenario ops through /edit
+    variables_api.py  the Variables screen's routes (add / edit / rename preview + apply / delete; secrets written to secrets.env only) and
+                  `/api/workbooks/{name}/download-info` (which secrets a download leaves out)
     refactor_api.py  duplicate/find-replace/merge routes (P11, register_refactor_routes: one line in create_app, same shared BuildStore);
                   none of it is a new op kind - find/replace and "what changes?" resolve to set_cell ops, merge to update_step ops
     static/index.html, app.css, js/{main,state,api,actions,runstate,morph,util,fmt,icons,theme,browsers,wbfilter,presence}.js
@@ -229,6 +234,7 @@ src/regrunner/
                   session (P08: build window strip, pick panel, which-one, side-effect dialog; polls /api/build/session/<wb>),
                   record (P09: Rec / Check / Save / Wait until buttons, the check card, the recorder's prompts),
                   api_editor (P10: the editor of an api/xml test, dispatched from editor.js's testEditor),
+                  variables (the Variables screen: add / edit / rename / delete), dragsort (drag a step card, drag the selected bar; document listeners),
                   scenario (P12: `#/build/<wb>/scenario/<name>` board: lanes x blocks grid split by sync-line columns, order-marker chips,
                   inspector, last runs; the map's Scenarios cards and the rail's Scenarios list)}.js
     static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen),batch,test,compare,index (header+screen dispatcher)}.js;
@@ -242,7 +248,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            86 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            88 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -256,8 +262,8 @@ Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv`
 |---|---|---|
 | One file | `.venv/bin/pytest -q tests/test_page_ready.py` | seconds to ~1 min |
 | One test | `.venv/bin/pytest -q tests/test_web_ui.py -k theme` | |
-| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 635 tests, ~6 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
-| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 988 tests, 40+ min |
+| No-browser subset | `.venv/bin/pytest -q -m "not browser"` | 662 tests, ~5 min (2.5 of them: real workbooks in `test_workbook_roundtrip.py`) |
+| Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 1042 tests, 40+ min |
 
 - Marker `browser` = needs Playwright (module-level `pytestmark` or per test); `realworkbook` = needs `workbooks/UAT_AEM_Travelex Regression_v9.1.xlsx` (skips otherwise).
 - Pure-logic files (all fast): `test_workbook_roundtrip -k "not real"`, `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
@@ -453,7 +459,13 @@ count and any listed failures.
 typed locator and "Pick on the page"; `#/build/all` workbook list; `GET /api/workbooks/{name}/download`; production wording + ticks in
 Environments; a hand-closed build window closes its session; the pill's Done stops recording and the Build tab shows what was recorded
 (`Recorder.summary`); "Open the site" opens the `DOMAIN` of the environment, and recording an empty test starts with `OPEN {DOMAIN}`;
-the "selected" bar wraps. Next: batch 2 (items 9-17).
+the "selected" bar wraps. Batch 2 (items 9-25) done 2026-09-28 (three groups built in parallel worktrees and merged): readable grid,
+Build tab -> All workbooks, whole test cards, Timeline scrolls, Results keeps its runs (`#/results/run/<id>`), new pages + Move to
+block keeps place + drag to reorder + selected bar under the selection / draggable, automatic page check on a recorded page change
+(prompt kind `gate_added`), API editor (one kind, headers table, whole-response check `compare_response`/`ignore_in_response`,
+hand-typed checks, `status_never_checked`), Variables screen, no default environment for builder workbooks, `_rr_environments`
+visible after Global, an API test waits only for its own stream (`order.after_stream`; an unlinked one runs at once). Left over:
+item 26 in the tally (a formula pointing into another workbook, `=[4]Global!$B$2`, evaluates to `#NAME?`).
 
 **In progress (2026-09-26): "same speed at 1 or 20 tests"** (brief with the user's decisions: `dev/claude/CONTEXT_efficiency_at_scale.md`).
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
@@ -505,6 +517,11 @@ Gotchas:
   every page's `close` and closes itself when none is left `WINDOWLESS_GRACE_S` later. Anything that closes and reopens windows on purpose
   (start/switch) sets `_opening`; a replay runs with status `running`, which the check skips.
 - `#/build/all` is matched before `#/build/<workbook>` in `main.js` (workbook names always end in `.xlsx`, so `all` never clashes).
+- A workbook with `_rr_environments` has **no default environment**: tests that run a builder workbook must pass `env`/`--env`
+  (Global `Environment` is never the fallback; `new_workbook` no longer writes it). Legacy workbooks keep "Workbook default".
+- `order.after_ui` is gone: an API test linked to a stream also waits for the rest of that stream (`order.after_stream`, a note each);
+  for API readers a UI test counts as setting a parameter if any Output step of its sheet writes it (`Flow.may_set`), whatever blnExecute says.
+- `morph.js` never patches a `<textarea>`'s value: code that changes one programmatically (Insert variable) sets `.value` itself.
 - `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
   narrow window clips it instead of pushing the header wider than the viewport (see the `Run` tab's version tag vs. the `Build` tab's breadcrumb).
 

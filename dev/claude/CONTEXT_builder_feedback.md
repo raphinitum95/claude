@@ -1,7 +1,7 @@
 # Workbook Builder: the user's feedback after trying it (2026-09-28)
 
 The user tried the Build tab after P11 and listed what got in the way. They asked for it as a running tally, actioned in batches.
-Batch 1 (items 1-8) is done on branch `claude/adoring-dijkstra-hcvotu`; items 9-17 are next. Each line says what the user asked for and
+Batch 1 (items 1-8) and batch 2 (items 9-25) are done; item 26 is open. Each line says what the user asked for and
 what was found in the code, so the next session does not have to re-derive it.
 
 ## Batch 1: done
@@ -23,7 +23,7 @@ what was found in the code, so the next session does not have to re-derive it.
    Open step; none set = blank page + a notice with a link to Environments. Recording an empty test starts it with `OPEN {DOMAIN}`.
 8. **"Selected" bar** wraps inside its column (`.bulk-bar` in app.css) instead of overflowing a narrow window.
 
-## Batch 2: to do (items 9-25)
+## Batch 2: done 2026-09-28 (items 9-25; how each was built: `dev/claude/AGENTS.md` section 9 and the commit messages)
 
 9. **Run plan Timeline** (Run tab, `views/newrun.js` `timelineView`): cut off and unreadable on small screens. Scroll sideways at least, test
    names stay readable.
@@ -85,5 +85,15 @@ what was found in the code, so the next session does not have to re-derive it.
     blanket rule was added (legacy runner order? `~/Downloads/TG_Testing_Framework_py3_v4.2.zip` is only on the user's Mac) and whether
     the real workbooks (Qantas PolicySearch reads `AgentPortal_Params` cells) still get their wait from the detected links. Update the
     "starts after every UI test" note, the Run plan Order/Timeline views follow `deps`. Tests: `test_run_order.py`, `test_api_tests.py`.
+
+## Open
+
+26. **A formula pointing into another workbook evaluates to `#NAME?`.** In `UAT DT_Qantas StandAlone_Staff Daily Regression_v1.1.xlsx`,
+    AgentStandAlone's payment branch is switched by `blnExecute` formulas like `=IF([4]Global!$B$2="PROD","N",A397)`; `[4]` is an external
+    workbook, which `workbook/formula.py` cannot evaluate, so the branch (rows ~398-414 and copies) probably never runs and never captures
+    `DT_Policy_Out`. Since item 25, PolicySearch then says "Not run: ... AgentStandAlone should have set it" instead of asking for the value.
+    Likely fix: read Excel's cached values of external references from `xl/externalLinks/externalLink4.xml`. Check against the legacy runner.
+    Also: the server's own PROD confirmation still only looks at an environment literally named PROD (the UI also asks for one the table marks
+    production).
 
 Also told the user: `workbooks/qantas-test 2.xlsx` is saved with Global Environment = PROD.
