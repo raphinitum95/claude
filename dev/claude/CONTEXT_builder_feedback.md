@@ -23,7 +23,7 @@ what was found in the code, so the next session does not have to re-derive it.
    Open step; none set = blank page + a notice with a link to Environments. Recording an empty test starts it with `OPEN {DOMAIN}`.
 8. **"Selected" bar** wraps inside its column (`.bulk-bar` in app.css) instead of overflowing a narrow window.
 
-## Batch 2: to do (items 9-20)
+## Batch 2: to do (items 9-21)
 
 9. **Run plan Timeline** (Run tab, `views/newrun.js` `timelineView`): cut off and unreadable on small screens. Scroll sideways at least, test
    names stay readable.
@@ -55,5 +55,9 @@ what was found in the code, so the next session does not have to re-derive it.
 20. **Drag to reorder steps** in the test editor's step cards (and across blocks). The `move_steps` op already takes `before` (and `block`),
     so this is UI work in `views/build/editor.js` / `actions.js`; today steps only move through "Move to block..." (which, without
     `before`, sends them to the end of the test: see item 11).
+21. **"Selected" bar next to the selection**: show it just below the last ticked step card (above it when there is no room below) instead
+    of pinned to the bottom of the column, and let it be dragged by a grip like the build window's pill (`build/overlay.js` `drawPill`,
+    `st.pos`); remember where it was dragged for the session. The bar is `bulkBar` in `views/build/editor.js`, `.bulk-bar` in app.css
+    (made to wrap in batch 1, item 8).
 
 Also told the user: `workbooks/qantas-test 2.xlsx` is saved with Global Environment = PROD.
