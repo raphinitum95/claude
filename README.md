@@ -612,7 +612,7 @@ the expected and actual value.
 * **Secrets.** Header values are never written to any file, report or log (`tests/<id>/request.txt` shows `••••••`). Instead of keeping the API key and bearer
   token in the sheet, put `RR_VAR_DT_APIKEY=…` / `RR_VAR_DT_BEARERTOKEN=…` (`RR_VAR_<COLUMN>`) in `secrets.env`; when set they win over the cell.
 * **Order.** An API test reads what UI tests of the run produced (`=AgentStandAlone_Params!E2`, the policy number a UI test captured): it waits for the test that sets that cell, and unless
-  chained it starts after every UI test of the run (see *Tests that depend on each other*). Run only the API test and such a cell is empty: you are asked for the value.
+  chained for the other UI tests of that same stream (see *Tests that depend on each other*); an API test that reads nothing a UI test produces starts at once. Run only the API test and such a cell is empty: you are asked for the value.
 * **HTTP status.** An answer is an answer: a 500 does not fail step 1 by itself, the checks then show what came back. **401 / 403 from the API itself** (its own JSON
   answer, e.g. API Gateway's `{"message": "Invalid key=value pair ... Authorization header"}`) **fail step 1 at once** with what the API said, which headers were sent
   and from which columns, where `RR_VAR_<COLUMN>` can override them, and the usual cause (an expired token; a URL that ends in `/` because the policy number is empty)
@@ -646,8 +646,10 @@ Tests run side by side, but one may need what another produces: `Purchase` write
   (a test before the one that sets its value) is reported and the person's order wins.
 * **API tests are part of it.** An API row that reads a cell of another sheet (`policyNumber_IN` = `=AgentPortal_Params!R3`, the `DT_Policy_Out` of its stream) waits for the UI test that
   sets that cell, appears in that stream on the Run order card (tagged *API*), and can be moved with the arrows or put in a chain like any other test
-  (`Purchase#1, PolicySearch#1, Cancellation#1`). An API test nobody chained still starts after **every** UI test of the run (the card says so), because what it checks - a policy's
-  final status, say - is what the whole stream leaves behind; put it in a chain to choose where it runs. If the test that should set its cell fails, it is not run either.
+  (`Purchase#1, PolicySearch#1, Cancellation#1`). An API test nobody chained also waits for the other UI tests of **its own stream** (the card says so), because what it checks - a
+  policy's final status, say - is what the whole stream leaves behind; put it in a chain to choose where it runs. A step that may set its cell counts even when
+  the dry run cannot tell whether it will run (a flag that depends on the page). An API test linked to nothing (no cell, no `{NAME}` it reads) is in no stream
+  and runs at once, beside the website tests. If the test that should set its cell fails, it is not run either.
 * **The order is always current.** The Run order card and the *Run order* line under Preflight are worked out the moment the page shows a workbook, from the tests selected *at that
   moment* (the defaults included), and again whenever the workbook, the selection or the chains change - whichever control changed them - and when you come back to the New run screen.
   While it is being worked out Preflight says so.
