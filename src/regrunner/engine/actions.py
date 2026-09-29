@@ -1635,6 +1635,23 @@ _MONTH_HEADINGS_JS = r"""() => {
   }
   return out;
 }"""
+# a calendar that shows its month and year as two lists (jQuery UI with changeMonth / changeYear) has no "October 2026" text to read
+_SELECT_MONTHS_JS = r"""() => {
+  const names = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const out = [];
+  for (const m of document.querySelectorAll('select.ui-datepicker-month, select[class*="month" i]')) {
+    const r = m.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    const box = (m.parentElement && m.parentElement.closest('.ui-datepicker, [class*="datepicker" i], [class*="calendar" i]')) || m.parentElement;
+    const y = box && box.querySelector('select.ui-datepicker-year, select[class*="year" i]');
+    if (!y || !/^\d{4}$/.test((y.value || '').trim())) continue;
+    const text = ((m.selectedOptions[0] && m.selectedOptions[0].textContent) || '').trim().slice(0, 3).toLowerCase();
+    let idx = names.indexOf(text);
+    if (idx < 0) idx = (+m.value) - (m.querySelector('option') && +m.querySelector('option').value === 1 ? 1 : 0);
+    if (idx >= 0 && idx < 12) out.push([+y.value, idx + 1]);
+  }
+  return out;
+}"""
 _NEXT_MONTH = ('[aria-label*="next month" i]', '[title*="next month" i]', ".ui-datepicker-next", '[aria-label*="next" i]', '[title*="next" i]',
                'button:text-is("›")', 'button:text-is("»")', 'button:text-is(">")', 'a:text-is("›")', 'a:text-is("»")', 'a:text-is("Next")')
 _PREV_MONTH = ('[aria-label*="previous month" i]', '[title*="previous month" i]', '[aria-label*="prev" i]', '[title*="prev" i]',
@@ -1660,7 +1677,12 @@ async def _shown_months(scope) -> list[tuple[int, int]]:
         texts = await scope.evaluate(_MONTH_HEADINGS_JS)
     except Exception:
         return []
-    return sorted({m for m in (checks.month_index(t) for t in texts) if m is not None})
+    found = {m for m in (checks.month_index(t) for t in texts) if m is not None}
+    try:
+        found |= {(int(y), int(m)) for y, m in await scope.evaluate(_SELECT_MONTHS_JS)}
+    except Exception:
+        pass
+    return sorted(found)
 
 
 async def _pick_from_calendar(ctx: StepContext, res: Resolved, target) -> None:
@@ -2003,9 +2025,22 @@ async def check_selected(ctx: StepContext) -> None:
 
 _LIST_ITEM_JS = """(e, n) => {
   const shown = x => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(x).visibility !== 'hidden'; };
+  const ITEM = 'li, [role="option"], [role="listitem"], tr';
   if (!shown(e)) return 'H:';
-  let items = Array.from(e.querySelectorAll('li, [role="option"], [role="listitem"], tr')).filter(shown);
+  let list = e;
+  let items = Array.from(e.querySelectorAll(ITEM)).filter(shown);
   if (!items.length) items = Array.from(e.children).filter(shown);
+  if (!items.length || (items.length === 1 && !e.matches('ul, ol, [role="listbox"], [role="menu"], tbody, table'))) {
+    // the element is an item of the list (an option, a link in a suggestion): its list is the nearest ancestor that holds several items
+    for (let up = e.parentElement, d = 0; up && d < 5; up = up.parentElement, d++) {
+      const found = Array.from(up.querySelectorAll(ITEM)).filter(shown);
+      const kids = Array.from(up.children).filter(shown);
+      if (found.length > 1 || kids.length > 1 || up.matches('ul, ol, [role="listbox"], [role="menu"], tbody')) {
+        list = up; items = found.length > 1 ? found : kids; break;
+      }
+    }
+  }
+  if (!shown(list)) return 'H:';
   if (items.length < n) return 'N:' + items.length;
   return 'T:' + (items[n - 1].innerText || items[n - 1].textContent || '').replace(/\\s+/g, ' ').trim();
 }"""

@@ -547,3 +547,12 @@ Keep entries one line; details belong in README (users) or code docstrings (deve
 calendars opened by a non-field (a `div`) collapse into one PICK_DATE (`cal-click`, `Recorder._calendar_click`; `PICK_DATE` on a non-field reads the box's text); a picked/typed date within
 -30..+800 days of today is stored as `=TEXT(TODAY()+N,"dd/mm/yyyy")` (`relative_date`; "fixed" on its card keeps the literal); a plain Pick while recording becomes Check; new
 `CHECK_LIST_ITEM`. Not reproduced: Check "does nothing" while recording (backend + mock site work). `test_build_recording.py::test_clicks_typing_choices...` fails before and after (headless SELECT via keyboard).
+Later the same day: locators also use `owner` (the hidden `<select id>` under a custom multi-select, `_owner_forms`), `dataIds` (`data-*` identity attributes such as
+`data-cmp-duplication-input-id`, combined with `name`), a case-insensitive text form, and a shared name (<= 12 matches + Index) before any path or bare tag (`locators.choose`);
+`CHECK_LIST_ITEM` also accepts an item (climbs to its list); the Build tab's "Run up to here" opens the window itself when it is closed (`views/build/session.js` `runTo`);
+`session.log` in `runs/.build/<stem>/` keeps the build window's log lines (locator candidates, overlay calls). `test_web_build.py::test_the_selected_bar_sits...` fails on the base too.
+2026-09-29 (evening), from the live quote page (user allowed read-only checks of `[data-testid="xfContent"]` on the PROD landing page): locators count only VISIBLE matches when hidden copies
+exist (`Candidate.apply_counts`, `visible_only`; stored as `... >> visible=true`, `Candidate.stored()`); a widget's own control (`owner`) beats id/name/text when unique; date-like text inputs
+(`hasDatepicker`, `data-cmp-type=date`, DD/MM/YYYY placeholder) open the calendar widget like read-only ones, so the PICK_DATE step targets `input[name=tripDepartureDate]`; a full-page empty
+layer is named "page overlay of <widget>" (`cover`); labels drop their tooltip / `*` (`labelText`); `data-*` identity values up to 200 chars (`data-cmp-duplication-input-id`). Live check script idea:
+inject `build/overlay.js` with a stub `__rrBuildCall`, pick with `__rrBuild.apply({mode:'pick'})` + a synthetic click, then `locators.candidates` on `__rrBuild.describe()`.

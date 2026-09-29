@@ -508,3 +508,215 @@ async def test_a_calendar_opened_from_a_box_that_is_not_a_field_still_becomes_on
         assert (await s._page().inner_text("#depart-box")) == "15/03/2027"
     finally:
         await s.close()
+
+
+async def test_a_calendar_whose_cells_do_not_say_their_month_is_read_from_its_heading(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_datebox.html?plain=1")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#depart-box")
+        await page.click("#nx")
+        await page.wait_for_timeout(200)
+        await page.click("#days td:nth-of-type(1) a >> text=15")
+        await quiet(s, 1)
+        assert [m for m, _ in steps(s)] == ["PICK_DATE"]
+        value = list(params(s).values())[-1][0]
+        assert value in (relative_date("15/02/2027"), "15/02/2027")
+        assert "March 2025" not in value and "2025" not in value
+        name = step_at(s, 2)["name"]
+        assert ("today +" in name) == value.startswith("=TEXT(TODAY()") and name.startswith("Pick date ")
+        assert not [p for p in s.state()["record"]["prompts"] if p.get("widget") == "date"]      # nobody is asked about the calendar's clicks
+    finally:
+        await s.close()
+
+
+async def test_calendar_clicks_that_never_named_a_day_are_written_as_clicks_not_dropped(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_datebox.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#depart-box")
+        await page.click("#nx")
+        await page.click("#ttl")                                # (not a day: nothing names a date)
+        await s.recorder.stop()
+        assert [m for m, _ in steps(s)] == ["CLICK", "CLICK", "CLICK"]
+    finally:
+        await s.close()
+
+
+async def test_pressing_the_pill_does_not_close_a_list_that_closes_when_its_field_loses_focus(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_blur.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#q")
+        await page.keyboard.type("a")
+        await s.broadcast()
+        await page.mouse.click(812, 34)                             # the pill's Check
+        await until(lambda: asyncio.sleep(0, s.mode == "check"))
+        assert await page.is_visible("#list") and await page.evaluate("document.activeElement.id") == "q"
+        await page.click("#list li:nth-child(1)")                   # the list is still there to be picked
+        await until(lambda: asyncio.sleep(0, s.pick is not None and s.pick.get("purpose") == "check"))
+        assert "Albania" in s.pick["text"]
+    finally:
+        await s.close()
+
+
+@pytest.mark.parametrize("query", ["plain=1&aria=1&noheading=1", "plain=1&noheading=1"])
+async def test_a_calendar_day_is_read_from_its_label_or_failing_that_from_what_the_box_shows(site, tmp_path, query):
+    s = await open_session(site, tmp_path, "build_record_datebox.html?" + query)
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#depart-box")
+        await page.click("#nx")
+        await page.wait_for_timeout(200)
+        await page.click("#days td:nth-of-type(1) a >> text=15")
+        await quiet(s, 1)
+        assert [m for m, _ in steps(s)] == ["PICK_DATE"]
+        value = list(params(s).values())[-1][0]
+        assert value in (relative_date("15/02/2027"), "15/02/2027")
+    finally:
+        await s.close()
+
+
+async def test_a_jquery_ui_calendar_with_month_and_year_lists_records_and_replays_as_one_pick_date_step(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_datebox.html?real=1")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#depart-box")
+        await page.click("#nx")
+        await page.wait_for_timeout(200)
+        await page.click("#days td:nth-of-type(1) a >> text=15")
+        await quiet(s, 1)
+        assert [m for m, _ in steps(s)] == ["PICK_DATE"]
+        value = list(params(s).values())[-1][0]
+        assert value in (relative_date("15/02/2027"), "15/02/2027")
+        s.run("to", row=3)
+        state = await settled(s)
+        assert results(state) == [(1, "PASSED"), (2, "PASSED")], {k: v for k, v in state["replay"]["results"][-1].items() if k in ("error", "notes")}
+        assert (await s._page().inner_text("#depart-box")) == "15/02/2027"
+    finally:
+        await s.close()
+
+
+async def test_a_link_the_page_shows_in_capitals_through_css_is_found_by_its_text_not_by_its_position(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_caps.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("li:nth-child(2) a")
+        await quiet(s, 1)
+        loc = step_at(s, 2)["locator"]
+        assert "translate(" in loc["value"] and "algeria" in loc["value"] and not loc["index"]
+        await s.recorder.stop()
+    finally:
+        await s.close()
+
+
+async def test_parts_of_a_custom_multi_select_are_found_and_named_through_the_select_underneath(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_multiselect.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click(".multiSelectDropdown .inputField")
+        await page.keyboard.type("alb")
+        await page.click("#opts li:nth-child(1) a")                 # (the list closes as it is clicked)
+        await quiet(s, 2)
+        typed, chosen = step_at(s, 2), step_at(s, 3)
+        for step in (typed, chosen):
+            assert "myMulti" in step["locator"]["value"] and not step["locator"]["index"], step["locator"]
+            assert "my multi" in step["name"]
+        await s.recorder.stop()
+    finally:
+        await s.close()
+
+
+async def test_the_second_input_of_a_repeatable_set_is_recorded_with_its_own_duplication_id(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_repeat.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click(".traveller:nth-child(2) input")
+        await page.keyboard.type("41")
+        await page.keyboard.press("Tab")
+        await quiet(s, 1)
+        loc = step_at(s, 2)["locator"]
+        assert loc["value"] == 'input[name="insuredAge"][data-cmp-duplication-input-id="t2"]' and not loc["index"]
+        await s.recorder.stop()
+    finally:
+        await s.close()
+
+
+async def test_a_list_check_on_an_item_checks_the_list_is_showing_and_reads_the_item_at_its_place(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_multiselect.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click(".multiSelectDropdown .inputField")
+        await page.keyboard.type("alb")
+        await page.keyboard.press("Tab")                         # (leaving the field records the typing)
+        await quiet(s, 1)
+        pick = await pick_for(s, "check", page.locator("#opts li:nth-child(2) a"))
+        assert kinds(pick)["list_item"]["enabled"]
+        await s.recorder.add_check("list_item")
+        step = step_at(s, 3)
+        assert step["method"] == "CHECK_LIST_ITEM" and step["outputProperty"] == "2" and step["expected"].lower() == "algeria"
+        assert "opts" in step["locator"]["value"] and "data-" not in step["locator"]["value"]          # the LIST, not the item
+        await s.recorder.stop()
+        s.run("to", row=4)
+        state = await settled(s)
+        assert results(state)[-1] == (3, "PASSED"), state["replay"]["results"][-1]
+        await s._page().reload()                                 # the list is not showing any more: the same step must fail
+        s.run("step", row=4)
+        state = await settled(s)
+        assert results(state)[-1] == (3, "FAILED")
+    finally:
+        await s.close()
+
+
+async def test_a_page_shaped_like_the_real_quote_page_records_specific_locators_for_what_a_person_can_use(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_quote.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#singleTripKeepHTML #cmp-Input")
+        await page.keyboard.type("alb")
+        await page.click("#drop1 a:nth-child(1)")                     # (the copy in the other tab is hidden and has the same ids)
+        await page.click("#drop1 .drop-screen")                       # the click-catcher laid over the page
+        s.recorder.prompts.clear()                                    # (the prompt cards drawn beside a field would cover the next one)
+        await s.broadcast()
+        await page.click("input[name=tripDepartureDate]")
+        await page.click("#nx")
+        await page.wait_for_timeout(200)
+        await page.click("#days a >> text=/^8$/")
+        s.recorder.prompts.clear()
+        await s.broadcast()
+        await page.click("input[name=tripReturnDate]")
+        await page.click("#nx")
+        await page.wait_for_timeout(200)
+        await page.click("#days a >> text=/^20$/")
+        s.recorder.prompts.clear()
+        await s.broadcast()
+        await page.click("input[name=insuredAge] >> nth=1")
+        await page.keyboard.type("41")
+        await page.keyboard.press("Tab")
+        await quiet(s, 6)
+        by_method = [(st["method"], st["name"], st["locator"]["findBy"], st["locator"]["value"], st["locator"]["index"]) for st in s._steps()[1:]]
+        methods = [m for m, *_ in by_method]
+        assert methods == ["SET", "CLICK", "CLICK", "PICK_DATE", "PICK_DATE", "SET"], by_method
+        typed, item, overlay, depart, ret, age = by_method
+        assert "myMulti" in typed[3] and typed[3].endswith(">> visible=true") and typed[4] == 0 and "my multi" in typed[1]
+        assert "myMulti" in item[3] and item[3].endswith(">> visible=true") and "my multi" in item[1]
+        assert "drop-screen" in overlay[3] and "overlay" in overlay[1]
+        assert depart[3].startswith('input[name="tripDepartureDate"]') and "departure date" in depart[1].lower()
+        assert ret[3].startswith('input[name="tripReturnDate"]') and "return date" in ret[1].lower()
+        assert 'data-cmp-duplication-input-id="multiTravellerLoop-replication-index-iteration_2_input_insuredAge"' in age[3] and not age[4]
+        await s.recorder.stop()
+        s.run("to", row=8)                                           # the whole recording replays: visible copies only, the overlay click included
+        state = await settled(s)
+        assert [st for _, st in results(state)] == ["PASSED"] * 7, [(r["n"], r["status"], r.get("error")) for r in state["replay"]["results"]]
+    finally:
+        await s.close()

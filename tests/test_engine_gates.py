@@ -222,3 +222,16 @@ async def test_check_list_item_needs_the_list_to_be_showing_and_reads_the_nth_it
     assert steps["second item"].status == "PASSED"
     assert steps["first, wrong"].status == "FAILED" and steps["fourth"].status == "FAILED"
     assert any("no item 4" in n for n in steps["fourth"].notes)
+
+
+async def test_check_list_item_also_works_when_the_element_is_one_of_the_items(site, make_cfg, tmp_path):
+    wb = book(tmp_path / "li2.xlsx", {"T": [
+        open_page(), ("SET", "type", css("#city", Value="syd")),
+        ("CHECK_LIST_ITEM", "an item of the list", css("#city-list li", Output_Property="2", Expected_Value="Sydney Airport")),
+        ("CHECK_LIST_ITEM", "the same, wrong text", css("#city-list li", Output_Property="1", Expected_Value="Melbourne"))]},
+        environments=envs(site))
+    result, _, _ = await run(make_cfg, wb, ["T"])
+    (test,) = result.tests
+    steps = by_name(test)
+    assert steps["an item of the list"].status == "PASSED"
+    assert steps["the same, wrong text"].status == "FAILED"

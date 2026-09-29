@@ -253,6 +253,8 @@ def describe_target(locator: str, name: str = "", variables: set[str] | None = N
     if name:
         return humanize(name).lower()
     loc = str(locator or "").strip()
+    if loc.endswith(" >> visible=true"):
+        loc = loc[:-len(" >> visible=true")].strip()
     if not loc:
         return ""
     if variables and loc.upper() in variables:
@@ -280,6 +282,10 @@ def _show(value: str, variables: set[str]) -> str:
     m = SECRET_RE.fullmatch(v)
     if m:
         return "{" + m.group(1) + "}"
+    dated = re.match(r"^=TEXT\(TODAY\(\)\s*([+-]\s*\d+)?\s*,", v)
+    if dated:                                                        # a date that moves with the day the test runs: say so
+        n = int((dated.group(1) or "0").replace(" ", ""))
+        return "today" if n == 0 else f"today {'+' if n > 0 else '-'} {abs(n)} day{'s' if abs(n) != 1 else ''}"
     if INLINE_RE.fullmatch(v) or is_formula(v):
         return v
     return f'"{v if len(v) <= 40 else v[:37] + "..."}"'

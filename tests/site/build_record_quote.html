@@ -1,0 +1,48 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Get a quote (shaped like the real one)</title>
+<style>body{margin-top:90px}.drop-screen{position:fixed;left:0;top:0;width:100vw;height:100vh;display:none}.open .drop-screen{display:block}
+#ui-datepicker-div{display:none;position:absolute;border:1px solid #888;background:#fff;width:260px;z-index:5}li a{text-transform:uppercase}
+#opts{display:none}.drop-options{position:relative;z-index:2;background:#fff}.hidden-copy{display:none}</style></head>
+<body><div data-testid="xfContent">
+<div class="tab hidden-copy" id="annualTripKeepHTML"><div class="multiSelectDropdown"><select id="myMulti" style="display:none"><option>Albania</option></select>
+  <input type="text" id="cmp-Input" class="inputField" placeholder="Enter destinations"><div class="drop"><div class="drop-screen"></div><div class="drop-options" id="valueList"><div><a data-index="3">ALBANIA</a></div></div></div></div></div>
+<div class="tab" id="singleTripKeepHTML"><div class="multiSelectDropdown"><select id="myMulti" style="display:none"><option>Albania</option></select>
+  <input type="text" id="cmp-Input" class="inputField" placeholder="Enter destinations"><div class="drop" id="drop1"><div class="drop-screen"></div><div class="drop-options" id="valueList"><div><a data-index="3">Albania</a><a data-index="4">Algeria</a></div></div></div></div></div>
+<div id="destinationDates">
+  <div class="text"><div class="cmp-form-text"><label for="form-text-2047922807"><span class="rte-wrap"><p>Departure Date<span class="font-red">*</span></p></span><a href="javascript:void(0)" class="help">i<span role="tooltip">Enter the date you will be leaving</span></a></label>
+    <input class="cmp-form-text__text dob-ip-date hasDatepicker" type="text" id="form-text-2047922807" data-cmp-type="date" placeholder="DD/MM/YYYY" name="tripDepartureDate" autocomplete="off"></div></div>
+  <div class="text"><div class="cmp-form-text"><label for="form-text-782268202"><span class="rte-wrap"><p>Return Date<span class="font-red">*</span></p></span><a href="javascript:void(0)" class="help">i<span role="tooltip">Enter the date you will be back</span></a></label>
+    <input class="cmp-form-text__text dob-ip-date hasDatepicker" type="text" id="form-text-782268202" data-cmp-type="date" placeholder="DD/MM/YYYY" name="tripReturnDate" autocomplete="off"></div></div>
+</div>
+<div id="multiTravellerLoop">
+  <div class="text"><div class="cmp-form-text"><input class="cmp-form-text__text" type="number" id="form-text-1086345116" placeholder="Age" name="insuredAge" data-cmp-duplication-input-id="multiTravellerLoop-replication-index-iteration_1_input_insuredAge"></div></div>
+  <div class="text"><div class="cmp-form-text"><input class="cmp-form-text__text" type="number" id="form-text-286264126" placeholder="Age" name="insuredAge" data-cmp-duplication-input-id="multiTravellerLoop-replication-index-iteration_2_input_insuredAge"></div></div>
+</div>
+</div>
+<div id="ui-datepicker-div" class="ui-datepicker"><div class="ui-datepicker-header"><a class="ui-datepicker-next" title="Next" id="nx" href="#">Next</a>
+  <div class="ui-datepicker-title" id="ttl"></div></div><table><tbody id="days"></tbody></table></div>
+<script>
+  const visibleInput = document.querySelector('#singleTripKeepHTML #cmp-Input'), list = document.getElementById('drop1');
+  visibleInput.addEventListener('input', () => { list.classList.add('open'); list.querySelector('.drop-options').style.display = 'block'; });
+  list.querySelector('.drop-options').addEventListener('click', (e) => { e.preventDefault(); if (e.target.tagName === 'A') visibleInput.value = e.target.textContent; });
+  list.querySelector('.drop-screen').addEventListener('click', () => { list.classList.remove('open'); list.querySelector('.drop-options').style.display = 'none'; });
+  const NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const shown = {y: 2027, m: 0}; let target = null;
+  const pick = document.getElementById('ui-datepicker-div');
+  function draw() {
+    document.getElementById('ttl').innerHTML = '<select class="ui-datepicker-month">' + NAMES.map((n, i) => '<option value="' + i + '"' + (i === shown.m ? ' selected' : '') + '>' + n.slice(0, 3) + '</option>').join('')
+      + '</select><select class="ui-datepicker-year">' + [2026, 2027, 2028].map(y => '<option value="' + y + '"' + (y === shown.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+    let html = '<tr>';
+    for (let d = 1; d <= new Date(shown.y, shown.m + 1, 0).getDate(); d++) {
+      html += '<td data-handler="selectDay" data-month="' + shown.m + '" data-year="' + shown.y + '"><a class="ui-state-default" href="#" data-date="' + d + '">' + d + '</a></td>';
+      if (d % 7 === 0) html += '</tr><tr>';
+    }
+    document.getElementById('days').innerHTML = html + '</tr>';
+  }
+  document.querySelectorAll('input.hasDatepicker').forEach(inp => inp.addEventListener('focus', () => { target = inp; draw(); pick.style.display = 'block'; }));
+  document.getElementById('nx').addEventListener('click', (e) => { e.preventDefault(); shown.m++; if (shown.m > 11) { shown.m = 0; shown.y++; } setTimeout(draw, 50); });
+  document.getElementById('days').addEventListener('click', (e) => {
+    e.preventDefault(); const a = e.target.closest('a'); if (!a) return;
+    target.value = String(a.textContent).padStart(2, '0') + '/' + String(shown.m + 1).padStart(2, '0') + '/' + shown.y; pick.style.display = 'none';
+  });
+</script></body></html>

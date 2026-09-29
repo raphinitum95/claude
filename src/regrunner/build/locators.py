@@ -72,10 +72,12 @@ def lit(text: str) -> str:
 class Candidate:
     findby: str                  # BY_ID | BY_CSSSELECTOR | BY_XPATH (the legacy vocabulary: FindBy)
     value: str                   # FindBy_Value
-    how: str                     # id | testid | attribute | text | context | anchor | position | path
+    how: str                     # id | testid | attribute | text | text (any case) | context | anchor | position | path
     index_needed: bool = False   # only finds the element as the n-th match (Index)
     count: int = -1              # filled by the live check: how many elements match
     position: int = -1           # ...and where the picked element is among them (-1: not at all)
+    visible_only: bool = False   # count / position are among the VISIBLE matches (hidden copies of a component do not count): the stored locator
+                                 # then ends in VISIBLE, so the engine looks at what a person can interact with, too
 
     @property
     def unique(self) -> bool:
@@ -85,23 +87,45 @@ class Candidate:
     def finds_it(self) -> bool:
         return self.position >= 0 and (self.unique or self.index_needed)
 
-    def selector(self, values: dict[str, str] | None = None) -> str:
-        """The Playwright selector the engine would use (``selectors.spec.legacy_strategy``), with ``{TOKEN}`` filled in from ``values``."""
+    def selector(self, values: dict[str, str] | None = None, visible: bool | None = None) -> str:
+        """The Playwright selector the engine would use (``selectors.spec.legacy_strategy``), with ``{TOKEN}`` filled in from ``values``;
+        among the visible matches only when ``visible`` (default: when this locator was chosen that way)."""
         strategy = legacy_strategy(self.findby, fill(self.value, values or {}))
-        return strategy.selector if strategy is not None else ""
+        if strategy is None:
+            return ""
+        return strategy.selector + (VISIBLE if (self.visible_only if visible is None else visible) else "")
+
+    def stored(self) -> tuple[str, str]:
+        """(FindBy, FindBy_Value) as written into a step: a visible-only locator is written as CSS / XPath ending in ``>> visible=true``."""
+        if not self.visible_only:
+            return self.findby, self.value
+        if self.findby == "BY_ID":
+            return "BY_CSSSELECTOR", f"[id={css_string(self.value)}]{VISIBLE}"
+        return self.findby, self.value + VISIBLE
+
+    def apply_counts(self, count: int, position: int, vcount: int = -1, vposition: int = -1) -> None:
+        """Take the live counts: among every match, and among the visible ones.  When hidden copies exist (a widget rendered twice, one for a tab
+        that is not showing) the visible counts win - what cannot be seen cannot be used, so it is not "another one"."""
+        self.count, self.position, self.visible_only = count, position, False
+        if count > 1 and 0 <= vcount < count and vposition >= 0:
+            self.count, self.position, self.visible_only = vcount, vposition, True
 
     def backup(self) -> str:
         """As one ``BACKUP_LOCATORS`` entry (``selectors.spec.parse_locator`` syntax); the n-th match when it needs a position."""
         kind = {"BY_ID": "id", "BY_CSSSELECTOR": "css", "BY_XPATH": "xpath"}[self.findby]
+        vis = VISIBLE if self.visible_only else ""
         if self.index_needed and self.position > 0:
             if kind == "xpath":
-                return f"xpath=({self.value})[{self.position + 1}]"
-            return f"css={self.value} >> nth={self.position}" if kind == "css" else f"css=[id={css_string(self.value)}] >> nth={self.position}"
-        return f"{kind}={self.value}"
+                return f"xpath={self.value}{vis} >> nth={self.position}" if vis else f"xpath=({self.value})[{self.position + 1}]"
+            return f"css={self.value}{vis} >> nth={self.position}" if kind == "css" else f"css=[id={css_string(self.value)}]{vis} >> nth={self.position}"
+        return f"css=[id={css_string(self.value)}]{vis}" if kind == "id" and vis else f"{kind}={self.value}{vis}"
 
     def to_json(self) -> dict:
         return {"findBy": self.findby, "value": self.value, "how": self.how, "count": self.count,
                 "index": self.position if self.index_needed and self.position >= 0 else 0}
+
+
+VISIBLE = " >> visible=true"          # Playwright's own filter: only elements with a box on the page that are not visibility:hidden
 
 
 def fill(text: str, values: dict[str, str]) -> str:
@@ -111,11 +135,14 @@ def fill(text: str, values: dict[str, str]) -> str:
 
 
 # -- words ----------------------------------------------------------------------------------------------------------------------------------
+_GENERIC_NAME = re.compile(r"^(text|number|email|password|search|date|input)?\s*(input|field|box|text)( field| box)?$", re.IGNORECASE)
+
+
 def element_name(desc: dict) -> str:
-    """What a person would call the element: its label, text, value, placeholder..."""
+    """What a person would call the element: its label, text, value, placeholder... (never a generic "Text input field")."""
     for key in ("ariaLabel", "label", "text", "value", "placeholder", "title", "alt"):
         text = short_text(desc.get(key) or "")
-        if text:
+        if text and not _GENERIC_NAME.match(text):
             return text
     return ""
 
@@ -126,6 +153,13 @@ def descriptive_target(desc: dict) -> str:
     kind = kind_word(desc)
     is_field = _is_field(desc)
     text = element_name(desc)
+    owner = desc.get("owner") or {}
+    if desc.get("cover"):                                            # the invisible layer a widget lays over the page while its list is open
+        widget = re.sub(r"[_.-]+", " ", re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(owner.get("id") or owner.get("name") or ""))).lower().strip()
+        return f"page overlay of {widget}" if widget else "page overlay (closes the open list)"
+    if owner.get("id") or owner.get("name"):                        # a part of a custom widget: named after the widget's own form control
+        widget = re.sub(r"[_.-]+", " ", re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(owner.get("id") or owner.get("name")))).lower().strip()
+        return f"{widget} {kind}" if is_field or not text else f'"{text}" {kind} in {widget}'
     if text:
         return f"{text.lower()} {kind}" if is_field else f'"{text}" {kind}'
     for key in ("name", "id"):
@@ -187,6 +221,41 @@ def _text_pred(desc: dict, text: str) -> str:
     return f"[normalize-space(.)={lit(text)}]"
 
 
+_UPPER, _LOWER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
+
+
+def _ci_text_pred(text: str) -> str:
+    """The same text ignoring letter case: a page that shows "ALBANIA" through CSS holds "Albania" in the DOM (what ``innerText`` reads is not
+    what ``normalize-space(.)`` matches), so the exact-case form finds nothing and the locator would fall back to "the 425th <a>"."""
+    return f"[translate(normalize-space(.), '{_UPPER}', '{_LOWER}')={lit(text.lower())}]"
+
+
+def _owner_forms(desc: dict, name: str, owner: dict) -> list[Candidate]:
+    """An element inside a custom widget (a multi-select built from divs, links and an input) is found through the real form control the widget
+    keeps underneath (``<select id="myMulti">``): that control's id / name is the widget's name, whatever the parts inside it look like."""
+    stag = str(owner.get("tag") or "*").lower()
+    if owner.get("id") and stable_id(str(owner["id"])):
+        control = f"//{stag}[@id={lit(str(owner['id']))}]"
+    elif owner.get("name") and stable_id(str(owner["name"])):
+        control = f"//{stag}[@name={lit(str(owner['name']))}]"
+    else:
+        return []
+    ctag = str(owner.get("ctag") or "*").lower()
+    tag = str(desc.get("tag") or "*").lower()
+    if name and not _is_field(desc):
+        pred = _text_pred(desc, name)
+        inner = tag + (_ci_text_pred(name) if pred.startswith("[normalize-space") else pred)
+    else:
+        inner = _inner(desc, name)
+    if inner == tag:
+        classes = stable_classes(desc.get("classes") or [])
+        if classes:
+            inner = f"{tag}[contains(concat(' ', normalize-space(@class), ' '), {lit(' ' + classes[0] + ' ')})]"
+    cls = stable_classes(owner.get("classes") or [])
+    scope = f"ancestor::{ctag}" + (f"[contains(concat(' ', normalize-space(@class), ' '), {lit(' ' + cls[0] + ' ')})]" if cls else "") + "[1]"
+    return [Candidate("BY_XPATH", f"{control}/{scope}//{inner}", "owner")]
+
+
 def _inner(desc: dict, name: str) -> str:
     """What finds the element once inside its container: its name, else a stable attribute, else only its tag."""
     tag = str(desc.get("tag") or "*").lower()
@@ -243,6 +312,12 @@ def candidates(desc: dict, *, name_as: str = "", context_as: str = "") -> list[C
     testid = desc.get("testid") or {}
     if testid.get("attr") in TEST_ID_ATTRS and stable_id(str(testid.get("value") or "")):
         out.append(Candidate("BY_CSSSELECTOR", f"[{testid['attr']}={css_string(str(testid['value']))}]", "testid"))
+    for attr, raw in (desc.get("dataIds") or {}).items():
+        value = str(raw or "").strip()
+        if value:
+            named = _is_field(desc) or tag == "button"
+            base = _attr_css(tag, "name", str(desc["name"])) if named and stable_id(str(desc.get("name") or "")) else tag
+            out.append(Candidate("BY_CSSSELECTOR", f"{base}[{attr}={css_string(value)}]", "attribute"))
     attrs = [("name", desc.get("name"))] if _is_field(desc) or tag == "button" else []
     attrs += [("aria-label", desc.get("ariaLabel")), ("placeholder", desc.get("placeholder")), ("title", desc.get("title")), ("alt", desc.get("alt"))]
     for attr, value in attrs:
@@ -257,6 +332,8 @@ def candidates(desc: dict, *, name_as: str = "", context_as: str = "") -> list[C
         out.append(Candidate("BY_CSSSELECTOR", _attr_css("a", "href", href), "attribute"))
     if name and not _is_field(desc):
         out.append(Candidate("BY_XPATH", f"//{tag}{_text_pred(desc, name)}", "text"))
+        if _text_pred(desc, name).startswith("[normalize-space") and name != name.lower():
+            out.append(Candidate("BY_XPATH", f"//{tag}{_ci_text_pred(name)}", "text (any case)"))
     label = short_text(desc.get("label") or "")
     if label and _is_field(desc):
         out.append(Candidate("BY_XPATH", f"//label[normalize-space(.)={lit(label)}]/following::{tag}[1]", "text"))
@@ -265,6 +342,9 @@ def candidates(desc: dict, *, name_as: str = "", context_as: str = "") -> list[C
     classes = stable_classes(desc.get("classes") or [])
     if classes:
         out.append(Candidate("BY_CSSSELECTOR", tag + "".join("." + _css_ident(c) for c in classes), "position", index_needed=True))
+    owner = desc.get("owner") or {}
+    if owner:
+        out.extend(_owner_forms(desc, name, owner))
     anchor = str(desc.get("anchorPath") or "")
     if anchor:
         out.append(Candidate("BY_CSSSELECTOR", anchor, "anchor"))
@@ -298,20 +378,31 @@ class Choice:
 
     def to_json(self) -> dict:
         p = self.primary
-        return {"findBy": p.findby if p else "", "value": p.value if p else "", "index": (p.position if p and p.index_needed else 0) if p else 0,
+        findby, value = p.stored() if p else ("", "")
+        return {"findBy": findby, "value": value, "index": (p.position if p and p.index_needed else 0) if p else 0,
                 "how": p.how if p else "", "matches": p.count if p else 0, "backups": [b.backup() for b in self.backups],
                 "tried": [c.to_json() for c in self.tried]}
+
+
+NAME_HOWS = ("id", "testid", "attribute", "text", "text (any case)", "context", "owner")
+MAX_SHARED_NAME = 12                       # a name shared with more elements than this says little about which one it is
 
 
 def choose(checked: list[Candidate]) -> Choice:
     """Pick the step's locator among candidates already checked live (``count`` / ``position`` set): the most stable one that finds exactly
     the picked element; else the first that finds it as the n-th match.  Up to ``MAX_BACKUPS`` others that find it become its backups."""
     unique = [c for c in checked if c.unique and c.how != "path"]
+    unique.sort(key=lambda c: 0 if c.how == "owner" else 1)          # (stable) a part of a custom widget is named after the widget's own control first
     positional = [c for c in checked if c.index_needed and c.position >= 0]
     path = [c for c in checked if c.how == "path" and c.unique]
-    # a path from the element's own ancestors is specific to it; "the 425th <a> on the page" is not, so it is the last resort
-    primary = unique[0] if unique else path[0] if path else positional[0] if positional else None
-    rest = [c for c in [*unique, *path, *positional[:1]] if c is not primary]
+    # the element's own name (id, test id, attribute, text) shared with a few others: "the 2nd one named X" says more about it than a path through
+    # the page's layout or "the 425th <a>"; the fewer it shares its name with, the better
+    named = sorted((c for c in checked if not c.unique and c.position >= 0 and 1 < c.count <= MAX_SHARED_NAME and c.how in NAME_HOWS),
+                   key=lambda c: c.count)
+    if not unique and named:
+        named[0].index_needed = True
+    primary = unique[0] if unique else named[0] if named else path[0] if path else positional[0] if positional else None
+    rest = [c for c in [*unique, *(named[:1] if not unique else []), *path, *positional[:1]] if c is not primary]
     return Choice(primary, rest[:MAX_BACKUPS], list(checked))
 
 
@@ -341,6 +432,8 @@ def words_of_locator(findby: str, value: str) -> list[dict]:
     """The plain words of a locator the builder wrote (text / label / container forms); ``[]`` for any other locator."""
     kind = (findby or "").upper().replace(" ", "")
     value = (value or "").strip()
+    if value.endswith(VISIBLE):
+        value = value[:-len(VISIBLE)].strip()
     if kind not in ("BY_XPATH", "XPATH") or not value:
         return []
     m = _CONTEXT_FORM.match(value)
@@ -373,7 +466,7 @@ def to_desc(value: Any) -> dict:
     if not isinstance(value, dict):
         return {}
     keep = ("tag", "kind", "id", "name", "type", "testid", "ariaLabel", "placeholder", "title", "alt", "href", "value", "classes", "text",
-            "label", "context", "cssPath", "anchorPath", "frame", "current")
+            "label", "context", "owner", "dataIds", "cover", "cssPath", "anchorPath", "frame", "current")
     out = {k: value.get(k) for k in keep if k in value}
     for key in ("tag", "kind", "id", "name", "type", "ariaLabel", "placeholder", "title", "alt", "href", "value", "text", "label", "cssPath", "anchorPath", "frame"):
         if key in out:
@@ -382,6 +475,12 @@ def to_desc(value: Any) -> dict:
     ctx = out.get("context")
     out["context"] = ({k: (str(ctx.get(k) or "")[:200] if k != "classes" else [str(c)[:80] for c in (ctx.get("classes") or [])][:20])
                        for k in ("kind", "tag", "heading", "headingTag", "id", "classes")} if isinstance(ctx, dict) else None)
+    out["cover"] = bool(out.get("cover"))
+    ids = out.get("dataIds")
+    out["dataIds"] = {str(k)[:80]: str(v)[:200] for k, v in list(ids.items())[:3]} if isinstance(ids, dict) else {}
+    own = out.get("owner")
+    out["owner"] = ({k: (str(own.get(k) or "")[:120] if k != "classes" else [str(c)[:80] for c in (own.get("classes") or [])][:20])
+                     for k in ("tag", "id", "name", "ctag", "classes")} if isinstance(own, dict) and (own.get("id") or own.get("name")) else None)
     tid = out.get("testid")
     out["testid"] = {"attr": str(tid.get("attr") or ""), "value": str(tid.get("value") or "")[:200]} if isinstance(tid, dict) else None
     cur = out.get("current")

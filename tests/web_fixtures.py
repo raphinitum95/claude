@@ -67,6 +67,7 @@ def web(site, tmp_path_factory):
         "captcha_bypass": {"values": {"UAT": "TEST-UAT-TOKEN", "QA": "${RECAPTCHA_BYPASS_TOKEN_QA}"}},
         "auth": {"headless": True},                      # the sign-in window is visible for people, headless for tests
         "captcha": {"headless": True},                   # ...and so is the window a captcha is solved in
+        "build": {"headless": True},                     # ...and the Build tab's window
         "tags": {"smoke": ["FlowA"]},
     }))
     cfg = load_config(cfg_file, base_dir=root)

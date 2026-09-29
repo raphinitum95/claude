@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Custom multi-select</title>
+<style>li a{text-transform:uppercase}#opts{display:none}</style></head>
+<body>
+<div class="multiSelectDropdown">
+  <select id="myMulti" multiple style="display:none"><option>Albania</option><option>Algeria</option></select>
+  <input type="text" class="inputField" placeholder="Enter destinations">
+  <ul id="opts"><li><a href="#">Albania</a></li><li><a href="#">Algeria</a></li></ul>
+</div>
+<div class="other"><input type="text" class="inputField" placeholder="Enter destinations"><ul><li><a href="#">Albania</a></li></ul></div>
+<script>
+  document.querySelector('.multiSelectDropdown .inputField').addEventListener('input', () => { document.getElementById('opts').style.display = 'block'; });
+  document.getElementById('opts').addEventListener('click', (e) => { e.preventDefault(); document.getElementById('opts').style.display = 'none'; });
+</script></body></html>

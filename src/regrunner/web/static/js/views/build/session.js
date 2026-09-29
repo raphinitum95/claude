@@ -106,7 +106,19 @@ async function openWindow() {
 
 const selRow = () => { const s = selectedStep(); return s ? s.row : null; };
 
-async function runTo(row) { if (row) { try { await call('run-to-here', { row }); } catch (e) { /* shown */ } } }
+/** "Run up to here": opens the build window first when it is not open (or is on another test / data row), waits for it to settle, then replays. */
+async function runTo(row) {
+  if (!row) return;
+  const t = currentTest();
+  const st = sess();
+  const want = t ? effectiveBuildingWith(t) : null;
+  if (!isOpen() || (t && st && (st.test !== t.id || (want != null && st.dataRow !== want)))) {
+    await openWindow();
+    if (!isOpen()) return;
+    for (let i = 0; i < 300 && sess() && sess().status === 'running'; i += 1) await new Promise((r) => setTimeout(r, 200));      // (opening replays its first step)
+  }
+  try { await call('run-to-here', { row }); } catch (e) { /* shown */ }
+}
 async function runStep() { const row = selRow(); if (row) { try { await call('run-step', { row }); } catch (e) { /* shown */ } } }
 async function runNext() { try { await call('run-next', { count: NEXT }); } catch (e) { /* shown */ } }
 
@@ -250,6 +262,7 @@ export function sessionBar(S0) {
   if (!st || !st.open) {
     return html`<div class="sess-bar">
 <button class="btn btn-sm ${ui.busy ? 'busy' : ''}" data-act="build-sess-open">${icon('globe', 13)} Open the site</button>
+<button class="btn btn-sm" data-act="build-sess-run-to" ${s ? '' : raw('disabled')} title="Open the site and replay steps 1 to ${s ? s.n : '…'}">${icon('play', 12)} Run up to here</button>
 <span style="font-size: 12px; color: var(--tx3)">${st && st.error ? st.error + ' ' : ''}A browser window of its own: pick elements on the page and run steps with row ${effectiveBuildingWith(t) || '–'}'s data.</span></div>
 ${summaryBanner(st, t)}`;
   }
@@ -264,7 +277,7 @@ ${other ? html`<span class="tag tag-warn" title="The window is on another test o
 <button class="btn btn-sm" data-act="build-sess-open" ${busy ? raw('disabled') : ''} title="Start this test from its beginning in the window">${icon('refresh', 12)} Switch to ${t.id} · row ${want || '–'}</button>` : ''}
 <span style="width: 1px; height: 18px; background: var(--line2)"></span>
 ${busy ? html`<button class="btn btn-sm" data-act="build-sess-stop">${icon('stop', 12)} Stop</button>` : html`
-<button class="btn btn-sm" data-act="build-sess-run-to" ${sel && !other ? '' : raw('disabled')} title="Replay steps 1 to ${sel || '…'} from the start (R)">${icon('play', 12)} Run up to here</button>
+<button class="btn btn-sm" data-act="build-sess-run-to" ${sel ? '' : raw('disabled')} title="Replay steps 1 to ${sel || '…'} from the start (R)${other ? ', on this test and data row' : ''}">${icon('play', 12)} Run up to here</button>
 <button class="btn btn-sm btn-ghost" data-act="build-sess-run-step" ${sel && !other ? '' : raw('disabled')} title="Run only the selected step, in the window as it is">Run this step</button>
 <button class="btn btn-sm btn-ghost" data-act="build-sess-run-next" ${st.next && !other ? '' : raw('disabled')} title="${st.next ? `Carry on from step ${st.next.n || '…'}` : 'Run up to a step first'}">Run next ${NEXT}</button>`}
 <button class="btn btn-sm ${st.mode === 'pick' ? 'btn-pri' : ''}" data-act="build-sess-pick" ${busy || other ? raw('disabled') : ''} title="Click an element in the build window">${icon('target', 12)} ${st.mode === 'pick' ? 'Picking…' : 'Pick'}</button>

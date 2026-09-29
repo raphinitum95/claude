@@ -1,0 +1,10 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>List closes on blur</title></head>
+<body>
+<input id="q" autocomplete="off">
+<ul id="list" style="display:none"><li>Albania</li><li>Algeria</li></ul>
+<script>
+  const q = document.getElementById('q'), list = document.getElementById('list');
+  q.addEventListener('input', () => { list.style.display = 'block'; });
+  q.addEventListener('blur', () => { list.style.display = 'none'; });
+</script></body></html>

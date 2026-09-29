@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Date box</title>
+<style>.drop-screen{border:1px solid #888;padding:8px;width:160px;cursor:pointer}#ui-datepicker-div{display:none;border:1px solid #888;width:260px}
+#ui-datepicker-div td{padding:4px}</style></head>
+<body>
+<p class="fine-print">Offer valid until March 2025. Terms apply.</p>
+<div class="trip"><div class="drop-screen" id="depart-box">Depart</div></div>
+<div id="ui-datepicker-div" class="ui-datepicker">
+  <div class="ui-datepicker-header"><a class="ui-datepicker-next" title="Next" href="#" id="nx">Next</a>
+    <span class="ui-datepicker-title" id="ttl"></span></div>
+  <table><tbody id="days"></tbody></table>
+</div>
+<script>
+  const box = document.getElementById('depart-box'), pick = document.getElementById('ui-datepicker-div');
+  const shown = {y: 2027, m: 0};
+  const NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function draw() {
+    if (location.search.includes('real')) {       // jQuery UI with changeMonth / changeYear: two lists, no "October 2026" text; data-date is the day number
+      document.getElementById('ttl').innerHTML = '<select class="ui-datepicker-month">' + NAMES.map((n, i) => '<option value="' + i + '"' + (i === shown.m ? ' selected' : '') + '>' + n.slice(0, 3) + '</option>').join('')
+        + '</select><select class="ui-datepicker-year">' + [2026, 2027, 2028].map(y => '<option value="' + y + '"' + (y === shown.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+    } else document.getElementById('ttl').textContent = location.search.includes('noheading') ? '' : NAMES[shown.m] + ' ' + shown.y;
+    let html = '<tr>';
+    const n = new Date(shown.y, shown.m + 1, 0).getDate();
+    for (let d = 1; d <= n; d++) {
+      const attrs = location.search.includes('plain') && !location.search.includes('real') ? '' : ' data-month="' + shown.m + '" data-year="' + shown.y + '"';
+      const aria = location.search.includes('aria') ? ' aria-label="' + NAMES[shown.m] + ' ' + d + ', ' + shown.y + '"' : '';
+      html += '<td' + attrs + '><a class="ui-state-default" href="#"' + aria + (location.search.includes('real') ? ' data-date="' + d + '"' : '') + '>' + d + '</a></td>';
+      if (d % 7 === 0) html += '</tr><tr>';
+    }
+    document.getElementById('days').innerHTML = html + '</tr>';
+  }
+  box.addEventListener('click', () => { draw(); pick.style.display = 'block'; });
+  document.getElementById('nx').addEventListener('click', (e) => { e.preventDefault(); shown.m++; if (shown.m > 11) { shown.m = 0; shown.y++; } setTimeout(draw, 50); });
+  document.getElementById('days').addEventListener('click', (e) => {
+    e.preventDefault();
+    const a = e.target.closest('a'); if (!a) return;
+    const td = a.parentElement;
+    box.textContent = String(a.textContent).padStart(2, '0') + '/' + String(shown.m + 1).padStart(2, '0') + '/' + shown.y;
+    pick.style.display = 'none';
+  });
+</script></body></html>

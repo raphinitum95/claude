@@ -9,3 +9,4 @@ secrets.env
 .DS_Store
 .idea/
 /share/
+Workbooks/

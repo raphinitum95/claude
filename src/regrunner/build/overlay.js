@@ -70,13 +70,22 @@
     return 'element';
   }
 
+  // a label's own words: without its help tooltip / info link / nested controls, and without the trailing "*" of a required field
+  function labelText(l) {
+    try {
+      const copy = l.cloneNode(true);
+      copy.querySelectorAll('a, button, [role="tooltip"], .customTooltip, input, select, textarea, .font-red').forEach((n) => n.remove());
+      return short(clean(copy.textContent).replace(/[\s*:]+$/, ''));
+    } catch (e) { return short(l.innerText); }
+  }
+
   function labelOf(el) {
     try {
-      if (el.labels && el.labels.length) return short(el.labels[0].innerText);
+      if (el.labels && el.labels.length) return labelText(el.labels[0]);
       const by = el.getAttribute('aria-labelledby');
-      if (by) { const l = document.getElementById(by.split(/\s+/)[0]); if (l) return short(l.innerText); }
+      if (by) { const l = document.getElementById(by.split(/\s+/)[0]); if (l) return labelText(l); }
       const wrap = el.closest('label');
-      if (wrap) return short(wrap.innerText);
+      if (wrap) return labelText(wrap);
     } catch (e) { /* not a labelable element */ }
     return '';
   }
@@ -138,6 +147,9 @@
   // a short css path from the nearest ancestor that is unique on its own (stable id, or tag + stable classes found once): "specific to what was
   // chosen" without leaning on the element's own tag or on its position in the whole page.  '' when no ancestor anchors it.
   function anchorPath(el) {
+    try { return anchorPathOf(el); } catch (e) { return ''; }        // (a locator hint must never stop a pick or a recorded click)
+  }
+  function anchorPathOf(el) {
     const parts = [];
     const own = (e) => { const cls = stableClasses(Array.from(e.classList || [])).slice(0, 2); return e.tagName.toLowerCase() + cls.map((c) => '.' + cssIdent(c)).join(''); };
     let e = el;
@@ -156,6 +168,45 @@
     return '';
   }
 
+  // the real form control a custom widget keeps underneath (<select id="myMulti"> behind a multi-select made of divs, links and an input):
+  // its id / name is the widget's name.  Only when exactly one such control sits in the nearest ancestor that has any.
+  function ownerOf(el) {
+    try {
+      for (let c = el.parentElement, depth = 0; c && depth < 8 && c !== document.body && c !== document.documentElement; depth += 1, c = c.parentElement) {
+        const found = Array.from(c.querySelectorAll('select, input[type="hidden"]')).filter((x) => x !== el && !el.contains(x)
+          && (stableId(x.id) || stableId(x.getAttribute('name'))));
+        if (found.length === 1) {
+          const x = found[0];
+          return { tag: x.tagName.toLowerCase(), id: x.id || '', name: x.getAttribute('name') || '', ctag: c.tagName.toLowerCase(), classes: Array.from(c.classList || []) };
+        }
+        if (found.length > 1) return null;
+      }
+    } catch (e) { /* no owner */ }
+    return null;
+  }
+
+  // data-* attributes that say WHICH one this is (data-cmp-duplication-input-id on the inputs of a repeatable set, data-item-key...)
+  const IDENTITY_DATA = /^data-.*(id|key|name|field)$/i;         // (not "index": that is a position, and positions change)
+  function dataIdsOf(el) {
+    const out = {};
+    try {
+      for (const a of Array.from(el.attributes || [])) {
+        if (Object.keys(out).length >= 3) break;
+        const v = String(a.value || '').trim();
+        if (IDENTITY_DATA.test(a.name) && v && v.length <= 200 && !TEST_IDS.includes(a.name) && !/^data-(reactid|rr-)/i.test(a.name)) out[a.name] = v;
+      }
+    } catch (e) { /* none */ }
+    return out;
+  }
+
+  // an empty box laid over (nearly) the whole page: the click-catcher a widget puts behind its open list
+  function coversPage(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      return r.width >= innerWidth * 0.8 && r.height >= innerHeight * 0.8 && !clean(el.innerText) && el.tagName !== 'BODY' && el.tagName !== 'HTML';
+    } catch (e) { return false; }
+  }
+
   function describe(el) {
     const tag = el.tagName.toLowerCase();
     const name = nameOf(el);
@@ -171,7 +222,7 @@
       alt: el.getAttribute('alt') || '', href: tag === 'a' ? (el.getAttribute('href') || '') : '', value: el.getAttribute('value') || '',
       classes: Array.from(el.classList || []), text: short(el.innerText), label: labelOf(el),
       context: sameNameCount(el, name) > 1 || !name ? contextOf(el, name) : null,
-      cssPath: cssPath(el), anchorPath: anchorPath(el), frame: TOP ? '' : (window.name || location.href),
+      dataIds: dataIdsOf(el), owner: (stableId(el.getAttribute('name')) || short(el.getAttribute('aria-label'))) ? null : ownerOf(el), cover: coversPage(el), cssPath: cssPath(el), anchorPath: anchorPath(el), frame: TOP ? '' : (window.name || location.href),
       current: { value: 'value' in el && typeof el.value === 'string' && (el.getAttribute('type') || '').toLowerCase() !== 'password' ? el.value.slice(0, 200) : '', checked: !!el.checked,
         enabled: !el.disabled && el.getAttribute('aria-disabled') !== 'true', visible, selected },
     };
@@ -234,6 +285,27 @@
     out.push({ findBy: 'BY_XPATH', value: `${anchor}[1]//${inner}` });
     return out;
   }
+  function ownerForms(d, name) {
+    const o = d.owner || {};
+    const stag = String(o.tag || '*').toLowerCase();
+    let control;
+    if (o.id && stableId(o.id)) control = `//${stag}[@id=${lit(String(o.id))}]`;
+    else if (o.name && stableId(o.name)) control = `//${stag}[@name=${lit(String(o.name))}]`;
+    else return [];
+    const tag = String(d.tag || '*').toLowerCase();
+    let inner;
+    if (name && !isFieldDesc(d)) {
+      const pred = textPred(d, name);
+      inner = tag + (pred.startsWith('[normalize-space') ? `[translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=${lit(name.toLowerCase())}]` : pred);
+    } else inner = innerOf(d, name);
+    if (inner === tag) {
+      const own = stableClasses(d.classes || []);
+      if (own.length) inner = `${tag}[contains(concat(' ', normalize-space(@class), ' '), ${lit(' ' + own[0] + ' ')})]`;
+    }
+    const cls = stableClasses(o.classes || []);
+    const scope = `ancestor::${String(o.ctag || '*').toLowerCase()}` + (cls.length ? `[contains(concat(' ', normalize-space(@class), ' '), ${lit(' ' + cls[0] + ' ')})]` : '') + '[1]';
+    return [{ findBy: 'BY_XPATH', value: `${control}/${scope}//${inner}` }];
+  }
   function candidatesOf(d) {
     const tag = String(d.tag || '*').toLowerCase();
     const name = elementName(d);
@@ -243,6 +315,12 @@
     if (stableId(d.id)) out.push({ findBy: 'BY_ID', value: d.id });
     const tid = d.testid || {};
     if (TEST_IDS.includes(tid.attr) && stableId(tid.value)) out.push({ findBy: 'BY_CSSSELECTOR', value: `[${tid.attr}=${cssString(tid.value)}]` });
+    for (const [attr, raw] of Object.entries(d.dataIds || {})) {          // the attribute that tells the repeats apart, with the name when there is one
+      const v = String(raw || '').trim();
+      if (!v) continue;
+      const base = (isFieldDesc(d) || tag === 'button') && stableId(d.name) ? `${tag}[name=${cssString(d.name)}]` : tag;
+      out.push({ findBy: 'BY_CSSSELECTOR', value: `${base}[${attr}=${cssString(v)}]` });
+    }
     const attrs = (isFieldDesc(d) || tag === 'button' ? [['name', d.name]] : []).concat([['aria-label', d.ariaLabel], ['placeholder', d.placeholder], ['title', d.title], ['alt', d.alt]]);
     for (const [attr, raw] of attrs) {
       const v = String(raw || '').trim();
@@ -254,17 +332,24 @@
     }
     const href = String(d.href || '');
     if (tag === 'a' && href && !href.includes('?') && !href.slice(1).includes('#') && href.length <= 120 && !/\d{4,}/.test(href)) out.push({ findBy: 'BY_CSSSELECTOR', value: `a[href=${cssString(href)}]` });
-    if (name && !isFieldDesc(d)) out.push({ findBy: 'BY_XPATH', value: `//${tag}${textPred(d, name)}` });
+    if (name && !isFieldDesc(d)) {
+      out.push({ findBy: 'BY_XPATH', value: `//${tag}${textPred(d, name)}` });
+      if (textPred(d, name).startsWith('[normalize-space') && name !== name.toLowerCase()) {
+        out.push({ findBy: 'BY_XPATH', value: `//${tag}[translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')=${lit(name.toLowerCase())}]` });
+      }
+    }
     const label = short(d.label);
     if (label && isFieldDesc(d)) out.push({ findBy: 'BY_XPATH', value: `//label[normalize-space(.)=${lit(label)}]/following::${tag}[1]` });
     if (heading) out.push(...contextForms(d, name, heading));
     const cls = stableClasses(d.classes || []);
     if (cls.length) out.push({ findBy: 'BY_CSSSELECTOR', value: tag + cls.map((c) => '.' + cssIdent(c)).join('') });
+    if (d.owner) out.push(...ownerForms(d, name));
     if (d.anchorPath) out.push({ findBy: 'BY_CSSSELECTOR', value: d.anchorPath });
     out.push({ findBy: 'BY_CSSSELECTOR', value: tag });
     if (d.cssPath) out.push({ findBy: 'BY_CSSSELECTOR', value: d.cssPath });
     return out;
   }
+  const isShown = (x) => { try { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(x).visibility !== 'hidden'; } catch (e) { return false; } };
   function counted(el, d) {
     const out = [];
     for (const c of candidatesOf(d)) {
@@ -275,7 +360,8 @@
           for (let i = 0; i < r.snapshotLength; i += 1) list.push(r.snapshotItem(i));
         } else list = Array.from(document.querySelectorAll(c.findBy === 'BY_ID' ? `[id=${cssString(c.value)}]` : c.value));
       } catch (e) { continue; }
-      out.push({ findBy: c.findBy, value: c.value, count: list.length, position: list.indexOf(el) });
+      const seen = list.length > 1 ? list.filter(isShown) : [];          // (only when hidden copies could matter)
+      out.push({ findBy: c.findBy, value: c.value, count: list.length, position: list.indexOf(el), vcount: list.length > 1 ? seen.length : -1, vposition: seen.indexOf(el) });
     }
     return out;
   }
@@ -573,10 +659,19 @@ input.fld:focus { border-color: #5cc8ff; }
     redraw();
   }
 
+  function diag(what, detail) { call({ kind: 'diag', what, detail: String(detail == null ? '' : detail).slice(0, 4000) }); }
+
   function pickNow(elm, wasChecked) {
     picked = elm;
     hoverEl = null;
-    const d = describe(elm);
+    let d;
+    try { d = describe(elm); } catch (e) {
+      st.card = { title: 'Could not read this element', lines: [String(e && e.message || e)] };
+      st.form = null;
+      redraw();
+      diag('pick-describe-failed', e && e.stack || e);
+      return;
+    }
     if (wasChecked != null) d.current.checked = wasChecked;          // (a check box flips while its click is dispatched; the pick undoes it)
     st.card = { title: friendly(d), lines: ['checking the locator on this page…'] };
     st.form = null;
@@ -651,23 +746,99 @@ input.fld:focus { border-color: #5cc8ff; }
 
   const CALENDAR = '.ui-datepicker, .datepicker, .flatpickr-calendar, .react-datepicker, .pika-single, .daterangepicker, [class*="datepicker" i], [class*="calendar" i]';
   // the day a click on a calendar's cell picks, as YYYY-MM-DD ('' when the cell does not say: a month button, a heading)
-  function dayOf(elm) {
-    const cell = elm.closest('[data-date], td[data-month][data-year]');
-    if (!cell) return '';
-    const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(cell.getAttribute('data-date') || '');
-    if (iso) return iso[0];
-    const y = cell.getAttribute('data-year'), m = cell.getAttribute('data-month'), d = clean(cell.textContent);
-    if (y === null || m === null || !/^\d{1,2}$/.test(d)) return '';
-    return `${y}-${String(+m + 1).padStart(2, '0')}-${d.padStart(2, '0')}`;
+  const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const MONTH_RE = '(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?';
+  const isoOf = (y, m, day) => `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  // a whole date written in words or digits ("Sunday, October 6, 2026", "6 Oct 2026", "2026-10-06"), '' when the text has none
+  function dateFromText(text) {
+    const t = clean(text);
+    let m = /(\d{4})-(\d{2})-(\d{2})/.exec(t);
+    if (m) return m[0];
+    m = new RegExp('(\\d{1,2})(?:st|nd|rd|th)?\\s+' + MONTH_RE + ',?\\s+(\\d{4})', 'i').exec(t);
+    if (m) return isoOf(m[4], MONTH_NAMES.indexOf(m[2].toLowerCase()) + 1, m[1]);
+    m = new RegExp(MONTH_RE + '\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})', 'i').exec(t);
+    if (m) return isoOf(m[3], MONTH_NAMES.indexOf(m[1].toLowerCase()) + 1, m[2]);
+    return '';
   }
+
+  function dayOf(elm) {
+    // jQuery UI: <td data-month="8" data-year="2026"><a data-date="29">29</a></td> (data-date is the DAY number there, months count from 0)
+    const td = elm.closest('td[data-month][data-year]');
+    if (td) {
+      const y = td.getAttribute('data-year'), m = td.getAttribute('data-month'), d = clean(td.textContent);
+      if (/^\d{1,2}$/.test(d)) return `${y}-${String(+m + 1).padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    const cell = elm.closest('[data-date]');
+    if (cell) {
+      const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(cell.getAttribute('data-date') || '');
+      if (iso) return iso[0];
+    }
+    // the cell (or something in it) names the whole date: aria-label / title / hidden text
+    for (let e = elm, depth = 0; e && depth < 4; e = e.parentElement, depth += 1) {
+      const named = dateFromText(`${e.getAttribute('aria-label') || ''} ${e.getAttribute('title') || ''} ${e.getAttribute('data-day') || ''}`)
+        || dateFromText(e.textContent && e.textContent.length < 60 ? e.textContent : '');
+      if (named) return named;
+    }
+    for (const e of elm.querySelectorAll('[aria-label], [title]')) {
+      const named = dateFromText(`${e.getAttribute('aria-label') || ''} ${e.getAttribute('title') || ''}`);
+      if (named) return named;
+    }
+    // a calendar that does not say: the day's number + the month heading of ITS month block ("October 2026"), looked for only inside the
+    // calendar itself (never in the page around it: a "March 2025" in the small print must not become the month), nearest block first
+    const dayEl = elm.closest('a, button, td, [role="gridcell"], [role="button"]') || elm;
+    const dm = /^(?:\D*?)(\d{1,2})(?!\d)/.exec(clean(dayEl.textContent));
+    const d = dm ? dm[1] : '';
+    if (!d) return '';
+    const cal = dayEl.closest(CALENDAR);
+    if (!cal) return '';
+    const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const head = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s*(\d{4})$/i;
+    const iso = (y, m, day) => `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    for (let box = dayEl.parentElement; box; box = box.parentElement) {
+      for (const h of box.querySelectorAll('*')) {
+        if (h.children.length > 3 || h.contains(dayEl) || h.tagName === 'OPTION') continue;
+        const m = head.exec(clean(h.textContent));
+        if (m) return iso(m[2], MONTHS.indexOf(m[1].toLowerCase()) + 1, d);
+      }
+      // month and year kept apart (two selects, or two spans)
+      const mo = box.querySelector('.ui-datepicker-month, [class*="month" i]:not(table):not(td):not(tr)'), yr = box.querySelector('.ui-datepicker-year, [class*="year" i]');
+      if (mo && yr) {
+        const monthText = mo.tagName === 'SELECT' ? clean(mo.selectedOptions[0] && mo.selectedOptions[0].textContent) : clean(mo.textContent);
+        const yearText = yr.tagName === 'SELECT' ? clean(yr.value) : clean(yr.textContent);
+        const mi = MONTHS.indexOf(monthText.slice(0, 3).toLowerCase());
+        if (mi >= 0 && /^\d{4}$/.test(yearText)) return iso(yearText, mi + 1, d);
+      }
+      if (box === cal) break;
+    }
+    return '';
+  }
+
+  // a field a calendar belongs to: read-only, a datepicker's own class, a date type, or a DD/MM/YYYY-style placeholder
+  const isDateInput = (e) => e.readOnly || /datepicker/i.test(String(e.className || '')) || (e.getAttribute('data-cmp-type') || '').toLowerCase() === 'date'
+    || /^[dmy]{1,4}([ ./-][dmy]{1,4}){2}$/i.test((e.getAttribute('placeholder') || '').trim());
+
+  // inside a calendar's own box (an input that merely carries a "hasDatepicker" class is not the calendar)
+  const inCalendar = (e) => { const c = e.closest(CALENDAR); return !!c && !(c instanceof HTMLInputElement || c instanceof HTMLTextAreaElement || c instanceof HTMLSelectElement); };
 
   function onRecClick(ev) {
     if (!recording(ev)) return;
     const elm = target(ev.target);
     if (!elm || elm === host) return;
-    if (!dateWatch && !isText(elm) && elm.closest(CALENDAR)) { send('cal-click', elm, { date: dayOf(elm) }); return; }
+    // a calendar that has just set its field (it sets the value without any event): say so before this next action is recorded, so the date
+    // is not lost when the person moves on faster than the watch's own look
+    if (dateWatch && dateWatch.el !== elm && !inCalendar(elm) && dateWatch.el.value && dateWatch.el.value !== dateWatch.before) {
+      const w = dateWatch;
+      dateWatch = null;
+      send('date-picked', w.el, { value: w.el.value });
+    }
+    if (!dateWatch && !isText(elm) && inCalendar(elm)) {
+      const date = dayOf(elm);
+      if (!date && /\d/.test(clean(elm.textContent)) && clean(elm.textContent).length < 40) diag('calendar-day-unreadable', elm.closest(CALENDAR).outerHTML);
+      send('cal-click', elm, { date, text: clean(elm.textContent).slice(0, 12) });
+      return;
+    }
     if (isText(elm) || elm instanceof HTMLSelectElement) {
-      if (elm instanceof HTMLInputElement && elm.readOnly && !(dateWatch && dateWatch.el === elm)) {
+      if (elm instanceof HTMLInputElement && isDateInput(elm) && !(dateWatch && dateWatch.el === elm)) {
         dateWatch = { el: elm, before: elm.value };
         send('date-open', elm);
       }
@@ -685,6 +856,7 @@ input.fld:focus { border-color: #5cc8ff; }
     if (!recording(ev)) return;
     const elm = ev.target;
     if (!(elm instanceof Element)) return;
+    if (!dateWatch && elm.closest && inCalendar(elm) && (elm instanceof HTMLSelectElement)) return;      // (a calendar's month / year list: not a step)
     if (dateWatch && dateWatch.el === elm) { dateWatch = null; if (elm.value) send('date-picked', elm, { value: elm.value }); return; }
     if (isToggle(elm)) send('toggle', elm, { checked: !!elm.checked });
     else if (elm instanceof HTMLSelectElement) send('select', elm, { value: elm.selectedOptions && elm.selectedOptions.length ? clean(elm.selectedOptions[0].textContent) : '' });
@@ -798,6 +970,7 @@ input.fld:focus { border-color: #5cc8ff; }
         if (grip && pill) { const r = pill.getBoundingClientRect(); st.drag = { dx: ev.clientX - r.left, dy: ev.clientY - r.top }; ev.preventDefault(); }
       }
       if (ev.type === 'pointerup') st.drag = null;
+      if (ev.type === 'mousedown') ev.preventDefault();                 // (pressing the pill must not take the focus from the page's field: its list would close)
       if (ev.type === 'click') { ev.preventDefault(); overlayAction(ev); }
       return;
     }
@@ -857,8 +1030,34 @@ input.fld:focus { border-color: #5cc8ff; }
   window.addEventListener('resize', redraw, { passive: true });
   window.addEventListener('pageshow', (ev) => { if (ev.persisted) hello('back_forward'); });
 
+  // the list a picked item belongs to (or the picked element itself when it is a list): what "the list shows item N" is checked against
+  function listFor() {
+    const el = picked;
+    if (!el || !el.isConnected) return null;
+    const ITEM = 'li, [role="option"], [role="listitem"], tr';
+    const LISTS = 'ul, ol, [role="listbox"], [role="menu"], tbody, table';
+    const shown = (x) => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(x).visibility !== 'hidden'; };
+    const itemsOf = (box) => {
+      const found = Array.from(box.querySelectorAll(ITEM)).filter(shown);
+      return found.length ? found : Array.from(box.children).filter(shown);
+    };
+    let list = null, items = [];
+    const own = itemsOf(el);
+    if (own.length > 1 || el.matches(LISTS)) { list = el; items = own; }
+    else {
+      for (let up = el.parentElement, d = 0; up && d < 6 && up !== document.body; up = up.parentElement, d += 1) {
+        const found = itemsOf(up);
+        if (found.length > 1 || up.matches(LISTS)) { list = up; items = found; break; }
+      }
+    }
+    if (!list) return null;
+    const at = items.findIndex((i) => i === el || i.contains(el));
+    const d = describe(list);
+    return { element: d, checks: counted(list, d), ref: remember(list), n: at >= 0 ? at + 1 : 1, text: at >= 0 ? clean(items[at].innerText || items[at].textContent) : '', count: items.length };
+  }
+
   Object.defineProperty(window, '__rrBuild', {
-    value: Object.freeze({ apply, findAll, choose, picked: () => picked, describe: () => (picked ? describe(picked) : null), ref: (id) => refs.get(id) || null }),
+    value: Object.freeze({ apply, findAll, choose, listFor, picked: () => picked, describe: () => (picked ? describe(picked) : null), ref: (id) => refs.get(id) || null }),
     enumerable: false, configurable: false, writable: false,
   });
 

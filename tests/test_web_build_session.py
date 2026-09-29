@@ -99,8 +99,7 @@ async def test_the_editor_opens_the_site_runs_up_to_a_step_and_asks_before_a_sid
         async with web.aclient() as c:                                    # (opened through the API: the button only differs by headless)
             r = await c.post(f"/api/build/session/{plans}/start", json={"test": "Plans", "headless": True})
             assert r.status_code == 200
-        await js_until(page, "!!document.querySelector('[data-act=\"build-sess-run-to\"]')")
-        assert "Build window" in await page.locator(".sess-bar").inner_text()
+        await js_until(page, "document.querySelector('.sess-bar') && document.querySelector('.sess-bar').textContent.includes('Build window')")
         await page.locator('.scard [data-act="build-pick-step"]').nth(3).click()          # step 4: paid once
         await page.locator('[data-act="build-sess-run-to"]').click()
         await js_until(page, "!!document.querySelector('[role=dialog][aria-label=\"Run it for real?\"]')")
@@ -120,6 +119,23 @@ async def test_the_editor_opens_the_site_runs_up_to_a_step_and_asks_before_a_sid
         await page.locator('[data-act="build-sess-close"]').click()
         await js_until(page, "!!document.querySelector('[data-act=\"build-sess-open\"]')")
         assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_run_up_to_here_opens_the_window_itself_when_it_is_not_open(web, plans):
+    pw, browser, page = await open_ui(web, f"/#/build/{plans}/test/Plans")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length === 4")
+        assert "Build window" not in await page.locator(".sess-bar").inner_text()                # (closed: only "Open the site" and this button)
+        await page.locator('.scard [data-act="build-pick-step"]').nth(1).click()                # step 2
+        await page.locator('[data-act="build-sess-run-to"]').click()
+        await js_until(page, "[...document.querySelectorAll('.scard .tag')].filter(e => e.textContent.trim() === 'ran').length === 2")
+        marks = await page.locator(".scard .tag").evaluate_all("els => els.map(e => e.textContent.trim())")
+        assert marks.count("ran") == 2                                                         # steps 1 and 2, in the window it opened
+        async with web.aclient() as c:
+            await c.post(f"/api/build/session/{plans}/close")
     finally:
         await browser.close()
         await pw.stop()

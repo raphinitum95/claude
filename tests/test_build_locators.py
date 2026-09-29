@@ -85,3 +85,24 @@ def test_what_the_page_sends_is_trimmed_to_known_keys_and_sizes():
     assert "evil" not in desc and len(desc["tag"]) == 500 and len(desc["classes"]) == 20
     assert set(desc["context"]) == {"kind", "tag", "heading", "headingTag", "id", "classes"} and desc["testid"] is None
     assert L.to_desc("not a dict") == {}
+
+
+def test_an_id_shared_by_a_few_elements_beats_a_class_position_and_a_page_wide_tag():
+    desc = L.to_desc({"tag": "input", "id": "cmp-Input", "classes": ["inputField"], "placeholder": "Enter destinations", "cssPath": "body > div > input"})
+    cands = L.candidates(desc)
+    choice = L.choose(checked(cands, {"id": (3, 1), "attribute": (3, 1), "position": (40, 7), "path": (1, 0)}))
+    assert choice.primary.how == "id" and choice.to_json()["index"] == 1 and choice.primary.value == "cmp-Input"
+
+
+def test_a_name_shared_with_many_elements_is_not_a_locator():
+    desc = L.to_desc({"tag": "a", "text": "Albania", "cssPath": "body > ul > li > a"})
+    choice = L.choose(checked(L.candidates(desc), {"text": (500, 425), "position": (500, 425), "path": (1, 0)}))
+    assert choice.primary.how == "path"
+
+
+def test_the_inputs_of_a_repeatable_set_are_told_apart_by_their_duplication_id():
+    desc = L.to_desc({"tag": "input", "name": "insuredAge", "placeholder": "Age", "dataIds": {"data-cmp-duplication-input-id": "t2"}})
+    cands = L.candidates(desc)
+    assert cands[0].value == 'input[name="insuredAge"][data-cmp-duplication-input-id="t2"]'
+    choice = L.choose(checked(cands, {"attribute": (1, 0)}))
+    assert choice.primary.value == cands[0].value and choice.to_json()["index"] == 0

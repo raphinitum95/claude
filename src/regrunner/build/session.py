@@ -203,6 +203,13 @@ class BuildSession:
             keep = {k: v for k, v in event.items() if k not in ("run_id", "diagnosis", "timing", "detail")}
             self.log.append({"seq": self._seq, **keep})
             del self.log[:-LOG_KEEP]
+            if kind == "log" or kind.startswith("build_session_"):          # kept on disk too: what a window did is needed after the window is gone
+                try:
+                    self.folder.mkdir(parents=True, exist_ok=True)
+                    with open(self.folder / "session.log", "a", encoding="utf-8") as fh:
+                        fh.write(json.dumps({k: v for k, v in keep.items() if k != "seq"}, default=str) + "\n")
+                except Exception:
+                    pass
         self.version += 1
 
     def _steps(self) -> list[dict]:
@@ -493,7 +500,10 @@ class BuildSession:
                     asyncio.ensure_future(self.recorder.handle(source, payload))
                 return self.overlay_state()
             self.touch()
-            if kind == "mode":
+            if kind == "diag" and trusted:
+                self.emit("log", level="warning", message=f"overlay: {str(payload.get('what'))[:60]}: {str(payload.get('detail'))[:4000]}")
+            elif kind == "mode":
+                self.emit("log", level="info", message=f"overlay: mode {payload.get('mode')}")
                 mode = payload.get("mode")
                 await self.set_mode(mode if mode in ("pick", "browse", "check", "save", "wait") else "browse", self.pick_for)
             elif kind == "done":
@@ -513,6 +523,7 @@ class BuildSession:
                 asyncio.ensure_future(self._quietly(self.recorder.answer(str(payload.get("id") or ""), str(payload.get("choice") or ""),
                                                                          token=str(payload.get("token") or ""))))
             elif kind == "pick":
+                self.emit("log", level="info", message="overlay: an element was picked")
                 self.which = None
                 frame = source.get("frame") if isinstance(source, dict) else None
                 asyncio.ensure_future(self._picked_quietly(frame, L.to_desc(payload.get("element"))))
@@ -560,16 +571,21 @@ class BuildSession:
         ``ref``: the element is one the overlay remembered for a recorded action, not the pick."""
         which = ("els => els.indexOf(window.__rrBuild.ref(" + json.dumps(ref) + "))") if ref else "els => els.indexOf(window.__rrBuild.picked())"
         for cand in candidates:
-            selector = cand.selector(values)
+            selector = cand.selector(values, visible=False)
             if not selector:
                 continue
             try:
                 loc = frame.locator(selector)
-                cand.count = await asyncio.wait_for(loc.count(), CHECK_S)
-                cand.position = (await asyncio.wait_for(loc.evaluate_all(which), CHECK_S)
-                                 if cand.count else -1)
+                count = await asyncio.wait_for(loc.count(), CHECK_S)
+                position = await asyncio.wait_for(loc.evaluate_all(which), CHECK_S) if count else -1
+                vcount, vposition = -1, -1
+                if count > 1:                                          # hidden copies of a component: count only what can be seen
+                    seen = frame.locator(selector + L.VISIBLE)
+                    vcount = await asyncio.wait_for(seen.count(), CHECK_S)
+                    vposition = await asyncio.wait_for(seen.evaluate_all(which), CHECK_S) if vcount else -1
+                cand.apply_counts(count, position, vcount, vposition)
             except Exception:
-                cand.count, cand.position = 0, -1
+                cand.count, cand.position, cand.visible_only = 0, -1, False
 
     async def _picked(self, frame, desc: dict, variables: dict[str, str] | None = None) -> dict:
         """Work out the locator for the element the overlay picked (``window.__rrBuild.picked()`` in ``frame``)."""
