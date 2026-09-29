@@ -116,3 +116,21 @@ def test_a_new_pages_fingerprint_is_named_from_its_heading_and_its_path():
     assert R.fingerprint_name("", "/purchase/traveler-info/", set()) == "traveler info page"
     assert R.url_path("https://uat.example.test/purchase/payment?step=2#top") == "/purchase/payment" and R.url_path("http://x.test") == "/"
     assert R.pattern_of("REF-12345") == r"^REF\-\d+$" and R.guess_date_format("2027-03-15") == "yyyy-mm-dd" and R.guess_date_format("soon") == ""
+
+
+def test_a_date_near_today_is_kept_as_days_from_today_and_a_far_one_stays_fixed():
+    from datetime import date
+    from regrunner.build.recorder import relative_date
+    today = date(2026, 9, 29)
+    assert relative_date("04/10/2026", today) == '=TEXT(TODAY()+5,"dd/mm/yyyy")'
+    assert relative_date("29/09/2026", today) == '=TEXT(TODAY(),"dd/mm/yyyy")'
+    assert relative_date("2026-10-04", today) == '=TEXT(TODAY()+5,"yyyy-mm-dd")'
+    assert relative_date("14/03/1990", today) == "" and relative_date("not a date", today) == ""
+
+
+def test_a_list_check_needs_the_list_showing_and_writes_check_list_item():
+    from regrunner.build.recorder import check_kinds, check_step
+    desc = {"tag": "ul", "kind": "element", "text": "Albania\nAlgeria", "current": {}}
+    assert next(k for k in check_kinds(desc) if k["id"] == "list_item")["enabled"]
+    step = check_step("list_item", desc, {"findBy": "BY_CSSSELECTOR", "value": "ul.results"}, "Albania")
+    assert step["method"] == "CHECK_LIST_ITEM" and step["outputProperty"] == "1" and step["expected"] == "Albania"

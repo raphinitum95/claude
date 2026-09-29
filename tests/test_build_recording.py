@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from regrunner.build.recorder import relative_date
 from regrunner.build.session import BuildSession
 from regrunner.config import Config
 from regrunner.workbook.builder import BuildDocument, read_fingerprints
@@ -253,7 +254,7 @@ async def test_the_calendars_clicks_become_one_pick_date_step_and_the_raw_clicks
         await page.click("#next")
         await page.click("[data-date='2027-03-15']")
         await quiet(s, 1)
-        assert steps(s) == [("PICK_DATE", "{DEPARTURE_DATE}")] and params(s)["DEPARTURE_DATE"] == ["15/03/2027"]
+        assert steps(s) == [("PICK_DATE", "{DEPARTURE_DATE}")] and params(s)["DEPARTURE_DATE"] == [relative_date("15/03/2027") or "15/03/2027"]
         widget = next(p for p in s.recorder.prompts if p["kind"] == "widget")
         assert widget["text"].startswith("4 clicks became one step")
         await s.recorder.answer(widget["id"], "raw")
@@ -454,5 +455,56 @@ async def test_recording_an_empty_test_starts_with_an_open_step_on_the_domain(si
         s.run("to", row=s._steps()[-1]["row"])                # what was recorded replays on its own
         state = await settled(s)
         assert results(state) == [(1, "PASSED"), (2, "PASSED")]
+    finally:
+        await s.close()
+
+
+async def test_check_and_pick_work_while_recording_and_recording_carries_on_after_them(session):
+    s = session
+    page = s._page()
+    await s.recorder.start(after=2)
+    await page.click("#offers")                                   # a recorded click...
+    await quiet(s, 1)
+    await s.set_mode("check", None)                                 # ...then the pill's Check, then a click on the page (the pick, never recorded)
+    await s.broadcast()
+    await page.click("#total")
+    await until(lambda: asyncio.sleep(0, s.pick is not None and s.pick.get("purpose") == "check"))
+    assert s.mode == "browse" and s.recorder.on and s.recorder.count == 1
+    await s.recorder.add_check("shown")
+    assert [m for m, _ in steps(s)] == ["TICK", "EXIST"]           # the check went in after the recorder's cursor
+    await page.click("#offers")                                   # ...and recording carries on after the check
+    await quiet(s, 3)
+    assert [m for m, _ in steps(s)] == ["TICK", "EXIST", "UNTICK"]
+
+
+async def test_a_plain_pick_while_recording_offers_the_checks_instead_of_doing_nothing(session):
+    s = session
+    await s.recorder.start(after=2)
+    await s.set_mode("pick", None)
+    assert s.mode == "check"
+
+
+async def test_a_calendar_opened_from_a_box_that_is_not_a_field_still_becomes_one_pick_date_step(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_datebox.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#depart-box")
+        await quiet(s, 1)
+        assert steps(s) == [("CLICK", "")]
+        await page.click("#nx")
+        await page.click("#nx")
+        await page.click("#days td:nth-of-type(1) a >> text=15")
+        await quiet(s, 1)
+        assert len(steps(s)) == 1 and steps(s)[0][0] == "PICK_DATE"          # the opener's CLICK is gone: PICK_DATE opens the calendar itself
+        assert "depart-box" in step_at(s, 2)["locator"]["value"]
+        value = list(params(s).values())[-1][0]
+        assert value in (relative_date("15/03/2027"), "15/03/2027")
+        widget = next(p for p in s.recorder.prompts if p["kind"] == "widget")
+        assert widget["text"].startswith("4 clicks became one step")
+        s.run("to", row=3)
+        state = await settled(s)
+        assert results(state) == [(1, "PASSED"), (2, "PASSED")], {k: v for k, v in state["replay"]["results"][-1].items() if k in ("error", "detail", "notes", "diagnosis")}
+        assert (await s._page().inner_text("#depart-box")) == "15/03/2027"
     finally:
         await s.close()

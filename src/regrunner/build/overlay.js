@@ -135,6 +135,27 @@
     return parts.join(' > ');
   }
 
+  // a short css path from the nearest ancestor that is unique on its own (stable id, or tag + stable classes found once): "specific to what was
+  // chosen" without leaning on the element's own tag or on its position in the whole page.  '' when no ancestor anchors it.
+  function anchorPath(el) {
+    const parts = [];
+    const own = (e) => { const cls = stableClasses(Array.from(e.classList || [])).slice(0, 2); return e.tagName.toLowerCase() + cls.map((c) => '.' + cssIdent(c)).join(''); };
+    let e = el;
+    for (let depth = 0; e && e.nodeType === 1 && e !== document.documentElement && e !== document.body && depth < 8; depth += 1, e = e.parentElement) {
+      let seg;
+      if (stableId(e.id) && /^[A-Za-z][\w-]*$/.test(e.id)) { parts.unshift('#' + e.id); return depth === 0 && parts.length === 1 ? '' : parts.join(' > '); }
+      seg = own(e);
+      const parent = e.parentElement;
+      const same = parent ? Array.from(parent.children).filter((x) => x.matches(seg)) : [e];
+      if (same.length > 1) seg += `:nth-of-type(${Array.from(parent.children).filter((x) => x.tagName === e.tagName).indexOf(e) + 1})`;
+      parts.unshift(seg);
+      if (depth > 0 && seg.includes('.')) {
+        try { if (document.querySelectorAll(seg).length === 1) return parts.join(' > '); } catch (err) { /* keep climbing */ }
+      }
+    }
+    return '';
+  }
+
   function describe(el) {
     const tag = el.tagName.toLowerCase();
     const name = nameOf(el);
@@ -150,7 +171,7 @@
       alt: el.getAttribute('alt') || '', href: tag === 'a' ? (el.getAttribute('href') || '') : '', value: el.getAttribute('value') || '',
       classes: Array.from(el.classList || []), text: short(el.innerText), label: labelOf(el),
       context: sameNameCount(el, name) > 1 || !name ? contextOf(el, name) : null,
-      cssPath: cssPath(el), frame: TOP ? '' : (window.name || location.href),
+      cssPath: cssPath(el), anchorPath: anchorPath(el), frame: TOP ? '' : (window.name || location.href),
       current: { value: 'value' in el && typeof el.value === 'string' && (el.getAttribute('type') || '').toLowerCase() !== 'password' ? el.value.slice(0, 200) : '', checked: !!el.checked,
         enabled: !el.disabled && el.getAttribute('aria-disabled') !== 'true', visible, selected },
     };
@@ -239,6 +260,7 @@
     if (heading) out.push(...contextForms(d, name, heading));
     const cls = stableClasses(d.classes || []);
     if (cls.length) out.push({ findBy: 'BY_CSSSELECTOR', value: tag + cls.map((c) => '.' + cssIdent(c)).join('') });
+    if (d.anchorPath) out.push({ findBy: 'BY_CSSSELECTOR', value: d.anchorPath });
     out.push({ findBy: 'BY_CSSSELECTOR', value: tag });
     if (d.cssPath) out.push({ findBy: 'BY_CSSSELECTOR', value: d.cssPath });
     return out;
@@ -627,10 +649,23 @@ input.fld:focus { border-color: #5cc8ff; }
     setTimeout(look, 500);
   }
 
+  const CALENDAR = '.ui-datepicker, .datepicker, .flatpickr-calendar, .react-datepicker, .pika-single, .daterangepicker, [class*="datepicker" i], [class*="calendar" i]';
+  // the day a click on a calendar's cell picks, as YYYY-MM-DD ('' when the cell does not say: a month button, a heading)
+  function dayOf(elm) {
+    const cell = elm.closest('[data-date], td[data-month][data-year]');
+    if (!cell) return '';
+    const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(cell.getAttribute('data-date') || '');
+    if (iso) return iso[0];
+    const y = cell.getAttribute('data-year'), m = cell.getAttribute('data-month'), d = clean(cell.textContent);
+    if (y === null || m === null || !/^\d{1,2}$/.test(d)) return '';
+    return `${y}-${String(+m + 1).padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
   function onRecClick(ev) {
     if (!recording(ev)) return;
     const elm = target(ev.target);
     if (!elm || elm === host) return;
+    if (!dateWatch && !isText(elm) && elm.closest(CALENDAR)) { send('cal-click', elm, { date: dayOf(elm) }); return; }
     if (isText(elm) || elm instanceof HTMLSelectElement) {
       if (elm instanceof HTMLInputElement && elm.readOnly && !(dateWatch && dateWatch.el === elm)) {
         dateWatch = { el: elm, before: elm.value };

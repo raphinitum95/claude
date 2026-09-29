@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 from ..config import load_env_file
 from ..engine import checks
 from ..engine.session import FrameStep
-from ..workbook.builder import SIDE_EFFECT_WORDS, BuildError, make_token, read_fingerprints
+from ..workbook.builder import SIDE_EFFECT_WORDS, BuildError, auto_name, describe_target, make_token, read_fingerprints
 from ..workbook.sheet import cell_text
 from ..workbook.variables import secret_value
 from . import locators as L
@@ -65,12 +65,34 @@ def is_date_field(desc: dict) -> bool:
     return (desc.get("type") or "").lower() in ("date", "datetime-local") or checks.looks_like_date_format(desc.get("placeholder") or "")
 
 
+_GENERIC_TARGETS = {"the element", "link", "field", "button", "list", "box", "label", "image", "frame", "heading", "item", "option", "table"}
+
+
 def looks_like_date(text: str) -> bool:
     try:
         checks.parse_date(text)
         return True
     except ValueError:
         return False
+
+
+RELATIVE_DATE_DAYS = (-30, 800)                       # a date this close to today is "N days from today"; further away (a birth date) stays as typed
+
+
+def relative_date(text: str, today: Any = None) -> str:
+    """``=TEXT(TODAY()+5,"dd/mm/yyyy")`` for a date 5 days from today, in the shape ``text`` was written in ("" when it is not a date, or is
+    so far from today that it is a fixed date on purpose): the recorded test then picks "5 days from today" on any day it is run."""
+    from datetime import date
+    try:
+        picked = checks.parse_date(text)
+    except ValueError:
+        return ""
+    days = (picked - (today or date.today())).days
+    fmt = guess_date_format(text)
+    if not fmt or not RELATIVE_DATE_DAYS[0] <= days <= RELATIVE_DATE_DAYS[1]:
+        return ""
+    offset = "" if days == 0 else f"+{days}" if days > 0 else str(days)
+    return f'=TEXT(TODAY(){offset},"{fmt}")'
 
 
 def guess_date_format(text: str) -> str:
@@ -160,6 +182,7 @@ CHECK_KINDS = (
     ("gt", "Numbers & patterns", "Greater than"), ("lt", "Numbers & patterns", "Less than"), ("between", "Numbers & patterns", "Between"),
     ("regex", "Numbers & patterns", "Matches pattern"), ("date_format", "Numbers & patterns", "Date format"),
     ("count", "Numbers & patterns", "Item count"),
+    ("list_item", "List", "List shows item N"),
 )
 WAIT_KINDS = (("wait_shown", "Wait until", "It shows"), ("wait_gone", "Wait until", "It is gone"), ("wait_text", "Wait until", "Its text is"))
 SAVE_KINDS = (("save", "Save", "Save as a variable"),)
@@ -220,6 +243,9 @@ def check_kinds(desc: dict, purpose: str = "check", similar: int | None = None) 
             add(kid, group, label, bool(fmt), fmt, "its text is not a date")
         elif kid == "count":
             add(kid, group, label, similar is not None, str(similar or ""), "nothing like it to count")
+        elif kid == "list_item":
+            add(kid, group, label, kind in ("element", "item", "text") or desc.get("tag") in ("ul", "ol", "div", "table", "tbody", "section"),
+                text.split("\n")[0][:80] if text else "", "not a list")
     return out
 
 
@@ -273,6 +299,9 @@ def check_step(kind: str, desc: dict, locator: dict, expected: str, *, token: st
         if error:
             raise BuildError(error, "expected", 400)
         fields.update(method="CHECK_DATE_FORMAT", expected=expected)
+    elif kind == "list_item":
+        need("item text")
+        fields.update(method="CHECK_LIST_ITEM", outputProperty="1", expected=expected, match="exact")
     elif kind == "count":
         need("count")
         sim = similar or locator
@@ -366,6 +395,7 @@ class Recorder:
         self._frame = None                           # ...and the frame (None = the window's page itself)
         self._urls: dict[int, str] = {}              # the last URL each window showed (id(page) -> url)
         self._widget: dict | None = None             # clicks through a calendar, not written yet
+        self._cal: dict | None = None                # a calendar opened by a click on anything (not a read-only field): its opener + held clicks
         self._last: dict | None = None               # the last step written (for a suggestion to join a typing step)
         self._version = -1                           # the document version right after the recorder's last write
         self.recorded: list[int] = []                # the rows this recording wrote (kept right as rows move), for the summary
@@ -542,6 +572,12 @@ class Recorder:
         desc = L.to_desc(p.get("element"))
         if frame is None or page is None or (what != "back" and not desc):
             return
+        if what == "cal-click" and self._widget is not None:
+            what = "click"                                             # (a read-only date field's own calendar handling has it)
+        if what == "cal-click":
+            await self._calendar_click(frame, page, desc, p)
+            return
+        self._cal = None
         w = self._widget
         if w is not None and time.monotonic() - w["started"] > WIDGET_S:
             await self._flush_widget()
@@ -668,6 +704,22 @@ class Recorder:
                 return
 
     # -- writing steps ----------------------------------------------------------------------------------------------------------------------
+    def _named(self, fields: dict, desc: dict | None) -> dict:
+        """The step with a name that says *which* element it acts on, when the builder's own sentence (made from the locator alone) would
+        not: a bare ``a`` #425 reads "Click link", the recorder knows it is the "Albania" link.  A sentence the builder can already make
+        well stays automatic (it follows variable renames)."""
+        if not desc or fields.get("name") or not fields.get("method"):
+            return fields
+        target = L.descriptive_target(desc)
+        if not target:
+            return fields
+        if describe_target(str(fields.get("locator") or ""), "") not in _GENERIC_TARGETS:
+            return fields
+        variables = {h.upper() for h in self._variables_now()}
+        value = str(fields.get("value") or "")
+        name = auto_name(str(fields["method"]), target=target, value=value, expected=str(fields.get("expected") or ""), variables=variables)
+        return {**fields, "name": name}
+
     def _insert_op(self, fields: dict, after: int | None) -> dict:
         op = {"op": "insert_step", "test": self._test(), "step": {k: v for k, v in fields.items() if v not in (None, "", [])}}
         if after is not None:
@@ -702,7 +754,7 @@ class Recorder:
         for st in switches:
             ops.append(self._insert_op(st, after))
             after = None if after is None else after + 1
-        ops.append(self._insert_op(fields, after))
+        ops.append(self._insert_op(self._named(fields, desc), after))
         applied = await self._apply(ops)
         rows = [a["row"] for a in applied if a.get("op") == "insert_step"]
         row = rows[-1]
@@ -776,12 +828,13 @@ class Recorder:
             await self._write(frame, page, fields, "type", extra_ops=ops, prompt=prompt, desc=desc)
             return
         sheet, headers, _ = self._param_rows()
+        dynamic = relative_date(value) if method == "PICK_DATE" else ""          # Q51: "5 days from today", not the day it was recorded on
         if not sheet:
-            fields["value"] = value
+            fields["value"] = dynamic or value
             await self._write(frame, page, fields, "type", desc=desc)
             return
         now = self._variables_now()
-        reuse = next((h for h, v in now.items() if v == value and value != ""), None)
+        reuse = next((h for h, v in now.items() if v == value and value != ""), None) if not dynamic else None
         ops: list[dict] = []
         if reuse:
             token, tag = reuse, "reused"
@@ -789,11 +842,13 @@ class Recorder:
         else:
             avoid = {str(v) for v in (loc.get("value"), desc.get("id"), desc.get("name"), loc.get("findBy")) if v}
             token, tag = token_for(label, {h.upper() for h in headers}, avoid=avoid), "new"
-            ops = [{"op": "add_variable", "token": token, "label": label, "sheet": sheet, "value": value}]
-            detail = f"New variable {token} in {sheet}, “{value}” in each data row: change a row's value to try other data."
+            ops = [{"op": "add_variable", "token": token, "label": label, "sheet": sheet, "value": dynamic or value}]
+            detail = (f"New variable {token} in {sheet}: the date you picked ({value}) is kept as today plus/minus days ({dynamic}), so it stays in the "
+                      "future whenever the test runs. Choose “fixed” to keep exactly that day." if dynamic else
+                      f"New variable {token} in {sheet}, “{value}” in each data row: change a row's value to try other data.")
         fields["value"] = "{" + token + "}"
         prompt = {"kind": "variable", "token": token, "tag": tag, "text": f"You typed “{value}”: kept as the variable {{{token}}}.",
-                  "detail": detail, "choices": ["keep", "fixed", "rename"], "ref": p.get("ref"), "_value": value, "_label": label}
+                  "detail": detail, "choices": ["keep", "fixed", "rename"], "ref": p.get("ref"), "_value": value, "_cell": dynamic or value, "_label": label}
         await self._write(frame, page, fields, "type", extra_ops=ops, prompt=prompt, desc=desc)
 
     def _secret_for(self, label: str, value: str) -> tuple[str, str]:
@@ -851,6 +906,50 @@ class Recorder:
                   "detail": "The calendar's clicks are not kept (the engine opens the calendar itself).", "choices": ["raw", "dismiss"],
                   "_raw": raw, "_version": self._version}
         self._add_prompt(widget)
+
+    async def _calendar_click(self, frame, page, desc: dict, p: dict) -> None:
+        """A click inside a calendar that something other than a read-only field opened (a "Depart" box, an icon).  The click that opened it was
+        already written as a CLICK; the month buttons are held back, and the click on a day turns the opener into one PICK_DATE step with the
+        day as a date variable (a second day in the same calendar, such as a return date, is another PICK_DATE on the same opener)."""
+        cal = self._cal
+        last = self._last
+        if cal is None:
+            if last is None or last.get("what") != "click" or last.get("page") is not page or last.get("desc") is None:
+                await self._click(frame, page, desc, p)                 # nothing opened it that we saw: written as it was
+                return
+            cal = self._cal = {"row": last["row"], "fields": dict(last["fields"]), "desc": last["desc"], "frame": last["frame"], "page": page,
+                               "clicks": [], "opened": True}
+        loc = await self._locate(frame, desc, p)
+        cal["clicks"].append((desc, loc))
+        day = str(p.get("date") or "")
+        if not day:
+            return                                                       # (Next month, Previous month...)
+        try:
+            picked = checks.parse_date(day)
+        except ValueError:
+            return
+        value = f"{picked:%d/%m/%Y}"
+        fields = cal["fields"]
+        opener = {"findBy": fields.get("findBy"), "value": fields.get("locator"), "index": fields.get("index"), "backups": fields.get("backups") or []}
+        raw = [{"method": "CLICK", **{k: v for k, v in fields.items() if k in ("findBy", "locator", "index", "backups")}}] \
+            + [{"method": "CLICK", **self._loc_fields(loc)} for _, loc in cal["clicks"]]
+        if cal["opened"]:                                                # the opener's own CLICK step goes: PICK_DATE opens the calendar itself
+            row = cal["row"]
+            await self._apply([{"op": "delete_steps", "test": self._test(), "rows": [row]}])
+            self._shift(row + 1, -1)
+            self.recorded = [r for r in self.recorded if r != row]
+            self.count -= 1
+            if self.cursor == row:
+                self.cursor = row - 1 if row > 2 else None
+            cal["opened"] = False
+        cal["clicks"] = []
+        await self._typed(cal["frame"], page, cal["desc"], {"ref": None}, value, secret=False, method="PICK_DATE", loc=opener)
+        prompt = self.prompts[-1] if self.prompts and self.prompts[-1].get("row") == self.cursor else None
+        name = L.element_name(cal["desc"]) or L.descriptive_target(cal["desc"]) or "the date field"
+        self._add_prompt({"kind": "widget", "widget": "date", "row": self.cursor, "n": self.s._n_of(self.cursor),
+                          "text": f"{len(raw)} clicks became one step: pick date {('{' + prompt['token'] + '}') if prompt else value} in {name}.",
+                          "detail": "The calendar's clicks are not kept (the engine opens the calendar itself).", "choices": ["raw", "dismiss"],
+                          "_raw": raw, "_version": self._version})
 
     async def _flush_widget(self) -> None:
         """A calendar that never set its field (or was left): its clicks are written as they were."""
@@ -1039,7 +1138,7 @@ class Recorder:
         header = next((h for h in headers if token and h.upper() == token.upper()), None)
         new_value = value if choice == "fixed" else "{" + (header or token) + "}"
         add = [] if choice == "fixed" or header else [{"op": "add_variable", "token": token, "label": prompt["_label"], "sheet": sheet,
-                                                         "value": value}]
+                                                         "value": prompt.get("_cell", value)}]
         if self._latest(prompt):
             # nothing else changed since: take the recorded edit back and write it again the new way (no unused column is left behind)
             await asyncio.to_thread(self.s.doc.undo)

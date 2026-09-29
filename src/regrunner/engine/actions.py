@@ -1001,7 +1001,7 @@ async def _typed_fields_hold(ctx: StepContext, current_key: str) -> None:
 # so it ends the run of typing steps that is being protected.
 _TYPING_RUN_KEEPS = {"SET", "WRITE", "WAIT", "OUTPUT", "EXIST", "SCREENSHOT", "SWITCHTOFRAME", "SWITCHTODEFAULT", *NO_PAGE_METHODS,
                      "ASSERT_PAGE", "WAIT_UNTIL", "CHECK_VALUE", "CHECK_REGEX", "CHECK_COMPARE", "CHECK_COUNT", "CHECK_ENABLED", "CHECK_CHECKED",
-                     "CHECK_SELECTED", "CHECK_DATE_FORMAT"}      # (they only look at the page)
+                     "CHECK_SELECTED", "CHECK_DATE_FORMAT", "CHECK_LIST_ITEM"}      # (they only look at the page)
 
 
 _NO_PAGE_GATE = {"OPEN", "QUIT", "WAIT", "BREAK", "STOP",          # these do not depend on the current document
@@ -1738,8 +1738,14 @@ async def pick_date(ctx: StepContext) -> None:
     else:
         await _pick_from_calendar(ctx, res, target)
     shown = (await _field_value(res.locator) or "").strip()
+    is_field = info["tag"] in ("INPUT", "TEXTAREA", "SELECT")
+    if not shown and not is_field:                                     # a box that only shows the date (a "Depart" div): read what it says now
+        try:
+            shown = " ".join((await res.locator.first.inner_text(timeout=800)).split())
+        except Exception:
+            shown = ""
     ctx.out.output = shown
-    if not shown:
+    if not shown and is_field:
         raise ActionError(f"The date {target:%d/%m/%Y} was picked but the field is empty")
     try:
         got = checks.parse_date(shown)
@@ -1993,6 +1999,55 @@ async def check_selected(ctx: StepContext) -> None:
         ok = expected.upper() in actual.upper() if contains else expected == actual.strip()
         return ok, f"the selected option is {actual!r}, expected {expected!r}"
     await _check_element(ctx, "selected", _SELECTED_JS, judge, not_applicable="CHECK_SELECTED: the element is not a <select>")
+
+
+_LIST_ITEM_JS = """(e, n) => {
+  const shown = x => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(x).visibility !== 'hidden'; };
+  if (!shown(e)) return 'H:';
+  let items = Array.from(e.querySelectorAll('li, [role="option"], [role="listitem"], tr')).filter(shown);
+  if (!items.length) items = Array.from(e.children).filter(shown);
+  if (items.length < n) return 'N:' + items.length;
+  return 'T:' + (items[n - 1].innerText || items[n - 1].textContent || '').replace(/\\s+/g, ' ').trim();
+}"""
+
+
+@action("CHECK_LIST_ITEM", element=True)
+async def check_list_item(ctx: StepContext) -> None:
+    """A list that must be *showing* (a suggestion list, a dropdown's options): its Nth visible item (Output_Property, blank = 1) against
+    Expected_Value (same text; Contains=Y = contains it, case-insensitive).  A list that is not visible fails, whatever the page holds in its DOM."""
+    raw = str(ctx.step.output_property or "").strip()
+    try:
+        number = int(float(raw)) if raw else 1
+        if number < 1:
+            raise ValueError
+    except ValueError:
+        raise _needs(ctx, "CHECK_LIST_ITEM: Output_Property is the item number (1 = the first item)") from None
+    expected = normalize_expected(ctx.step.expected).strip()
+    contains = ctx.step.contains and not ctx.step.exact_match
+
+    def judge(v: str) -> tuple[bool, str]:
+        if v.startswith("H:"):
+            return False, "the list is not showing"
+        if v.startswith("N:"):
+            return False, f"the list shows {v[2:]} item{'s' if v[2:] != '1' else ''}, no item {number}"
+        actual = v[2:]
+        ok = expected.upper() in actual.upper() if contains else expected == actual.strip()
+        return ok, f"item {number} of the list is {actual!r}, expected {expected!r}"
+    res = await ctx.element()
+    if res is None:
+        return
+
+    async def read() -> str:
+        return str(await res.locator.evaluate(_LIST_ITEM_JS, number, timeout=2000))
+    limit = _check_limit(ctx)
+    with _patient(ctx, limit, "the list item", "the list item did not appear") as pat:
+        value = await _poll(read, lambda v: judge(v)[0], limit, ctx.cfg.timeouts.poll_ms / 1000, ctx.cfg.output.stable_ms,
+                            ctx.cfg.output.stable_max_ms, give_up=pat.give_up)
+    ok, why = judge(value)
+    ctx.out.output, ctx.out.check = value[2:], "list_item"
+    if not ok:
+        ctx.out.check_failed = why
+        ctx.out.notes.append(why)
 
 
 @action("CHECK_DATE_FORMAT", element=True)

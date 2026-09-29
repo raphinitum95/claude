@@ -72,7 +72,7 @@ UNMAPPED_RE = re.compile(r"\{\?([A-Za-z_][A-Za-z0-9_]*)\}")
 
 FLOW_KEYWORDS = ("IF", "ELSE", "END_IF", "ITERATION_START", "ITERATION_END")
 CHECK_KEYWORDS = ("CHECK_VALUE", "CHECK_REGEX", "CHECK_COMPARE", "CHECK_COUNT", "CHECK_ENABLED", "CHECK_CHECKED", "CHECK_SELECTED",
-                  "CHECK_DATE_FORMAT")
+                  "CHECK_DATE_FORMAT", "CHECK_LIST_ITEM")
 NEW_KEYWORDS = ("SET_VARIABLE", "JSON_READ", *FLOW_KEYWORDS, "CALL_TEST", "ASSERT_PAGE", "WAIT_UNTIL", "DISMISS_IF_SHOWN", "PICK_DATE",
                 "CHOOSE_SUGGESTION", *CHECK_KEYWORDS)
 NEW_ELEMENT_KEYWORDS = {"WAIT_UNTIL", "DISMISS_IF_SHOWN", "PICK_DATE", "CHOOSE_SUGGESTION", *CHECK_KEYWORDS}
@@ -314,7 +314,7 @@ def auto_name(method: str, *, target: str = "", value: str = "", expected: str =
         "CHECK_VALUE": f"Check {t} value {how} {e}", "CHECK_REGEX": f"Check {t} matches {e}", "CHECK_COMPARE": f"Check {t} is {output_property.lower() or 'eq'} {e}",
         "CHECK_COUNT": f"Check there are {e} {t}", "CHECK_ENABLED": f"Check {t} is {'enabled' if is_true(expected) or not expected else 'disabled'}",
         "CHECK_CHECKED": f"Check {t} is {'ticked' if is_true(expected) or not expected else 'not ticked'}",
-        "CHECK_SELECTED": f"Check {e} is chosen in {t}", "CHECK_DATE_FORMAT": f"Check {t} is a date like {e}",
+        "CHECK_SELECTED": f"Check {e} is chosen in {t}", "CHECK_LIST_ITEM": f"Check item {output_property or 1} of {t} is {e}", "CHECK_DATE_FORMAT": f"Check {t} is a date like {e}",
         "ASK_USER": f"Ask a person for {s or v or 'a value'}", "PROMPT": f"Ask a person for {s or v or 'a value'}",
         "GET_GOOGLE_TOKEN": "Get the one-time sign-in code", "ALERT_OK": "Accept the alert", "ALERT_CANCEL": "Dismiss the alert",
         "ALERT_TEXT_OUT": f"Save the alert text as {s}" if s else "Read the alert text", "GET_CURRENT_URL": f"Save the page address as {s}" if s else "Read the page address",

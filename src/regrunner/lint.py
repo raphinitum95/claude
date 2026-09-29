@@ -228,7 +228,7 @@ def builder_problems(model: dict) -> list[dict]:
             # checks without an expected value
             if not str(s["expected"]).strip() and (
                     (m in ("OUTPUT", "CHECK_VALUE") and s["match"]) or m in ("CHECK_REGEX", "CHECK_COMPARE", "CHECK_COUNT", "CHECK_SELECTED",
-                                                                             "CHECK_DATE_FORMAT")
+                                                                             "CHECK_DATE_FORMAT", "CHECK_LIST_ITEM")
                     or (m == "WAIT_UNTIL" and s["outputProperty"].upper() == "TEXT")):
                 add("warning", "missing_expected", "this check has no expected value, so it compares with an empty text", tid, s)
             # side effects (Q13)

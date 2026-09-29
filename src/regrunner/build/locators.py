@@ -72,7 +72,7 @@ def lit(text: str) -> str:
 class Candidate:
     findby: str                  # BY_ID | BY_CSSSELECTOR | BY_XPATH (the legacy vocabulary: FindBy)
     value: str                   # FindBy_Value
-    how: str                     # id | testid | attribute | text | context | position | path
+    how: str                     # id | testid | attribute | text | context | anchor | position | path
     index_needed: bool = False   # only finds the element as the n-th match (Index)
     count: int = -1              # filled by the live check: how many elements match
     position: int = -1           # ...and where the picked element is among them (-1: not at all)
@@ -117,6 +117,26 @@ def element_name(desc: dict) -> str:
         text = short_text(desc.get(key) or "")
         if text:
             return text
+    return ""
+
+
+def descriptive_target(desc: dict) -> str:
+    """Words for a step's target that always say *which* element: its name/label/text, else its id or name attribute, else its container's
+    heading, else its most telling class (``"Albania" link``, ``first name text field``, ``link in "Flights"``, ``drop screen element``)."""
+    kind = kind_word(desc)
+    is_field = _is_field(desc)
+    text = element_name(desc)
+    if text:
+        return f"{text.lower()} {kind}" if is_field else f'"{text}" {kind}'
+    for key in ("name", "id"):
+        value = str(desc.get(key) or "")
+        if value and stable_id(value):
+            return f"{re.sub(r'[_.-]+', ' ', re.sub(r'(?<=[a-z0-9])(?=[A-Z])', ' ', value)).lower().strip()} {kind}"
+    heading = short_text((desc.get("context") or {}).get("heading") or "")
+    if heading:
+        return f'{kind} in "{heading}"'
+    for cls in stable_classes(desc.get("classes") or []):
+        return f"{re.sub(r'[_.-]+', ' ', re.sub(r'(?<=[a-z0-9])(?=[A-Z])', ' ', cls)).lower().strip()} {kind}"
     return ""
 
 
@@ -245,6 +265,9 @@ def candidates(desc: dict, *, name_as: str = "", context_as: str = "") -> list[C
     classes = stable_classes(desc.get("classes") or [])
     if classes:
         out.append(Candidate("BY_CSSSELECTOR", tag + "".join("." + _css_ident(c) for c in classes), "position", index_needed=True))
+    anchor = str(desc.get("anchorPath") or "")
+    if anchor:
+        out.append(Candidate("BY_CSSSELECTOR", anchor, "anchor"))
     out.append(Candidate("BY_CSSSELECTOR", tag, "position", index_needed=True))
     path = str(desc.get("cssPath") or "")
     if path:
@@ -286,8 +309,9 @@ def choose(checked: list[Candidate]) -> Choice:
     unique = [c for c in checked if c.unique and c.how != "path"]
     positional = [c for c in checked if c.index_needed and c.position >= 0]
     path = [c for c in checked if c.how == "path" and c.unique]
-    primary = unique[0] if unique else positional[0] if positional else path[0] if path else None
-    rest = [c for c in [*unique, *positional[:1], *path] if c is not primary]
+    # a path from the element's own ancestors is specific to it; "the 425th <a> on the page" is not, so it is the last resort
+    primary = unique[0] if unique else path[0] if path else positional[0] if positional else None
+    rest = [c for c in [*unique, *path, *positional[:1]] if c is not primary]
     return Choice(primary, rest[:MAX_BACKUPS], list(checked))
 
 
@@ -349,9 +373,9 @@ def to_desc(value: Any) -> dict:
     if not isinstance(value, dict):
         return {}
     keep = ("tag", "kind", "id", "name", "type", "testid", "ariaLabel", "placeholder", "title", "alt", "href", "value", "classes", "text",
-            "label", "context", "cssPath", "frame", "current")
+            "label", "context", "cssPath", "anchorPath", "frame", "current")
     out = {k: value.get(k) for k in keep if k in value}
-    for key in ("tag", "kind", "id", "name", "type", "ariaLabel", "placeholder", "title", "alt", "href", "value", "text", "label", "cssPath", "frame"):
+    for key in ("tag", "kind", "id", "name", "type", "ariaLabel", "placeholder", "title", "alt", "href", "value", "text", "label", "cssPath", "anchorPath", "frame"):
         if key in out:
             out[key] = str(out[key] or "")[:500]
     out["classes"] = [str(c)[:80] for c in (out.get("classes") or [])][:20] if isinstance(out.get("classes"), list) else []

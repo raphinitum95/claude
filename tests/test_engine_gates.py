@@ -205,3 +205,20 @@ async def test_a_backup_locator_that_finds_the_element_is_reported_with_a_screen
     (event,) = [e for e in events if e["type"] == "backup_locator_suggestion"]
     assert event["locator"] == "css=[data-testid=pay]" and event["matches"] == 1 and (run_dir / event["screenshot"]).is_file()
     assert steps["nothing was paid"].status == "PASSED"                  # the backup was only looked at, never clicked
+
+
+async def test_check_list_item_needs_the_list_to_be_showing_and_reads_the_nth_item(site, make_cfg, tmp_path):
+    wb = book(tmp_path / "li.xlsx", {
+        "Hidden": [open_page(), ("CHECK_LIST_ITEM", "nothing typed yet", css("#city-list", Output_Property="1", Expected_Value="Sydney"))],
+        "Shown": [open_page(), ("SET", "type", css("#city", Value="syd")),
+                  ("CHECK_LIST_ITEM", "second item", css("#city-list", Output_Property="2", Expected_Value="Sydney Airport")),
+                  ("CHECK_LIST_ITEM", "first, wrong", css("#city-list", Output_Property="1", Expected_Value="Melbourne")),
+                  ("CHECK_LIST_ITEM", "fourth", css("#city-list", Output_Property="4", Expected_Value="Sydney"))]},
+        environments=envs(site))
+    result, _, _ = await run(make_cfg, wb, ["Hidden", "Shown"])
+    hidden, shown = result.tests
+    assert hidden.status == "FAILED" and any("list is not showing" in n for n in by_name(hidden)["nothing typed yet"].notes)
+    steps = by_name(shown)
+    assert steps["second item"].status == "PASSED"
+    assert steps["first, wrong"].status == "FAILED" and steps["fourth"].status == "FAILED"
+    assert any("no item 4" in n for n in steps["fourth"].notes)

@@ -545,6 +545,8 @@ class BuildSession:
     async def set_mode(self, mode: str, pick_for: int | None = None) -> None:
         if mode not in ("pick", "browse", "check", "save", "wait"):
             raise BuildError("mode is pick, check, save, wait or browse.", "mode", 400)
+        if mode == "pick" and pick_for is None and self.recorder.on:
+            mode = "check"                  # recording has no step waiting for a picked locator: a plain Pick would do nothing, so it offers the checks
         self.mode, self.pick_for = mode, pick_for
         self.purpose = mode if mode != "browse" else "pick"
         if mode != "browse":
