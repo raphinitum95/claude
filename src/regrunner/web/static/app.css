@@ -151,10 +151,10 @@ body { margin: 0 }
    ------------------------------------------------------------------------------------------------ */
 html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--tx); color-scheme: dark }
 [data-theme="light"] { color-scheme: light }
-#app.rr { min-height: 100vh; width: 100%; display: flex; flex-direction: column }
-.app-header { height: 60px; flex: none; display: flex; align-items: center; gap: 22px; padding: 0 24px; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 20 }
+#app.rr { min-height: 100vh; min-height: 100dvh; width: 100%; display: flex; flex-direction: column }
+.app-header { min-height: 60px; flex: none; display: flex; align-items: center; gap: 22px; padding: 0 24px; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 20 }
 .app-body { flex: 1; display: flex; min-height: 0; align-items: stretch }
-.side { width: 264px; flex: none; border-right: 1px solid var(--line); background: var(--rail); padding: 20px 16px; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto }
+.side { width: 264px; flex: none; border-right: 1px solid var(--line); background: var(--rail); padding: 20px 16px; display: flex; flex-direction: column; gap: 24px; position: sticky; top: 60px; height: calc(100vh - 60px); height: calc(100dvh - 60px); overflow-y: auto }
 .main { flex: 1; min-width: 0; position: relative; overflow: hidden }
 .page { position: relative; padding: 40px 44px 64px; display: flex; flex-direction: column; gap: 28px; max-width: 1400px }
 .split { --side-w: 388px; display: grid; grid-template-columns: minmax(0, 1fr) var(--side-w); gap: 28px; align-items: start }
@@ -310,3 +310,62 @@ details.more > summary::-webkit-details-marker { display: none }
 .bulk-anchor .bulk-bar { position: static; transform: none; max-width: 100% }
 .bulk-grip { cursor: grab; color: var(--tx3); padding: 0 2px; user-select: none; touch-action: none }
 .bulk-bar.moved { box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)), 0 0 0 1px var(--acc-line) }
+
+
+/* --- small screens ------------------------------------------------------------------------------------------------
+   Building blocks the views share: a column beside the main area (.b-aside on the right, .b-lcol on the left, width in --w),
+   a row of such columns (.b-cols), popups (.add-menu), two-column result cards (.rsplit) and result rows (.rrow-a/.rrow-b).
+   Wide screens look as they always did; under 980px the columns stack under each other and the page scrolls. */
+.hdr-brand { display: flex; align-items: center; gap: 11px; flex: none }
+.hdr-mid { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; overflow: hidden }
+.b-aside { width: var(--w, 340px); flex: none; border-left: 1px solid var(--line); background: var(--rail); display: flex; flex-direction: column; min-height: 0 }
+.b-lcol { width: var(--w, 300px); flex: none; border-right: 1px solid var(--line) }
+.b-cols { flex: 1; display: flex; min-height: 0; min-width: 0 }
+.add-menu { position: absolute; right: 16px; top: 8px; width: min(320px, calc(100% - 32px)); z-index: 6 }
+.seg { max-width: 100% }
+
+@media (max-width: 980px) {
+  .app-header { flex-wrap: wrap; padding: 8px 16px; gap: 8px 12px }
+  .hdr-chips { order: 2; flex-wrap: wrap; justify-content: flex-end }
+  .hdr-mid { order: 3; flex: 1 1 220px; overflow: visible; flex-wrap: wrap }
+  .hdr-opt { display: none !important }
+  .main { overflow-x: auto }
+  .b-rail { width: auto; flex: none; max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line) }
+  .b-cols { flex-direction: column }
+  .b-aside, .b-lcol { width: auto; border-left: 0; border-right: 0; border-top: 1px solid var(--line) }
+  .b-lcol { border-top: 0; border-bottom: 1px solid var(--line) }
+  .b-main:has(.bulk-bar) { padding-bottom: 84px }
+  .bulk-bar { position: fixed !important; left: 50% !important; top: auto !important; bottom: 12px !important; transform: translateX(-50%) !important; z-index: 50 }
+  .bulk-bar .bulk-grip { display: none }
+  .add-menu { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 70vh; overflow: auto; z-index: 55 }
+  .toast-root { bottom: auto; top: 76px; max-width: calc(100vw - 24px) }
+  .sess-bar { flex-wrap: wrap; white-space: normal; overflow: visible }
+  .sess-bar > .sess-line { flex: 1 1 100%; max-width: none }
+  .rsplit { grid-template-columns: minmax(0, 1fr) !important }
+  .rrow-a, .rrow-b { display: flex !important; flex-wrap: wrap; gap: 6px 12px !important; padding-left: 14px !important; padding-right: 14px !important }
+  .rrow-a > * { flex: 0 0 auto; max-width: 100% }
+  .rrow-a > :nth-child(3), .rrow-b > :first-child { flex: 1 1 100% }
+  .cmp-card { overflow-x: auto !important }
+  .cmp-row { min-width: 520px }
+  div:has(> .tbl) { overflow-x: auto !important }
+  .modal-back { padding: 12px }
+  .modal { padding: 16px }
+}
+@media (max-width: 700px) {
+  .hdr-chips .btn-label { display: none }
+  .hdr-chips { margin-left: auto; gap: 5px }
+  .hdr-chips .icon-btn { width: 32px; height: 32px }
+}
+@media (max-width: 600px) {
+  .hdr-title { display: none }
+  .app-header { padding: 8px 12px }
+  .tab-btn { padding: 0 11px }
+  .page { padding: 20px 14px 40px }
+  .kv { grid-template-columns: 1fr; gap: 2px }
+}
+@media (pointer: coarse) {
+  .icon-btn { width: 38px; height: 38px }
+  .tab-btn { height: 36px }
+  .btn-sm { height: 38px }
+  .chip { height: 32px }
+}

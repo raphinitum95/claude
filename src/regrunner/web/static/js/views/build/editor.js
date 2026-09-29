@@ -55,7 +55,7 @@ function subHeader(S, t) {
   const needs = t.needs || [];
   const provides = t.provides || [];
   const ed = S.build.ed;
-  return html`<div style="flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 48px; border-bottom: 1px solid var(--line); background: var(--rail)">
+  return html`<div style="flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 16px; min-height: 48px; flex-wrap: wrap; border-bottom: 1px solid var(--line); background: var(--rail)">
 <span class="chip" style="height: 26px">${icon(t.kind === 'web' ? 'grid' : t.kind, 13)} ${t.kind === 'web' ? 'Website' : t.kind.toUpperCase()} test</span>
 <span class="mono" style="font-size: 11.5px; color: var(--tx3)">${t.steps.length} steps · ${t.blocks.length} blocks</span>
 <span style="width: 1px; height: 20px; background: var(--line)"></span>
@@ -210,7 +210,7 @@ function addStepMenu(S) {
   if (!ed.menu) return '';
   const q = (ed.menuQuery || '').toLowerCase();
   const groups = (S.build.keywords && S.build.keywords.groups) || [];
-  return html`<div class="menu" style="position: absolute; right: 16px; top: 8px; width: 320px; padding: 6px; z-index: 6" role="menu">
+  return html`<div class="menu add-menu" style="padding: 6px" role="menu">
 <div class="field" style="margin-bottom: 6px">${icon('search', 14)}<input class="fld" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Search actions…" value="${ed.menuQuery || ''}" data-input="build-menu-query" autocomplete="off"></div>
 ${ed.pendingBlock ? html`<div class="bn bn-acc" style="padding: 8px 10px; margin-bottom: 6px">${icon('layers', 13, 'color: var(--acc)')}<span style="flex: 1">The step you pick starts the new page <b>${ed.pendingBlock}</b>, at the end of the test.</span>
 <button class="icon-btn" style="width: 22px; height: 22px" data-act="build-new-page-cancel" aria-label="Not a new page">${icon('x', 11)}</button></div>` : ''}
@@ -346,7 +346,7 @@ export function testEditor(S) {
   const idx = t.blocks.indexOf(b);
   const s = selectedStep();
   return html`<div class="app-body">${buildRail(S)}
-<main class="main" style="display: flex; flex-direction: column; position: relative; min-width: 0">
+<main class="main b-main" style="display: flex; flex-direction: column; position: relative; min-width: 0">
 ${subHeader(S, t)}
 ${sessionBar(S)}
 ${blockStrip(S, t)}
@@ -356,7 +356,7 @@ ${bulkBar(S)}
 ${addStepMenu(S)}
 ${drawer(S, t)}
 </main>
-<aside style="width: 372px; flex: none; border-left: 1px solid var(--line); background: var(--rail); display: flex; flex-direction: column; min-height: 0">
+<aside class="b-aside" style="--w: 372px">
 ${ed.problems ? problemsPanel(S, t) : inspector(S, t, s)}
 ${!ed.problems ? html`<div style="padding: 8px 16px; border-top: 1px solid var(--line)"><button class="lnk" data-act="build-toggle-problems">${m.problemCounts.error + m.problemCounts.warning} problems in this workbook</button></div>` : ''}
 </aside></div>`;

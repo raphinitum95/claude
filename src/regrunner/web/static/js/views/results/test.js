@@ -74,7 +74,7 @@ ${fixInBuilder(wbFile, testSheet, failedSteps[0] && failedSteps[0].row)}
 <section class="card" style="padding: 14px; display: flex; flex-direction: column; gap: 10px">
 <span class="lbl">Where it stopped</span>${blockMap(t.page.blocks)}
 </section>
-<div style="display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start">
+<div class="rsplit" style="display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start">
 <section class="card" style="padding: 14px; display: flex; flex-direction: column; gap: 4px">
 <span class="ttl" style="font-size: 16px; padding: 0 4px 8px">${failedSteps.length ? `Failed steps · ${failedSteps.length}` : 'No failed steps'}</span>
 ${shown.map((s) => stepRow(t.runId, s, wbFile, testSheet))}

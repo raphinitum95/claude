@@ -18,10 +18,10 @@ export function tabs(active) {
  *  `middle` sits in a shrinkable flex-1 slot: keep it empty or short, since its content does not wrap. */
 export function headerShell(active, middle = '', right = '') {
   return html`<header class="app-header">
-<div style="display: flex; align-items: center; gap: 11px; flex: none">${LOGO}
-<div class="disp" style="font-size: 19px; font-weight: 700; letter-spacing: -.015em">QA Regression</div></div>
+<div class="hdr-brand">${LOGO}
+<div class="disp hdr-title" style="font-size: 19px; font-weight: 700; letter-spacing: -.015em">QA Regression</div></div>
 ${tabs(active)}
-<div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; overflow: hidden">${middle}</div>
+<div class="hdr-mid">${middle}</div>
 <div class="hdr-chips">${right}</div>
 </header>`;
 }

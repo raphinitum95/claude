@@ -20,8 +20,8 @@ function causeGroup(g) {
 <div style="padding: 11px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line)">
 <b>${g.title}</b><span class="tag ${g.kind === 'other' ? '' : 'tag-fail'}">${g.items.length}</span>
 <span style="font-size: 12px; color: var(--tx3)">${g.why}</span></div>
-${g.items.map((it) => html`<div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line)">
-<b style="font-size: 13px; width: 180px" class="trunc">${it.test}</b>
+${g.items.map((it) => html`<div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 10px 14px; border-top: 1px solid var(--line)">
+<b style="font-size: 13px; width: 180px; max-width: 100%" class="trunc">${it.test}</b>
 <span class="trunc" style="font-size: 12.5px; color: var(--tx2); flex-grow: 1">${it.message}</span>
 ${VERDICT_TAG[it.verdict] && VERDICT_TAG[it.verdict][1] ? html`<span class="tag ${VERDICT_TAG[it.verdict][0]}">${VERDICT_TAG[it.verdict][1]}</span>` : ''}
 <a class="btn btn-sm" href="${resultsUrl('test', it.run_id, it.test)}" style="text-decoration: none">Open</a></div>`)}
@@ -35,7 +35,7 @@ function allTestsTable(tests) {
 <div style="padding: 12px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line)"><span class="ttl" style="font-size: 17px">All tests</span></div>
 ${[...byWb.entries()].map(([wb, rows]) => html`<div>
 <div style="padding: 9px 16px; background: var(--surface2); border-top: 1px solid var(--line)"><b style="font-size: 13px">${wb}</b></div>
-${rows.map((t) => html`<div style="display: grid; grid-template-columns: minmax(0, 1fr) 130px 90px 90px 80px; gap: 14px; align-items: center; padding: 8px 16px 8px 26px; border-top: 1px solid var(--line)">
+${rows.map((t) => html`<div class="rrow-b" style="display: grid; grid-template-columns: minmax(0, 1fr) 130px 90px 90px 80px; gap: 14px; align-items: center; padding: 8px 16px 8px 26px; border-top: 1px solid var(--line)">
 <span style="display: flex; align-items: center; gap: 8px; min-width: 0"><b class="trunc" style="font-size: 13px">${t.id}</b>
 ${VERDICT_TAG[t.verdict] && VERDICT_TAG[t.verdict][1] ? html`<span class="tag ${VERDICT_TAG[t.verdict][0]}">${VERDICT_TAG[t.verdict][1]}</span>` : ''}</span>
 ${trendStrip(t.trend)}${pill(t.status)}

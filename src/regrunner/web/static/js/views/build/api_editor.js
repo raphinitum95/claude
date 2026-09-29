@@ -79,7 +79,7 @@ function chips(text) {
 // ---- toolbar ---------------------------------------------------------------------------------------------------------------------
 function toolbar(t, v) {
   const rows = v.dataRows || [];
-  return html`<div style="flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 48px; border-bottom: 1px solid var(--line); background: var(--rail)">
+  return html`<div style="flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 16px; min-height: 48px; flex-wrap: wrap; border-bottom: 1px solid var(--line); background: var(--rail)">
 <span class="chip" style="height: 26px; color: var(--k-api)" title="JSON or XML is set by the Content-Type header">${icon('xml', 13)} API test</span>
 <span class="mono" style="font-size: 11.5px; color: var(--tx3)">${v.steps.length} steps</span>
 <span style="width: 1px; height: 20px; background: var(--line)"></span>
@@ -117,7 +117,7 @@ ${u.sharedWith.length ? html`<span style="font-size: 12px; color: var(--tx2)">Th
 
 function stepsCol(v) {
   const badge = { send: ['api', 'Send'], check: ['check', 'Check'], save: ['save', 'Save'] };
-  return html`<div class="scroll" style="width: 280px; flex: none; border-right: 1px solid var(--line); padding: 14px 12px; display: flex; flex-direction: column; gap: 5px; overflow: auto">
+  return html`<div class="scroll b-lcol" style="--w: 280px; padding: 14px 12px; display: flex; flex-direction: column; gap: 5px; overflow: auto">
 <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 2px 6px"><span class="lbl">Steps</span></div>
 ${statusBanner(v)}
 ${v.steps.map((s) => {
@@ -428,7 +428,7 @@ ${r ? html`<div class="seg" style="width: 140px"><button class="${cx(ui.respMode
   }
   const checks = ui.resp && ui.resp.checks && ui.resp.checks.length ? html`<div style="padding: 8px 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px">
 ${ui.resp.checks.map((c) => html`<span class="tag ${c.passed ? '' : 'tag-fail'}" title="${c.kind === 'compare_response' ? `${c.actualValue}${(c.differences || []).length ? ' · ' + c.differences.slice(0, 5).join(' · ') : ''}` : `expected ${c.expectedValue} · got ${c.actualValue}`}">${c.passed ? '✓' : '✗'} ${c.kind === 'compare_response' ? 'whole response' : c.actual}</span>`)}</div>` : '';
-  return html`<div style="width: 480px; flex: none; border-left: 1px solid var(--line); background: var(--rail); display: flex; flex-direction: column; min-height: 0">${head}${bodyHtml}${checks}</div>`;
+  return html`<div class="b-aside" style="--w: 480px">${head}${bodyHtml}${checks}</div>`;
 }
 
 // ---- top-level -----------------------------------------------------------------------------------------------------------------------------
@@ -439,7 +439,7 @@ export function apiEditor(S_) {
   let body;
   if (ui.error && !v) body = html`<div class="page"><b>Could not open ${t.id}.</b><p style="color: var(--tx2)">${ui.error.message}</p></div>`;
   else if (!v) body = html`<div class="page"><div class="skel" style="height: 40px; width: 300px"></div><div class="skel" style="height: 400px"></div></div>`;
-  else body = html`${toolbar(t, v)}<div style="flex: 1; display: flex; min-height: 0">${stepsCol(v)}${requestPanel(t, v)}${responsePanel(v)}</div>`;
+  else body = html`${toolbar(t, v)}<div class="b-cols">${stepsCol(v)}${requestPanel(t, v)}${responsePanel(v)}</div>`;
   return html`<div class="app-body">${buildRail(S_)}<main class="main" style="display: flex; flex-direction: column; min-width: 0; min-height: 0">${body}</main></div>`;
 }
 

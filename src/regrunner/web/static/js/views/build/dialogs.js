@@ -123,9 +123,9 @@ export function historyDialog(m) {
   const left = m.items.map((h) => html`<button class="rail-item ${m.sel === h.id ? 'on' : ''}" style="height: auto; padding: 8px 10px; flex-direction: column; align-items: flex-start; gap: 1px" data-key="h-${h.id}" data-act="build-hist-pick" data-id="${h.id}">
 <b style="font-size: 12.5px">${new Date(h.when).toLocaleString()}</b><span class="mono" style="font-size: 10.5px; color: var(--tx3)">${h.id}</span></button>`);
   const diff = m.diff ? m.diff.changes : null;
-  const inner = html`<div style="display: flex; gap: 14px; min-height: 300px">
-<div style="width: 240px; flex: none; display: flex; flex-direction: column; gap: 3px">${m.items.length ? left : html`<span style="color: var(--tx3); font-size: 12.5px; padding: 6px">No saves yet.</span>`}</div>
-<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+  const inner = html`<div style="display: flex; flex-wrap: wrap; gap: 14px; min-height: 300px">
+<div style="width: 240px; max-width: 100%; flex: none; display: flex; flex-direction: column; gap: 3px">${m.items.length ? left : html`<span style="color: var(--tx3); font-size: 12.5px; padding: 6px">No saves yet.</span>`}</div>
+<div style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
 ${diff === null ? html`<span style="color: var(--tx3); font-size: 12.5px">Pick a save to compare with now.</span>`
     : diff.length === 0 ? html`<span style="color: var(--tx3); font-size: 12.5px">No differences from the current draft.</span>`
     : html`<div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><thead><tr><th>Test</th><th>Step</th><th>Change</th></tr></thead><tbody>

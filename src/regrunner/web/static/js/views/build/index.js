@@ -25,7 +25,7 @@ export function buildHeader(S) {
   const b = S.build;
   const m = b.model;
   const dark = document.documentElement.getAttribute('data-theme') !== 'light';
-  const newWbBtn = html`<button class="btn btn-sm" data-act="build-new-workbook">${icon('plus', 13)} New workbook</button>`;
+  const newWbBtn = html`<button class="btn btn-sm" data-act="build-new-workbook" aria-label="New workbook">${icon('plus', 13)}<span class="btn-label"> New workbook</span></button>`;
   if (!m || b.listing) {
     return headerShell('Build', html`<span style="color: var(--tx3); font-size: 13px">All workbooks</span>`,
       html`${newWbBtn}<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`);
@@ -39,12 +39,12 @@ ${b.screen === 'variables' ? html`${icon('chevron', 12, 'transform: rotate(-90de
 <span style="flex: 1"></span>${envSeg(S, m)}`;
   const right = html`
 ${status.externalChange ? html`<button class="chip chip-warn" data-act="build-file-changed" title="The file changed on disk since it was opened here">${icon('warn', 13)} Changed on disk</button>` : ''}
-${!status.externalChange && status.hasDraft ? html`<span style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--tx3)">${icon('check', 13, 'color: var(--pass)')} Draft autosaved${status.draftSaved ? ' ' + new Date(status.draftSaved).toLocaleTimeString() : ''}</span>` : ''}
+${!status.externalChange && status.hasDraft ? html`<span class="hdr-opt" style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--tx3)">${icon('check', 13, 'color: var(--pass)')} Draft autosaved${status.draftSaved ? ' ' + new Date(status.draftSaved).toLocaleTimeString() : ''}</span>` : ''}
 <button class="icon-btn" data-act="build-undo" aria-label="Undo" title="Undo ⌘Z" ${status.canUndo ? '' : raw('disabled')}>${icon('undo', 15)}</button>
 <button class="icon-btn" data-act="build-redo" aria-label="Redo" title="Redo" ${status.canRedo ? '' : raw('disabled')}>${icon('redo', 15)}</button>
 ${m.problemCounts.error || m.problemCounts.warning ? html`<button class="chip chip-warn" data-act="build-toggle-problems">${icon('warn', 13)} ${m.problemCounts.error + m.problemCounts.warning} problems</button>` : ''}
 <button class="icon-btn" data-act="build-history" aria-label="History" title="History">${icon('history', 15)}</button>
-<button class="btn btn-pri btn-sm ${b.busy ? 'busy' : ''}" data-act="build-save" title="Save ⌘S">${icon('check', 14)} Save to Excel</button>
+<button class="btn btn-pri btn-sm ${b.busy ? 'busy' : ''}" data-act="build-save" title="Save ⌘S" aria-label="Save to Excel">${icon('check', 14)}<span class="btn-label"> Save to Excel</span></button>
 <button class="icon-btn" data-act="build-download" aria-label="Download the workbook" title="Download the workbook (.xlsx) to share it">${icon('download', 15)}</button>
 ${newWbBtn}
 <button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`;
