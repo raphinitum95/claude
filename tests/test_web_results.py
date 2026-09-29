@@ -286,3 +286,16 @@ async def test_the_batch_and_test_pages_open_each_runs_full_results_and_its_html
         await link.wait_for()
         assert (await link.get_attribute("href")).endswith("/runs/rp1-mock/files/report.html#t-FlowA")
         assert not page.errors, page.errors
+
+
+@pytest.mark.browser
+async def test_every_status_badge_fits_inside_its_own_box_in_the_batch_tests_table(web):
+    """The badge sat in a fixed-width grid column, so a long label (CANCELLED, INTERRUPTED) spilled out of its pill."""
+    statuses = ("CANCELLED", "INTERRUPTED", "INCOMPLETE", "NOT_RUN", "PASSED", "FAILED")
+    fake_run(web, "pill-run", workbook="mock.xlsx", status="FAILED", started_at="2026-05-02T00:00:00", batch_id="pill1")
+    (web.run_dir("pill-run") / "results.json").write_text(json.dumps({"environment": "UAT", "workbook": "mock.xlsx", "tests": [
+        {"id": f"T{i}", "sheet": f"T{i}", "status": s, "duration_s": 1.0, "steps": []} for i, s in enumerate(statuses)]}), encoding="utf-8")
+    async with open_ui(web, path="/#/results/batch/pill1") as page:
+        await page.wait_for_selector("text=All tests")
+        spilled = await page.evaluate("Array.from(document.querySelectorAll('.pill')).filter(p => p.scrollWidth > p.clientWidth + 1).map(p => p.textContent)")
+        assert spilled == [] and await page.locator(".pill", has_text="Cancelled").count() >= 1
