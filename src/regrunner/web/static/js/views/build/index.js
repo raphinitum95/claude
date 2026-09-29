@@ -21,6 +21,16 @@ ${icon('globe', 13)}<select id="build-env" data-key="env-${names.join('|')}-${m.
 ${names.map((n) => html`<option value="${n}" ${n === m.environment ? raw('selected') : ''}>${n}</option>`)}</select></label>`;
 }
 
+/** The header's ⋯ menu (tablet and phone): the buttons that no longer fit on one row.  Items run the same actions the buttons run. */
+function hdrMenu(S, status, dark) {
+  const item = (act, label, ic, opts = {}) => html`<button role="menuitem" class="mitem hdr-mi ${opts.phone ? 'mi-p' : ''}" style="height: 44px" data-act="${act}" ${opts.off ? raw('disabled') : ''}>${icon(ic, 15)}<span>${label}</span></button>`;
+  return html`<div class="hdr-scrim" data-act="build-hdr-menu" aria-hidden="true"></div>
+<div class="menu hdr-menu" role="menu" aria-label="More actions">
+${item('build-undo', 'Undo', 'undo', { phone: true, off: !status.canUndo })}${item('build-redo', 'Redo', 'redo', { phone: true, off: !status.canRedo })}
+${item('build-history', 'History', 'history')}${item('build-download', 'Download the workbook (.xlsx)', 'download')}${item('build-new-workbook', 'New workbook', 'plus')}
+${item('theme', dark ? 'Switch to the light theme' : 'Switch to the dark theme', dark ? 'sun' : 'moon', { phone: true })}</div>`;
+}
+
 export function buildHeader(S) {
   const b = S.build;
   const m = b.model;
@@ -31,24 +41,27 @@ export function buildHeader(S) {
       html`${newWbBtn}<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`);
   }
   const status = m.status;
-  const middle = html`<a href="#/build/all" class="icon-btn" style="flex: none; width: 30px; height: 30px" aria-label="All workbooks" title="All workbooks: open another one">${icon('grid', 14)}</a>
-<a href="${buildUrl(b.name, 'map')}" class="trunc" style="font-size: 13px; color: var(--tx3); text-decoration: none; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" title="${m.name}">${m.name}</a>
-${b.screen === 'test' && b.testId ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${b.testId}</span>` : ''}
-${b.screen === 'scenario' && b.scenario ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${b.scenario}</span>` : ''}
-${b.screen === 'variables' ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Variables</span>` : ''}
+  const middle = html`<button class="icon-btn rail-btn" style="flex: none; width: 30px; height: 30px" data-act="build-rail-toggle" aria-label="Show this workbook's tests and variables" aria-expanded="${String(!!b.railOpen)}">${icon('list', 14)}</button><a href="#/build/all" class="icon-btn" style="flex: none; width: 30px; height: 30px" aria-label="All workbooks" title="All workbooks: open another one">${icon('grid', 14)}</a>
+<a href="${buildUrl(b.name, 'map')}" class="trunc" style="flex: 0 6 auto; font-size: 13px; color: var(--tx3); text-decoration: none; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" title="${m.name}">${m.name}</a>
+${b.screen === 'test' && b.testId ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="flex: none; max-width: 50%; font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${b.testId}</span>` : ''}
+${b.screen === 'scenario' && b.scenario ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="flex: none; max-width: 50%; font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${b.scenario}</span>` : ''}
+${b.screen === 'variables' ? html`${icon('chevron', 12, 'transform: rotate(-90deg); color: var(--tx3)')}<span class="disp trunc" style="flex: none; max-width: 50%; font-size: 16px; font-weight: 700; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Variables</span>` : ''}
 <span style="flex: 1"></span>${envSeg(S, m)}`;
-  const right = html`
+  const strip = html`
 ${status.externalChange ? html`<button class="chip chip-warn" data-act="build-file-changed" title="The file changed on disk since it was opened here">${icon('warn', 13)} Changed on disk</button>` : ''}
 ${!status.externalChange && status.hasDraft ? html`<span class="hdr-opt" style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--tx3)">${icon('check', 13, 'color: var(--pass)')} Draft autosaved${status.draftSaved ? ' ' + new Date(status.draftSaved).toLocaleTimeString() : ''}</span>` : ''}
-<button class="icon-btn" data-act="build-undo" aria-label="Undo" title="Undo ⌘Z" ${status.canUndo ? '' : raw('disabled')}>${icon('undo', 15)}</button>
-<button class="icon-btn" data-act="build-redo" aria-label="Redo" title="Redo" ${status.canRedo ? '' : raw('disabled')}>${icon('redo', 15)}</button>
-${m.problemCounts.error || m.problemCounts.warning ? html`<button class="chip chip-warn" data-act="build-toggle-problems">${icon('warn', 13)} ${m.problemCounts.error + m.problemCounts.warning} problems</button>` : ''}
-<button class="icon-btn" data-act="build-history" aria-label="History" title="History">${icon('history', 15)}</button>
+${m.problemCounts.error || m.problemCounts.warning ? html`<button class="chip chip-warn" data-act="build-toggle-problems">${icon('warn', 13)} ${m.problemCounts.error + m.problemCounts.warning} problems</button>` : ''}`;
+  const right = html`
+<button class="icon-btn hdr-p" data-act="build-undo" aria-label="Undo" title="Undo ⌘Z" ${status.canUndo ? '' : raw('disabled')}>${icon('undo', 15)}</button>
+<button class="icon-btn hdr-p" data-act="build-redo" aria-label="Redo" title="Redo" ${status.canRedo ? '' : raw('disabled')}>${icon('redo', 15)}</button>
+<button class="icon-btn hdr-t" data-act="build-history" aria-label="History" title="History">${icon('history', 15)}</button>
 <button class="btn btn-pri btn-sm ${b.busy ? 'busy' : ''}" data-act="build-save" title="Save ⌘S" aria-label="Save to Excel">${icon('check', 14)}<span class="btn-label"> Save to Excel</span></button>
-<button class="icon-btn" data-act="build-download" aria-label="Download the workbook" title="Download the workbook (.xlsx) to share it">${icon('download', 15)}</button>
-${newWbBtn}
-<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`;
-  return headerShell('Build', middle, right);
+<button class="icon-btn hdr-t" data-act="build-download" aria-label="Download the workbook" title="Download the workbook (.xlsx) to share it">${icon('download', 15)}</button>
+<span class="hdr-t" style="display: contents">${newWbBtn}</span>
+<button class="icon-btn hdr-p" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>
+<button class="icon-btn hdr-more" data-act="build-hdr-menu" aria-label="More: history, download, new workbook" aria-haspopup="menu" aria-expanded="${String(!!b.hdrMenu)}">${icon('more', 16)}</button>
+${b.hdrMenu ? hdrMenu(S, status, dark) : ''}`;
+  return headerShell('Build', middle, right, strip);
 }
 
 /** The "All workbooks" page (#/build/all): every workbook in the folder as a card; the whole card opens it. */

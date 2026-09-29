@@ -16,13 +16,13 @@ export function tabs(active) {
 
 /** The shared 60px chrome (logo + section tabs), with room for a screen-specific middle and right side.
  *  `middle` sits in a shrinkable flex-1 slot: keep it empty or short, since its content does not wrap. */
-export function headerShell(active, middle = '', right = '') {
+export function headerShell(active, middle = '', right = '', strip = '') {
   return html`<header class="app-header">
 <div class="hdr-brand">${LOGO}
 <div class="disp hdr-title" style="font-size: 19px; font-weight: 700; letter-spacing: -.015em">QA Regression</div></div>
 ${tabs(active)}
 <div class="hdr-mid">${middle}</div>
-<div class="hdr-chips">${right}</div>
+<div class="hdr-strip">${strip}</div><div class="hdr-chips">${right}</div>
 </header>`;
 }
 
@@ -30,16 +30,18 @@ export function header(S) {
   const c = S.cfg || {};
   const warns = preflightItems(S).filter((i) => i.kind === 'warn').length;
   const dark = document.documentElement.getAttribute('data-theme') !== 'light';
-  const right = html`
+  const strip = html`
+${warns
+    ? html`<button class="chip chip-warn" style="cursor: pointer" data-act="goto-preflight">${icon('warn', 14)} ${warns} preflight warning${warns === 1 ? '' : 's'}</button>`
+    : html`<span class="chip">${icon('check', 14)} Ready</span>`}
+<span class="tag" style="flex: none">regrunner ${c.version || ''}</span>
 <span class="chip opt">${icon('cpu', 14)} ${c.workers || '–'} workers</span>
 <span class="chip opt">${icon(c.headless === false ? 'eye' : 'eyeoff', 14)} ${c.headless === false ? 'Headed' : 'Headless'}</span>
 <span class="chip opt">${icon('zap', 14)} ${WAITS[c.waits] || 'Smart waits'}</span>
 <span class="chip mono opt">${icon('lock', 14)} ${location.hostname}${location.port ? ':' + location.port : ''} · local only</span>
-${warns
-    ? html`<button class="chip chip-warn" style="cursor: pointer" data-act="goto-preflight">${icon('warn', 14)} ${warns} preflight warning${warns === 1 ? '' : 's'}</button>`
-    : html`<span class="chip">${icon('check', 14)} Ready</span>`}
-<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`;
-  return headerShell('Run', html`<span class="tag" style="flex: none">regrunner ${c.version || ''}</span>`, right);
+`;
+  const right = html`<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`;
+  return headerShell('Run', '', right, strip);
 }
 
 function runIcon(r) {

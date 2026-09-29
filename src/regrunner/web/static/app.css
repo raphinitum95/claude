@@ -131,7 +131,7 @@ body { margin: 0 }
 .bar { height: 6px; border-radius: 99px; background: var(--track); overflow: hidden }
 .bar > div { height: 100%; border-radius: 99px; background: var(--acc) }
 .ring { border-radius: 50%; -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 17px), #000 calc(100% - 16px)); mask: radial-gradient(farthest-side, transparent calc(100% - 17px), #000 calc(100% - 16px)) }
-.code { font-family: var(--f-mono); font-size: 12.5px; line-height: 1.75; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; color: var(--tx2); word-break: break-word }
+.code { font-family: var(--f-mono); font-size: 12.5px; line-height: 1.75; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; color: var(--tx2); word-break: break-word; overflow-x: auto }
 .hr { height: 1px; background: var(--line); border: 0; margin: 0 }
 .kv { display: grid; grid-template-columns: 112px 1fr; gap: 9px 14px; font-size: 13px }
 .kv > span:nth-child(odd) { color: var(--tx3) }
@@ -159,15 +159,10 @@ html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--tx
 .page { position: relative; padding: 40px 44px 64px; display: flex; flex-direction: column; gap: 28px; max-width: 1400px }
 .split { --side-w: 388px; display: grid; grid-template-columns: minmax(0, 1fr) var(--side-w); gap: 28px; align-items: start }
 .col { display: flex; flex-direction: column; gap: 24px; min-width: 0 }
-.hdr-chips { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap }
+.hdr-chips { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap }
 .icon-btn { width: 34px; height: 34px; border-radius: 10px; display: inline-grid; place-items: center; color: var(--tx2); border: 1px solid var(--line2); background: var(--surface2) }
 .icon-btn:hover { color: var(--tx); background: var(--surface3) }
-@media (max-width: 1240px) { .split, .split.narrow, .stats3 { grid-template-columns: minmax(0, 1fr) !important } .hdr-chips .chip.opt { display: none } }
-@media (max-width: 980px) {
-  .app-body { flex-direction: column }
-  .side { position: static; width: auto; height: auto; border-right: 0; border-bottom: 1px solid var(--line) }
-  .page { padding: 28px 20px 48px }
-  .app-header { padding: 0 16px } .hdr-chips .chip { display: none } .hdr-chips .icon-btn, .hdr-chips .chip-warn { display: inline-flex }
+@media (max-width: 1240px) { .split, .split.narrow, .stats3 { grid-template-columns: minmax(0, 1fr) !important } }
 }
 
 /* --- interaction states on the design's components --------------------------------------------- */
@@ -312,30 +307,90 @@ details.more > summary::-webkit-details-marker { display: none }
 .bulk-bar.moved { box-shadow: var(--pop, 0 24px 60px rgba(0,0,0,.4)), 0 0 0 1px var(--acc-line) }
 
 
-/* --- small screens ------------------------------------------------------------------------------------------------
-   Building blocks the views share: a column beside the main area (.b-aside on the right, .b-lcol on the left, width in --w),
-   a row of such columns (.b-cols), popups (.add-menu), two-column result cards (.rsplit) and result rows (.rrow-a/.rrow-b).
-   Wide screens look as they always did; under 980px the columns stack under each other and the page scrolls. */
+/* --- responsive layout ------------------------------------------------------------------------------------------------
+   Three tiers.  Wide (over 1100px): as designed.  Tablet (821-1100px): the header drops its rarely-used buttons into a "..." menu,
+   the Build rail becomes a drawer, side columns get narrower.  Phone (820px and under): the header is rows, columns stack, and the
+   test editor shows one pane (Steps / Details / Test) at a time.  Shared building blocks: .b-aside / .b-lcol (side columns, width in
+   --w), .b-cols (a row of them), .pane-* (editor panes), .rsplit, .rrow-a/.rrow-b (result cards and rows), .add-menu. */
 .hdr-brand { display: flex; align-items: center; gap: 11px; flex: none }
 .hdr-mid { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; overflow: hidden }
+.hdr-mid:empty { display: none }
+.hdr-strip { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none }
+.hdr-strip::-webkit-scrollbar { display: none }
+.hdr-strip > * { flex: none }
+.hdr-more, .rail-btn, .rail-close, .pane-switch, .phone-bar, .hdr-scrim, .rail-scrim { display: none }
+.hdr-chips { position: relative }
+.hdr-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 70; width: min(320px, calc(100vw - 24px)); padding: 6px }
+.hdr-scrim { position: fixed; inset: 0; z-index: 65; background: transparent }
+.hdr-mi:disabled { color: var(--tx3); cursor: not-allowed }
+.pane { display: contents }
 .b-aside { width: var(--w, 340px); flex: none; border-left: 1px solid var(--line); background: var(--rail); display: flex; flex-direction: column; min-height: 0 }
 .b-lcol { width: var(--w, 300px); flex: none; border-right: 1px solid var(--line) }
 .b-cols { flex: 1; display: flex; min-height: 0; min-width: 0 }
 .add-menu { position: absolute; right: 16px; top: 8px; width: min(320px, calc(100% - 32px)); z-index: 6 }
 .seg { max-width: 100% }
+.pane-switch { padding: 3px; margin: 10px 12px 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); gap: 2px; flex: none }
+.pane-tab { flex: 1 1 0; min-width: 0; text-align: center; height: 40px; border-radius: 9px; font-weight: 600; font-size: 14px; color: var(--tx2) }
+.pane-tab.on { background: var(--surface3); color: var(--tx); box-shadow: 0 0 0 1px var(--line2) }
 
-@media (max-width: 980px) {
-  .app-header { flex-wrap: wrap; padding: 8px 16px; gap: 8px 12px }
-  .hdr-chips { order: 2; flex-wrap: wrap; justify-content: flex-end }
-  .hdr-mid { order: 3; flex: 1 1 220px; overflow: visible; flex-wrap: wrap }
-  .hdr-opt { display: none !important }
+@media (min-width: 821px) { .mi-p { display: none } }
+
+/* tablet and down */
+@media (max-width: 1100px) {
+  .hdr-t { display: none !important }
+  .hdr-more, .rail-btn { display: inline-grid }
+  .hdr-title { display: none }
+  .app-header { gap: 12px; padding: 0 16px }
+  .hdr-mid { gap: 8px }
+  .b-rail { position: fixed; left: 0; top: 0; bottom: 0; z-index: 60; width: min(300px, 86vw); height: auto; max-height: none; transform: translateX(-104%); transition: transform .18s ease; box-shadow: none; padding-top: 12px }
+  .b-rail:not(.open) { visibility: hidden; transition: transform .18s ease, visibility 0s .18s }
+  .b-rail.open { transform: none; box-shadow: 0 0 60px rgba(0, 0, 0, .45) }
+  .rail-close { display: inline-flex; align-self: flex-end; flex: none }
+  .rail-scrim { display: block; position: fixed; inset: 0; z-index: 59; background: var(--scrim) }
+  .hdr-scrim { display: block }
+  .b-aside { width: min(var(--w, 340px), 320px) }
+  .b-lcol { width: min(var(--w, 300px), 230px) }
+  .side { width: 232px }
+  .page { padding: 32px 28px 56px }
+}
+
+/* phone-sized header (820px and under) */
+@media (max-width: 820px) {
+  .hdr-p { display: none !important }
+  .app-header { flex-wrap: wrap; padding: 8px 12px; gap: 8px 10px }
+  .hdr-brand { order: 1 }
+  .app-header > .tabnav { order: 2 }
+  .hdr-chips { order: 3; margin-left: auto; gap: 6px }
+  .hdr-mid { order: 4; flex: 1 1 100%; overflow: visible }
+  .hdr-strip { order: 5; flex: 1 1 100%; margin-left: 0; overflow-x: auto; white-space: nowrap; padding-bottom: 2px; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent) }
+  .hdr-strip::-webkit-scrollbar { display: none }
+  .hdr-strip > * { flex: none }
+  .hdr-strip:empty { display: none }
+  .hdr-chips .btn-label { display: none }
+  }
+
+/* narrow phone-sized windows: stacked layout, one editor pane at a time */
+@media (max-width: 700px) {
+  .hdr-menu { position: fixed; left: 12px; right: 12px; top: 64px; width: auto }
+  .app-body { flex-direction: column }
+  .side { position: static; width: auto; height: auto; max-height: 240px; border-right: 0; border-bottom: 1px solid var(--line) }
+  .page { padding: 24px 16px 48px }
   .main { overflow-x: auto }
-  .b-rail { width: auto; flex: none; max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line) }
   .b-cols { flex-direction: column }
   .b-aside, .b-lcol { width: auto; border-left: 0; border-right: 0; border-top: 1px solid var(--line) }
   .b-lcol { border-top: 0; border-bottom: 1px solid var(--line) }
-  .b-main:has(.bulk-bar) { padding-bottom: 84px }
-  .bulk-bar { position: fixed !important; left: 50% !important; top: auto !important; bottom: 12px !important; transform: translateX(-50%) !important; z-index: 50 }
+  /* the test editor: one pane at a time */
+  .pane-switch { display: flex }
+  .pane { display: none }
+  .app-body[data-pane="steps"] .pane-steps, .app-body[data-pane="test"] .pane-test { display: contents }
+  .app-body[data-pane] .pane-details { display: none }
+  .app-body[data-pane="details"] .pane-details { display: flex; border-top: 0; padding-bottom: 84px }
+  .phone-bar { display: flex; align-items: center; gap: 8px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; box-sizing: border-box; min-height: 68px; padding: 10px 12px; border-top: 1px solid var(--line2); background: var(--rail) }
+  .b-main { padding-bottom: 84px }
+  .app-body[data-pane] .main { flex: 0 0 auto }
+  .app-body[data-pane="details"] .pane-details { flex: 1 }
+  .bulk-bar { position: fixed !important; left: 50% !important; top: auto !important; bottom: 80px !important; transform: translateX(-50%) !important; z-index: 50 }
   .bulk-bar .bulk-grip { display: none }
   .add-menu { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 70vh; overflow: auto; z-index: 55 }
   .toast-root { bottom: auto; top: 76px; max-width: calc(100vw - 24px) }
@@ -350,15 +405,19 @@ details.more > summary::-webkit-details-marker { display: none }
   div:has(> .tbl) { overflow-x: auto !important }
   .modal-back { padding: 12px }
   .modal { padding: 16px }
-}
-@media (max-width: 700px) {
-  .hdr-chips .btn-label { display: none }
-  .hdr-chips { margin-left: auto; gap: 5px }
-  .hdr-chips .icon-btn { width: 32px; height: 32px }
+  /* New run screen: its grids and rows carry their column widths inline, so they are matched by those */
+  [style*="grid-template-columns: repeat(4, 1fr)"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important }
+  [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: minmax(0, 1fr) !important }
+  [style*="minmax(0, 1fr) 84px 84px 84px 72px"] { display: flex !important; flex-wrap: wrap; gap: 2px 14px !important }
+  [style*="minmax(0, 1fr) 84px 84px 84px 72px"] > :first-child { flex: 1 1 100% }
+  [style*="20px minmax(0, 1fr) 118px 92px"] { grid-template-columns: 20px minmax(0, 1fr) !important; gap: 4px 12px !important; padding-left: 14px !important; padding-right: 14px !important }
+  [style*="20px minmax(0, 1fr) 118px 92px"] > :nth-child(n+3) { grid-column: 2 }
+  label.trow[data-key$=".xlsx"], label.trow[data-key$=".xlsm"] { flex-wrap: wrap; gap: 8px 12px !important; padding: 12px !important }
+  label.trow[data-key$=".xlsx"] > :nth-child(3), label.trow[data-key$=".xlsm"] > :nth-child(3) { flex: 1 1 150px !important }
+  .seg { flex-wrap: wrap }
+  .seg button { flex: 1 1 auto; padding: 0 12px }
 }
 @media (max-width: 600px) {
-  .hdr-title { display: none }
-  .app-header { padding: 8px 12px }
   .tab-btn { padding: 0 11px }
   .page { padding: 20px 14px 40px }
   .kv { grid-template-columns: 1fr; gap: 2px }

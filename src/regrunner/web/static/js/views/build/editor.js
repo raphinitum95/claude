@@ -335,6 +335,32 @@ ${!s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><d
 </div>`;
 }
 
+// ---- phone layout: one pane at a time (Steps / Details / Test) ------------------------------------------------
+// Above 820px every pane shows at once and none of this is visible; the panes are `display: contents` wrappers, so the desktop
+// layout is exactly what it was.  Under 820px only the chosen pane shows (app.css, "small screens").
+
+function paneSwitch(t, pane) {
+  const tab = (id, label, extra = '') => html`<button role="tab" aria-selected="${String(pane === id)}" class="${cx('pane-tab', pane === id && 'on')}" data-act="build-pane" data-val="${id}">${label}${extra}</button>`;
+  return html`<div class="pane-switch" role="tablist" aria-label="What to show">${tab('steps', 'Steps ', html`<span class="mono" style="font-size: 11px; color: var(--tx3)">${t.steps.length}</span>`)}${tab('details', 'Details')}${tab('test', 'Test')}</div>`;
+}
+
+/** The fixed bar at the bottom of a phone screen: what is selected and the way to the next pane. */
+function phoneBars(t, s, at, pane) {
+  if (pane === 'steps') {
+    return html`<div class="phone-bar" role="region" aria-label="Selected step">
+<div style="min-width: 0; flex: 1"><div class="mono" style="font-size: 11px; color: var(--tx3)">${s ? `Step ${s.n} selected` : 'No step selected'}</div>
+<div class="trunc" style="font-weight: 600">${s ? (s.nameAuto ? s.autoName : s.name) || 'Step' : 'Tap a step to edit it'}</div></div>
+<button class="btn btn-pri" style="height: 46px" data-act="build-pane" data-val="details" ${s ? '' : raw('disabled')}>Edit details ${icon('chevr', 13)}</button></div>`;
+  }
+  if (pane === 'details') {
+    return html`<div class="phone-bar" role="region" aria-label="Step navigation">
+<button class="btn" style="height: 46px" data-act="build-pane" data-val="steps">${icon('chevl', 13)} Steps</button>
+<button class="btn" style="height: 46px; flex: 1" data-act="build-step-nav" data-dir="-1" ${at > 0 ? '' : raw('disabled')}>${icon('chevl', 13)} Previous</button>
+<button class="btn" style="height: 46px; flex: 1" data-act="build-step-nav" data-dir="1" ${at >= 0 && at < t.steps.length - 1 ? '' : raw('disabled')}>Next ${icon('chevr', 13)}</button></div>`;
+  }
+  return '';
+}
+
 // ---- top-level -----------------------------------------------------------------------------------------------
 export function testEditor(S) {
   const t = currentTest();
@@ -345,19 +371,25 @@ export function testEditor(S) {
   const b = t.blocks.length ? t.blocks[Math.min(ed.block, t.blocks.length - 1)] : { start: 0, end: t.steps.length, title: 'All steps', kind: 'page' };
   const idx = t.blocks.indexOf(b);
   const s = selectedStep();
-  return html`<div class="app-body">${buildRail(S)}
+  const pane = ed.pane || 'steps';
+  const at = t.steps.findIndex((x) => s && x.row === s.row);
+  return html`<div class="app-body" data-pane="${pane}">${buildRail(S)}
 <main class="main b-main" style="display: flex; flex-direction: column; position: relative; min-width: 0">
-${subHeader(S, t)}
+${paneSwitch(t, pane)}
+<div class="pane pane-test">${subHeader(S, t)}</div>
+<div class="pane pane-steps">
 ${sessionBar(S)}
 ${blockStrip(S, t)}
 ${t.blocks.length ? blockHeader(S, t, b, Math.max(0, idx)) : ''}
 ${ed.mode === 'grid' ? gridView(S, t) : cardsView(S, t, b)}
 ${bulkBar(S)}
 ${addStepMenu(S)}
-${drawer(S, t)}
+</div>
+<div class="pane pane-test">${drawer(S, t)}</div>
 </main>
-<aside class="b-aside" style="--w: 372px">
+<aside class="b-aside pane-details" style="--w: 372px">
 ${ed.problems ? problemsPanel(S, t) : inspector(S, t, s)}
 ${!ed.problems ? html`<div style="padding: 8px 16px; border-top: 1px solid var(--line)"><button class="lnk" data-act="build-toggle-problems">${m.problemCounts.error + m.problemCounts.warning} problems in this workbook</button></div>` : ''}
-</aside></div>`;
+</aside>
+${phoneBars(t, s, at, pane)}</div>`;
 }
