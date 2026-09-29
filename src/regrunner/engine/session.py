@@ -141,6 +141,7 @@ class BrowserSession:
         self.notes: list[str] = []
         self.throttle, self.cancel = throttle, cancel     # shared by every test of the run (engine/throttle.py)
         self.block_error = ""                          # set when a step's own server call was blocked (HTTP 403 / 429)
+        self.stuck_request = ""                        # set when one of the page's own calls went unanswered for patience.request_stall_s (a hard stop)
         self.load_status: int | None = None             # HTTP status of the first page that failed to load
         self.network: list[dict[str, Any]] = []         # the site's own XHR/fetch calls: what was asked, what came back (network.jsonl)
         self._calls: dict[Any, dict[str, Any]] = {}      # per page: first-party XHR/fetch calls ("servlet calls") started / in flight
@@ -522,9 +523,14 @@ class BrowserSession:
         pat = self.cfg.patience
         if self.pending_dialog is not None:
             return Activity(False, "a dialog is open", st["progress"])      # the page cannot be asked anything until it is answered
+        own = [(t0, key) for t0, key in st["inflight"].values() if since is None or t0 >= since]
+        if pat.enabled and pat.request_stall_s > 0 and own and now - min(own)[0] >= pat.request_stall_s:
+            oldest = min(own)
+            path = urlparse(oldest[1].split(" ", 1)[-1]).path or "/"
+            return Activity(True, "a request is stuck", st["progress"],
+                            stuck=f"The site did not answer {oldest[1].split(' ', 1)[0]} {path} for {plain_seconds(now - oldest[0])}")
         if self.navigating():
             return Activity(True, "a new page is loading", st["progress"])
-        own = [(t0, key) for t0, key in st["inflight"].values() if since is None or t0 >= since]
         t0 = time.monotonic()
         try:
             state, late_ms, late_sum_ms = await asyncio.wait_for(page.main_frame.evaluate(

@@ -43,6 +43,7 @@ class Asker:
         self.bus, self.cancel = bus, cancel
         self.mode = mode if mode in MODES else "off"
         self.default_timeout_s = default_timeout_s
+        self.test_cancelled = lambda test: False                  # set by the run: did the person cancel this one test? (its question then closes)
         self._n = 0
 
     @property
@@ -85,7 +86,7 @@ class Asker:
                     closed_file.write_text("done")
                     self.bus.emit("user_input_closed", test=test, step=step, ask=ask_id, reason="done")
                     return ""
-            if self.cancel.is_set():
+            if self.cancel.is_set() or self.test_cancelled(test):
                 closed_file.write_text("cancelled")
                 self.bus.emit("user_input_closed", test=test, step=step, ask=ask_id, reason="cancelled")
                 raise AskCancelled("The run was cancelled while waiting for an answer.")

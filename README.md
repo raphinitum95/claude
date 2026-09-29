@@ -314,6 +314,11 @@ going away, the expected text, a window or frame, the answer to what was typed) 
   same as wrong. The step's notes say which: *"the page had finished loading and the element did not appear within 10 s"*.
 * **A page that is stuck fails too**: nothing moved at all (no request started or answered, no page load) for `patience.stall_s` (**10 minutes**), e.g. a
   request the server never answers; or it kept itself busy for `patience.max_wait_s` (30 minutes). The note names what it was waiting for.
+* **A call the site never answers is a hard stop**: one request of the site (a servlet call) unanswered for `patience.request_stall_s` (**120 s**) fails the
+  step and ends the test; the error on the Run tab names the call (*"The site did not answer POST /bin/... for 2 min 00 s"*). Every call has its own clock,
+  so several calls one after another may add up to more.
+* **Logs to send to someone**: a run's Results page has *logs.zip* (also linked in the runner-log popup): events, results, runner log, resources and each
+  test's network calls, no screenshots.
 * **Nothing is ever repeated**: no retry, no re-typing, no second click - waiting longer is allowed, repeating an action would hide real site bugs.
 * A wait that goes on past `patience.tell_after_s` (10 s, the old fixed limit) is shown on the run screen (yellow banner: which test and worker, why, how
   long so far) and noted on the step (*"waited 42 s for the element: the page was slow (the site has not answered yet (GET /bin/quote ...))"*).
@@ -435,7 +440,7 @@ environment (set/missing only - the value never reaches the page), the SSO sessi
 
 **2 · Run in progress.** Global percentage ring, elapsed / estimated remaining / speed, passed-failed-in-flight-queued,
 one lane per worker with its **latest screenshot** (the element acted on is outlined) and a tick per step, the queue, finished
-tests, *Things to review* and an event log. **Cancel run** finishes the current steps; after 45 s the runner is told to stop now, and after ~12 s more it is killed, so a stuck browser can never keep a run alive. Closing a window, a browser or the report has a time limit too (`runner.close_timeout_s: 15`, `runner.report_timeout_s: 300`), and a run with no activity for longer than any step may take writes where everything is waiting to `runner.log`. Reloading the
+tests, *Things to review* and an event log. **Cancel test** on a running test's card stops just that test (it ends *Cancelled*, "Cancelled by user"; its worker moves on, the other tests carry on, tests that need its values are not run, and the run ends *Incomplete*). **Cancel run** finishes the current steps; after 45 s the runner is told to stop now, and after ~12 s more it is killed, so a stuck browser can never keep a run alive. Closing a window, a browser or the report has a time limit too (`runner.close_timeout_s: 15`, `runner.report_timeout_s: 300`), and a run with no activity for longer than any step may take writes where everything is waiting to `runner.log`. Reloading the
 page or losing the connection replays the event stream from the start, so nothing is missed.
 
 **3 · Run finished.** Verdict, test/step/wall-time summary (with the speed-up from running in parallel), tests sorted failed

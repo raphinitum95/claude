@@ -40,6 +40,7 @@ timeouts:
 patience:
   enabled: true         # false = the fixed limits below are hard limits again (the old behaviour)
   stall_s: 600          # give up when nothing on the page has moved for this long (a request that never answers)
+  request_stall_s: 120  # HARD STOP per servlet call: one request of the site unanswered this long fails the step and ends the test (each call has its own clock; calls in sequence may add up to more)
   max_wait_s: 1800      # ...and in any case after this long, however busy the page keeps itself
   tell_after_s: 10      # show a wait on the run screen once it goes past this
 

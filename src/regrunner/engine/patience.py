@@ -8,7 +8,9 @@ limit sized for a quiet one.  So a wait here does not end when a clock runs out.
   missing from a finished page is a real failure, and still fails in that time: slow is not the same as wrong;
 * **stalled** - nothing on the page has moved at all (no request started or answered, no frame loaded, no page load) for
   ``patience.stall_s``: a request that never answers, a frozen page;
-* **too long** - ``patience.max_wait_s`` has gone by, however busy the page keeps itself (a page that never stops working).
+* **request stuck** - one of the page's own requests (a servlet call) has gone unanswered for ``patience.request_stall_s``: a HARD STOP (the
+  step fails and the test ends, ``TestRunner._perform``).  Every call has its own clock, so calls one after another may add up to more;
+* **too long** -``patience.max_wait_s`` has gone by, however busy the page keeps itself (a page that never stops working).
 
 While the page is visibly working, the clock that ends a wait keeps being pushed back.  Nothing is ever repeated: a step is waited for,
 never retried.  A wait that goes past the old fixed limit is announced on the run screen (``WaitNotice``: ``worker_waiting`` /
@@ -28,6 +30,7 @@ class Activity:
     working: bool = False            # visibly still busy: loading, waiting for its own server, or the computer is too busy to answer
     why: str = ""                    # ...in words a non-technical person understands
     last_progress: float = field(default_factory=time.monotonic)      # when something last moved (monotonic)
+    stuck: str = ""                  # one of the page's own requests has gone unanswered for patience.request_stall_s: what and for how long
 
 
 class WaitNotice:
@@ -129,6 +132,10 @@ class Patience:
             return False
         act = self.activity = await self.session.activity(since=self.since)
         now = time.monotonic()
+        if act.stuck:                                         # a servlet call nobody answers: a hard stop, not something to wait out
+            self.reason = "request_stuck"
+            self.session.stuck_request = act.stuck
+            return True
         if act.working:
             self.last_working, self.worked = now, True
         if now - self.last_working >= self.quiet_s:
@@ -155,6 +162,8 @@ class Patience:
         if self.reason == "stalled":
             return (f"nothing on the page moved for {plain_seconds(self.cfg.stall_s)} ({self.activity.why or 'no request, no page load'}), "
                     f"so it is stuck rather than slow (patience.stall_s)")
+        if self.reason == "request_stuck":
+            return f"{self.activity.stuck} - the site is not answering, so the test was stopped (patience.request_stall_s)"
         if self.reason == "cancelled":
             return "the run was cancelled"
         if self.reason == "too_long":
@@ -165,7 +174,7 @@ class Patience:
     @property
     def on_settled_page(self) -> bool:
         """The wait ended with the page finished (or stuck): a failure now says something about where the page is, not about speed."""
-        return self.reason in ("settled", "stalled", "too_long")
+        return self.reason in ("settled", "stalled", "too_long", "request_stuck")
 
     def done(self) -> None:
         if self._told is not None:

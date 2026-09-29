@@ -130,6 +130,35 @@ async def test_a_lane_that_waits_too_long_gives_up_and_the_other_carries_on(site
     assert waits and waits[0]["test"] == f"{SCENARIO} · A"                                 # the run screen showed it waiting on purpose
 
 
+async def test_a_lane_cancelled_by_the_person_while_it_waits_at_a_sync_stops_and_releases_the_other_like_a_failed_lane(site, make_cfg, tmp_path):
+    from regrunner.engine.cancel import CANCELLED_BY_USER, marker_path
+    wb = book(tmp_path / "wb.xlsx", {"Edit": EDIT}, params={"Edit": agents(site, ben_expects="Saved", ben_pause=8)},
+              sheets={"_rr_scenarios": scenario_table(sync("Sync 1", "A", "Open policy"), sync("Sync 1", "B", "Open policy"))})
+    events: list[dict] = []
+    bus = EventBus()
+    bus.subscribe(events.append)
+    task = asyncio.ensure_future(execute(RunOptions(workbook=wb, seed=1, tests=[SCENARIO], workers=1), make_cfg(**{"runner.stagger_s": 0}), bus))
+    lane_a = f"{SCENARIO} · A"
+    for _ in range(400):                                                       # lane A is held at the sync, waiting for Ben's 8 s pause
+        if any(e["type"] == "scenario_sync" and e["lane"] == "A" and e["state"] == "arrived" for e in events):
+            break
+        await asyncio.sleep(0.05)
+    else:
+        raise AssertionError("lane A never reached the sync")
+    run_id = next(e["run_id"] for e in events if e["type"] == "run_started")
+    marker = marker_path(tmp_path / "runs" / run_id, lane_a)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("cancel")
+    result = await asyncio.wait_for(task, 120)
+    a, b = result.tests
+    assert (a.status, a.error) == ("CANCELLED", CANCELLED_BY_USER), failures(result)
+    assert b.status == "PASSED", failures(result)                              # lane B was not cancelled, and did not wait for a lane that is gone
+    assert [s["state"] for s in b.syncs][-1] == "released"                       # (lane A had arrived there before it was cancelled)
+    assert not [e for e in events if e["type"] == "worker_waiting" and e["test"] == f"{SCENARIO} · B" and e["code"] == "scenario_sync"]
+    ended = [e for e in events if e["type"] == "scenario_sync" and e["lane"] == "A" and e["state"] == "ended"]
+    assert all("CANCELLED" in e["message"] for e in ended)                        # the board says how it ended
+
+
 SECRET = base64.b32encode(b"one-account-two-lanes").decode().rstrip("=")
 
 

@@ -37,6 +37,7 @@ from .. import __version__, browsers, insight
 from ..config import Config, load_config, load_env_file, workbook_secrets
 from ..engine import inbox as inbox_mod
 from ..engine.ask import write_answer
+from ..engine.cancel import marker_path
 from ..engine.order import chains_file, clean_chains, load_chains, plan_order, save_chains
 from ..engine.runner import RunOptions, SelectionError, new_run_id, select_cases
 from ..events import now_iso, read_events
@@ -572,6 +573,38 @@ class RunManager:
         now = time.time()
         return any(r != run_id and self.is_active(r) and self.cancel_until.get(r, now + 1) > now for r in pool.run_ids)
 
+    @staticmethod
+    def running_tests(run_dir: Path) -> set[str]:
+        """Tests of the run that have started and not finished (read from its event stream: only the two event kinds are parsed)."""
+        going: set[str] = set()
+        try:
+            with (run_dir / "events.jsonl").open(encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if '"test_started"' in line or '"test_finished"' in line:
+                        try:
+                            e = json.loads(line)
+                        except ValueError:
+                            continue
+                        (going.add if e.get("type") == "test_started" else going.discard)(e.get("test", ""))
+        except OSError:
+            pass
+        return going
+
+    async def cancel_test(self, run_id: str, test_id: str) -> None:
+        """Cancel one test of a running run: a marker in the run's folder that its engine turns into ``Engine.cancel_test`` (the run goes on)."""
+        run_dir = self.run_dir(run_id)
+        if not run_dir.is_dir():
+            raise ApiError(404, "run not found", "not_found")
+        if not self.is_active(run_id):
+            raise ApiError(409, "That run is not running any more, so there is nothing to cancel.", "not_running", run_id=run_id)
+        if (run_dir / "cancel").exists():
+            raise ApiError(409, "This whole run is already being cancelled.", "run_cancelling", run_id=run_id)
+        if test_id not in await asyncio.to_thread(self.running_tests, run_dir):
+            raise ApiError(409, f"{test_id} is not running right now (it has not started, or it already finished).", "test_not_running", run_id=run_id)
+        marker = marker_path(run_dir, test_id)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("cancel", encoding="utf-8")
+
     async def cancel(self, run_id: str) -> None:
         run_dir = self.run_dir(run_id)
         if not run_dir.is_dir():
@@ -1037,6 +1070,11 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
         await mgr.cancel(run_id)
         return {"ok": True}
 
+    @app.post("/api/runs/{run_id}/tests/{test_id}/cancel")
+    async def cancel_test(run_id: str, test_id: str):
+        await mgr.cancel_test(run_id, test_id)
+        return {"ok": True}
+
     @app.post("/api/runs/{run_id}/answer")
     async def answer_run(run_id: str, body: Answer):
         run_dir = mgr.run_dir(run_id)
@@ -1064,6 +1102,26 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
         if not log.is_file():
             return {"lines": []}
         return {"lines": log.read_text(errors="replace").splitlines()[-max(1, min(tail, 2000)):]}
+
+    @app.get("/api/runs/{run_id}/logs.zip")
+    async def run_logs_zip(run_id: str):
+        """One zip of a run's logs (no screenshots or saved pages) to send to whoever investigates: what happened (events.jsonl, results.json,
+        runner.log, resources.jsonl, summary.txt, run.json), each test's first-party calls (network.jsonl) and which build/computer made it."""
+        run_dir = mgr.run_dir(run_id)
+        if not run_dir.is_dir():
+            raise ApiError(404, "run not found", "not_found")
+        names = ("run.json", "results.json", "events.jsonl", "runner.log", "resources.jsonl", "summary.txt")
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
+            for name in names:
+                if (run_dir / name).is_file():
+                    bundle.write(run_dir / name, name)
+            for network in sorted(run_dir.glob("tests/*/network.jsonl")):
+                bundle.write(network, network.relative_to(run_dir).as_posix())
+            bundle.writestr("about.txt", f"regrunner {__version__}\nrun {run_id}\nPython {sys.version.split()[0]} on {sys.platform}\n"
+                                         f"zipped {now_iso()}\n")
+        return Response(buffer.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{run_id}-logs.zip"'})
 
     @app.post("/api/runs/{run_id}/report")
     async def rebuild_report(run_id: str, body: dict[str, Any] | None = None):

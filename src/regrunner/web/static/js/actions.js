@@ -419,7 +419,7 @@ async function openDoctor() {
   S.modal.loading = false; rerender();
 }
 async function openLog(id) {
-  S.modal = { kind: 'log', loading: true, lines: [] };
+  S.modal = { kind: 'log', loading: true, lines: [], runId: id };
   rerender();
   try { S.modal.lines = (await api(`/api/runs/${enc(id)}/log?tail=400`)).lines; } catch (e) { S.modal.lines = [e.message]; }
   S.modal.loading = false; rerender();
@@ -636,6 +636,13 @@ export const acts = {
       loadRuns().then(rerender);
     } catch (e) { toast(e.message, 5000); }
     rerender();
+  },
+  async 'cancel-test'(el) {                                 // one test of a running run: it ends CANCELLED "Cancelled by user"; the run goes on
+    const { id, test } = el.dataset;
+    try {
+      await api(`/api/runs/${enc(id)}/tests/${enc(test)}/cancel`, { method: 'POST' });
+      toast(`Cancelling ${test}. The rest of the run goes on.`);
+    } catch (e) { toast(e.message, 5000); }
   },
   async 'ask-send'(el) {                                    // the answer to a question an ASK_USER step put to the person
     const v = S.view;

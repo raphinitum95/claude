@@ -121,6 +121,7 @@ class PatienceCfg:
     after the step's normal time (timeouts.element_s).  A slow machine or a slow site therefore never turns into a failure."""
     enabled: bool = True             # false = the fixed limits of timeouts / waits are hard limits again (the old behaviour)
     stall_s: float = 600             # a wait gives up when NOTHING on the page has moved for this long (a request that never answers, a frozen page)
+    request_stall_s: float = 120     # HARD STOP: one of the page's own requests (a servlet call) unanswered this long fails the step and ends the test; each call has its own clock
     max_wait_s: float = 1800         # ...and in any case after this long, however busy the page keeps itself (a page that never stops polling)
     lag_ms: int = 400                # the page taking longer than this to answer a question = the computer is overloaded: counts as "still working"
     repeat_after: int = 3            # the Nth request to the same address on one page is polling (a heartbeat, a chat widget), not loading: ignored

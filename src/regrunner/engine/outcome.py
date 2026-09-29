@@ -43,7 +43,8 @@ class StepOut:
     hard: bool = False                 # the error is not about a missing element (an empty parameter...): Ignore_not_existing_object does not swallow it
     check: str = ""                    # the step compared for itself (regex, compare, count, enabled...): Exact_Match / Contains are not applied
     check_failed: str = ""             # ...and what did not hold ("" = it held); a mismatch is a comparison failure, never swallowed
-    stop: str = ""                     # when the step fails, the test stops here, for this reason (a failed page gate, a blocked side-effect step)
+    stuck: str = ""                    # one of the site's calls never answered (patience.request_stall_s): the step fails with this, whatever else it compared
+    stop: str = ""                   # when the step fails, the test stops here, for this reason (a failed page gate, a blocked side-effect step)
     backup: dict | None = None         # the element was not found, but a backup locator was: {locator, matches, screenshot, tried} (never used by the step)
 
 
