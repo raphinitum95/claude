@@ -76,7 +76,7 @@ async def test_no_screen_scrolls_sideways_and_the_header_stays_on_screen(web, bu
         assert not got["header"], f"{tag} at {width}px: header controls off screen: {got['header']}"
         assert not got["clipped"], f"{tag} at {width}px: content cut off at the right edge: {got['clipped']}"
         assert not got["squeezed"], f"{tag} at {width}px: text squeezed into a sliver: {got['squeezed']}"
-        assert got["headerHeight"] <= (150 if width <= 820 else 64), f"{tag} at {width}px: the header is {got['headerHeight']}px tall"
+        assert got["headerHeight"] <= (150 if width <= 1060 else 64), f"{tag} at {width}px: the header is {got['headerHeight']}px tall"
 
 
 async def open_at(web, path, width, height):
@@ -140,6 +140,39 @@ async def test_on_a_tablet_steps_and_details_sit_side_by_side_and_the_rail_is_a_
         await page.get_by_role("button", name=re.compile("^More")).click()
         await js_until(page, "!!document.querySelector('.hdr-menu')")
         await shot(page, "tablet_menu")
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+CLIPPED_IN_HEADER = """() => {
+  const mid = document.querySelector('.hdr-mid'), out = [];
+  if (!mid) return ['no .hdr-mid'];
+  const m = mid.getBoundingClientRect(), vw = document.documentElement.clientWidth;
+  for (const [name, el] of [['the All workbooks button', document.querySelector('.hdr-mid a[aria-label="All workbooks"]')],
+                            ['the environment picker', document.querySelector('#build-env')?.closest('label')],
+                            ['the workbook name', document.querySelector('.hdr-mid a[title]')]]) {
+    if (!el) { out.push(`${name} is missing`); continue; }
+    const r = el.getBoundingClientRect();
+    if (r.width < 20 || r.left < m.left - 1 || r.right > m.right + 1 || r.right > vw + 1) out.push(`${name} is cut off (${Math.round(r.left)}-${Math.round(r.right)} in a header area ${Math.round(m.left)}-${Math.round(m.right)}, window ${vw})`);
+  }
+  for (const el of document.querySelectorAll('.app-header button, .app-header a, .app-header select, .app-header label')) {
+    const r = el.getBoundingClientRect();
+    if (r.width && (r.right > vw + 1 || r.left < -1)) out.push(`${(el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24)} is off the screen (${Math.round(r.left)}-${Math.round(r.right)}, window ${vw})`);
+  }
+  if (document.documentElement.scrollWidth > vw) out.push(`the page scrolls sideways by ${document.documentElement.scrollWidth - vw}px`);
+  return out;
+}"""
+
+
+@pytest.mark.parametrize("width", [360, 420, 560, 700, 780, 820, 830, 900, 980, 1040, 1060, 1061, 1100, 1140, 1240, 1300, 1360, 1361, 1400, 1600])
+async def test_header_keeps_env_and_all_workbooks(web, build_copy, width):
+    pw, browser, page = await open_at(web, f"/#/build/{build_copy}/test/FlowA", width, 900)
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 0")
+        await page.wait_for_timeout(300)
+        problems = await page.evaluate(CLIPPED_IN_HEADER)
+        assert not problems, f"at {width}px: {problems}"
     finally:
         await browser.close()
         await pw.stop()
