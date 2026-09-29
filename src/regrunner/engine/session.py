@@ -785,9 +785,24 @@ class BrowserSession:
 
     async def pace(self) -> None:
         """Before a page load starts (or a click that may start one): the run-wide throttle spaces them out and honours a cool-down."""
-        if self.throttle is not None:
+        if self.throttle is None:
+            return
+        pause = self.throttle.cooling
+        because = f" ({self.throttle.reason})" if self.throttle.reason else ""
+        told = self.notice.begin("site_block_pause", f"The site blocked this run{because}, so page loads are paused. Waiting for the pause to end "
+                                 "before this page is requested.", seconds=pause) if pause > 1 else ""
+        started = time.monotonic()
+        try:
             with self.timing.span("wait", "pacing"):
                 await self.throttle.before_load(self.cancel)
+        finally:
+            if told:
+                self.notice.end(told, f"waited {plain_seconds(time.monotonic() - started)} for the pause after the site blocked this run{because}")
+        if told and self.cancel is not None and self.cancel.is_set():
+            message = (f"Cancelled while waiting out the pause after the site blocked this run{because}: "
+                       f"{plain_seconds(self.throttle.cooling)} of the pause were left, and the page was never requested. This is not a page that failed to load.")
+            self._load_failed(message)
+            raise ActionError(message)
 
     async def await_call_results(self, before: tuple, cap: float) -> None:
         """After a click: the servlet calls it started get up to ``cap`` seconds to *answer* (a slow submit is not waited for

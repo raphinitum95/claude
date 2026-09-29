@@ -115,6 +115,34 @@ async def test_the_throttle_lets_a_cancel_through_and_holds_reduced_workers_back
     held.cancel()
 
 
+async def test_a_test_cancelled_during_the_cool_down_says_it_was_waiting_out_the_site_block_not_that_the_page_failed_to_load():
+    """The user cancelled ViewPolicy while its retry sat in the 60 s pause after a 403: the error said "the page never finished loading"."""
+    from regrunner.engine.patience import WaitNotice
+    from regrunner.engine.session import BrowserSession
+    throttle = Throttle(min_gap_s=0.0, workers=2)
+    throttle.cool_down(30, reduce=True, reason="Blocked by the site: HTTP 403 to the POST /bin/policy/search/cs (a WAF / rate limit, not the application). The run pauses...")
+    assert throttle.reason == "HTTP 403 to the POST /bin/policy/search/cs"
+    cancel = asyncio.Event()
+    notice = WaitNotice()
+    session = SimpleNamespace(throttle=throttle, cancel=cancel, notice=notice, timing=SimpleNamespace(span=lambda *a, **k: _NoSpan()),
+                              load_error="", loaded_once=False)
+    session._load_failed = lambda message: setattr(session, "load_error", message)
+    waiter = asyncio.create_task(BrowserSession.pace(session))
+    await asyncio.sleep(0.3)
+    assert notice.open and next(iter(notice.open.values()))["code"] == "site_block_pause"      # the run screen says why the worker waits
+    cancel.set()
+    with pytest.raises(ActionError) as caught:
+        await asyncio.wait_for(waiter, 2)
+    assert "Cancelled while waiting out the pause after the site blocked this run (HTTP 403 to the POST /bin/policy/search/cs)" in str(caught.value)
+    assert "never requested" in str(caught.value) and "never finished loading" not in str(caught.value)
+    assert session.load_error == str(caught.value) and not notice.open
+
+
+class _NoSpan:
+    def __enter__(self): return self
+    def __exit__(self, *exc): return False
+
+
 def run_cli(site, tmp_path, base: str, runner_cfg: str):
     wb = tmp_path / "wb.xlsx"
     build_workbook(wb, flows=["Login flow"], base_url=base)

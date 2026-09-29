@@ -602,6 +602,44 @@ async def wait(ctx: StepContext) -> None:
                          else f"waited {seconds:g}s")
 
 
+# A native <select> that has the focus and gets Arrow / Home / End / Page keys: a real browser changes the choice (Windows Chrome/Edge
+# on a closed list; the legacy runner clicked the list and pressed Down).  Headless Chromium and macOS never do, so the choice is moved here,
+# the way the keys would have moved it (the next enabled option), and the page gets its input + change events.
+_SELECT_KEY_JS = r"""(combo) => {
+  const el = document.activeElement;
+  if (!el || el.tagName !== 'SELECT' || el.multiple) return null;
+  const opts = Array.from(el.options), now = el.selectedIndex;
+  const usable = i => i >= 0 && i < opts.length && !opts[i].disabled && !(opts[i].parentElement.tagName === 'OPTGROUP' && opts[i].parentElement.disabled);
+  const step = {ArrowDown: 1, ArrowRight: 1, PageDown: 1, ArrowUp: -1, ArrowLeft: -1, PageUp: -1}[combo];
+  let to = now;
+  if (combo === 'Home') { to = opts.findIndex((_, i) => usable(i)); }
+  else if (combo === 'End') { for (let i = opts.length - 1; i >= 0; i--) if (usable(i)) { to = i; break; } }
+  else if (step) { for (let i = now + step; i >= 0 && i < opts.length; i += step) if (usable(i)) { to = i; break; } }
+  else return null;
+  if (to < 0 || to === now) return {moved: false, text: (opts[now] || {}).textContent || ''};
+  el.selectedIndex = to;
+  el.dispatchEvent(new Event('input', {bubbles: true}));
+  el.dispatchEvent(new Event('change', {bubbles: true}));
+  return {moved: true, text: (opts[to].textContent || '').trim()};
+}"""
+_SELECT_KEYS = {"ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp", "Home", "End"}
+
+
+async def _move_select_choice(ctx: StepContext, combo: str) -> bool:
+    """True when the focused element was a native <select> and the key moved its choice (see ``_SELECT_KEY_JS``)."""
+    if combo not in _SELECT_KEYS:
+        return False
+    try:
+        scope = await ctx.session.scope()
+        done = await scope.evaluate(_SELECT_KEY_JS, combo)
+    except Exception:
+        return False                                     # nothing focused / page changing: the plain key press below decides
+    if not done:
+        return False
+    ctx.out.notes.append(f"{combo} moved the drop-down to {done['text']!r}" if done["moved"] else f"{combo}: the drop-down was already at its end")
+    return True
+
+
 @action("SENDKEYS", "SENDKEY", "SEND_KEY", "SEND_KEYS")
 async def send_keys(ctx: StepContext) -> None:
     """Legacy: OS keystrokes to the focused window. Now: keys to the focused element of this page."""
@@ -619,7 +657,8 @@ async def send_keys(ctx: StepContext) -> None:
             code_typed(ctx, "".join(typed))
             await kb.type("".join(typed))
             typed = []
-        await kb.press(op.combo)
+        if not await _move_select_choice(ctx, op.combo):
+            await kb.press(op.combo)
         if op.combo.split("+")[-1] in ("Enter", "NumpadEnter"):
             code_submitted(ctx)
         if op.combo.split("+")[-1] in ("Enter", "NumpadEnter") and await ctx.session.watch_for_navigation():
@@ -883,7 +922,8 @@ async def special_key(ctx: StepContext) -> None:
         return
     await res.locator.focus(timeout=act_ms(ctx))
     for op in parse_sendkeys(ctx.value_text or "{ENTER}"):
-        await ctx.session.page.keyboard.press(op.combo)
+        if not await _move_select_choice(ctx, op.combo):
+            await ctx.session.page.keyboard.press(op.combo)
         if op.combo.split("+")[-1] in ("Enter", "NumpadEnter"):
             code_submitted(ctx)
 
@@ -2112,9 +2152,9 @@ async def run_action(ctx: StepContext) -> ActionSpec:
             await ctx.session.ensure_ready()                  # a page load in flight finishes first; a new document gets to start up
         for column in ("VALUE", "FINDBY_VALUE"):                # what the step acts on: never act on an Excel error as if it were text
             cell = ctx.step.values.get(column)
-            if isinstance(cell, ErrorText) and cell.code == "#NAME?":
-                raise ActionError(f"The {column.replace('_', ' ').title()} cell evaluates to #NAME? ({cell.detail or 'unknown name'}): "
-                                  "regrunner cannot calculate that Excel formula, so the step was not run.")
+            if isinstance(cell, ErrorText) and cell.code.startswith("#"):    # #NAME?, #VALUE!, #REF!...: a locator like "#VALUE!" would only make the step wait for an element that can never exist
+                raise ActionError(f"The {column.replace('_', ' ').title()} cell evaluates to {cell.code} ({cell.detail or 'Excel error'}): "
+                                  "the formula could not be calculated, so the step was not run.")
         if method in UNSUPPORTED:
             raise ActionError(f"Action {method} is not supported by regrunner (no equivalent for a headless "
                               "browser runner). Remove or replace the step.")

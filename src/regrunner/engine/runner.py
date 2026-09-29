@@ -640,7 +640,7 @@ class Engine:
                 # The WAF refused us (HTTP 403 / 429).  Not a verdict on the application: pause every page load, take a worker out of
                 # service so the load stays lower, and run this test again from the start.
                 block_tries += 1
-                reduced = throttle.cool_down(cfg.runner.block_cooldown_s, reduce=True, running=self.running_on(throttle))
+                reduced = throttle.cool_down(cfg.runner.block_cooldown_s, reduce=True, running=self.running_on(throttle), reason=res.blocked)
                 attempts.append({"attempt": attempt, "status": res.status, "failed": res.failed, "error": res.error,
                                  "duration_s": res.duration_s, "blocked": True})
                 ctx.note(f"{case.id}: the site blocked this attempt ({res.blocked[:120]}). Pausing page loads for "

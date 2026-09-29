@@ -412,7 +412,7 @@ class TestRunner:
                     result.status, result.error = NOT_RUN, (f"Not run: {result.infra}. This says nothing about the application: the test is run again "
                                                             "from the start.")
                 elif blocked:
-                    result.status, result.error = "ERROR", (blocked if result.blocked == blocked and blocked.startswith("Blocked") else f"The site did not load. {blocked}")
+                    result.status, result.error = "ERROR", (blocked if blocked.startswith(("Cancelled while", "Blocked")) and (result.blocked == blocked or blocked.startswith("Cancelled")) else f"The site did not load. {blocked}")
                 elif result.captcha:
                     result.status, result.error = "ERROR", result.captcha
                 elif self._lane_stop:

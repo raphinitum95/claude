@@ -63,13 +63,13 @@ export function resultsRail(S) {
   const group = (label, list) => (list.length ? html`<div><div class="lbl" style="padding: 0 10px 8px">${label}</div>
 <div style="display: flex; flex-direction: column; gap: 4px">${list.map((it) => itemRow(S, it))}</div></div>` : '');
   return html`<aside class="side" aria-label="Results">
-<div class="field" style="min-height: 34px">${icon('search', 14)}
-<input data-input="results-filter" data-field="q" value="${h.q}" placeholder="Find a batch, run or workbook"
-style="border: none; background: transparent; flex: 1; font-size: 12.5px; color: var(--tx)"></div>
-<div style="display: flex; gap: 6px; flex-wrap: wrap">
-${wbs.map((w) => html`<button class="tag ${h.workbook === w ? 'tag-acc' : ''}" data-act="results-toggle-filter" data-field="workbook" data-val="${w}">${w}</button>`)}
+<div class="field" style="min-height: 34px; display: flex; align-items: center; gap: 8px">${icon('search', 14)}
+<input data-input="results-filter" data-field="q" value="${h.q}" placeholder="Find a batch, run or workbook" aria-label="Find a batch, run or workbook"
+style="border: none; background: transparent; flex: 1; min-width: 0; font-size: 12.5px; color: var(--tx)"></div>
+<div class="rail-tags">
+${wbs.map((w) => html`<button class="tag ${h.workbook === w ? 'tag-acc' : ''}" title="${w}" data-act="results-toggle-filter" data-field="workbook" data-val="${w}">${w}</button>`)}
 </div>
-<div style="display: flex; gap: 6px; flex-wrap: wrap">
+<div class="rail-tags">
 ${envs.map((e) => html`<button class="tag ${h.environment === e ? 'tag-acc' : ''}" data-act="results-toggle-filter" data-field="environment" data-val="${e}">${e}</button>`)}
 <button class="tag ${h.status === 'fail' ? 'tag-fail' : ''}" data-act="results-toggle-filter" data-field="status" data-val="fail">${icon('warn', 11)} Failed only</button>
 </div>

@@ -13,6 +13,7 @@ sites, and a block by one site's WAF says nothing about another's - it must not 
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 
 
@@ -23,9 +24,10 @@ class Throttle:
         self._until = 0.0                            # no page load before this (monotonic)
         self._last = 0.0                             # when the last page load was let through
         self._lock = asyncio.Lock()
+        self.reason = ""                             # what the site refused (plain words), for the messages of whoever waits out the cool-down
         self.loaded_ok = False                       # some page of this run has loaded: a block after that is a rate limit, so waiting helps
 
-    def cool_down(self, seconds: float, *, reduce: bool = True, running: int | None = None) -> bool:
+    def cool_down(self, seconds: float, *, reduce: bool = True, running: int | None = None, reason: str = "") -> bool:
         """The site blocked us.  Returns True when a worker was taken out of service (there is one fewer to run tests).
 
         Several workers are usually blocked in the same instant: that is one event, so only the first of them (the one that finds no
@@ -33,6 +35,8 @@ class Throttle:
         limit comes down from that (workers the site was not using anyway are not "taken out of service")."""
         already_cooling = self.cooling > 0
         self._until = max(self._until, time.monotonic() + seconds)
+        if reason and not already_cooling:
+            self.reason = short_block_reason(reason)
         if reduce and not already_cooling:
             if running is not None:
                 self.limit = max(1, min(self.limit, running))
@@ -69,3 +73,9 @@ class Throttle:
         that was taken out of service must not keep the run alive once the others have finished everything."""
         while worker > self.limit and not cancel.is_set() and not (drained is not None and drained()):
             await asyncio.sleep(0.5)
+
+
+def short_block_reason(message: str) -> str:
+    """"Blocked by the site: HTTP 403 to the POST /bin/x (a WAF / ...)" -> "HTTP 403 to the POST /bin/x": what the site refused, in a few words."""
+    found = re.search(r"HTTP \d+ (?:to|on) the [^(]+", message or "")
+    return found.group(0).strip() if found else (message or "")[:100]

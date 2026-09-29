@@ -74,6 +74,9 @@ body { margin: 0 }
 .chip-warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-soft) }
 .chip-acc { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft) }
 .tag { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 6px; font: 500 11px var(--f-mono); color: var(--tx2); border: 1px solid var(--line2); background: var(--surface2); white-space: nowrap }
+.rail-tags { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0 }
+.rail-tags .tag { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 18px }   /* a long workbook name shortens (full name on hover) instead of running out of the rail */
+.rail-tags .tag svg { vertical-align: -1px }
 .tag-acc { color: var(--acc); border-color: var(--acc-line); background: var(--acc-soft) }
 .tag-warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-soft) }
 .tag-fail { color: var(--fail); border-color: var(--fail-line); background: var(--fail-soft) }

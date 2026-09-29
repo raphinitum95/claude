@@ -153,3 +153,12 @@ def test_evaluator_matches_excel_cached_values_on_real_workbook():
                 mismatches.append((name, r, c, raw.formula[:60], got, exp))
     assert checked > 3000
     assert not mismatches, mismatches[:10]
+
+
+def test_is_functions_turn_an_error_inside_them_into_an_answer_like_excel():
+    """`IF(ISNUMBER(SEARCH("STCF", A1)), ...)` is a "contains" test: SEARCH errors on no match and ISNUMBER must answer FALSE."""
+    cells = {(1, 1): "bln_STPF_50_59_4Days"}
+    assert ev('=IF(ISNUMBER(SEARCH("STCF", A1)), "C", IF(ISNUMBER(SEARCH("STPF", A1)), "P", "S"))', cells=cells) == "P"
+    assert ev('=ISERROR(SEARCH("zzz", A1))', cells=cells) is True
+    assert ev('=ISTEXT(SEARCH("zzz", A1))', cells=cells) is False
+    assert ev('=ISNA(SEARCH("zzz", A1))', cells=cells) is False

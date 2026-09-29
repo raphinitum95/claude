@@ -217,7 +217,7 @@ export function workerSummary(run) {
   const waits = waitsOf(run);
   const waitingTests = new Set(waits.map((w) => w.test));
   const running = lanes(run).filter((t) => !waitingTests.has(t.id)).length;
-  const kinds = { login_code: 'for a login code', slow_page: 'for a slow page', infra_rerun: 'to re-run a test after a browser crash', scenario_sync: 'at a scenario sync point' };
+  const kinds = { login_code: 'for a login code', slow_page: 'for a slow page', infra_rerun: 'to re-run a test after a browser crash', scenario_sync: 'at a scenario sync point', site_block_pause: 'for the site block to clear' };
   const byKind = {};
   for (const w of waits) byKind[w.code] = (byKind[w.code] || 0) + 1;
   const parts = [];

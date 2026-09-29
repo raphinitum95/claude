@@ -9,7 +9,7 @@ import { compareView } from './compare.js';
 
 export function resultsHeader() {
   const dark = document.documentElement.getAttribute('data-theme') !== 'light';
-  return headerShell('Results', html`<span style="font-size: 13px; color: var(--tx3)">runs/</span>`,
+  return headerShell('Results', '',
     html`<button class="icon-btn" data-act="theme" aria-label="Switch between light and dark">${icon(dark ? 'sun' : 'moon', 16)}</button>`);
 }
 

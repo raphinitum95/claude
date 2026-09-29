@@ -609,12 +609,24 @@ def _concat(*args): return "".join(to_text(a) for a in _scalars(args))
 def _rept(text, n): return to_text(text) * int(to_number(n))
 @function("VALUE")
 def _value(v): return to_number(v)
-@function("ISBLANK")
-def _isblank(v): return v is None or v == ""
-@function("ISNUMBER")
-def _isnumber(v): return isinstance(v, (int, float)) and not isinstance(v, bool)
-@function("ISTEXT")
-def _istext(v): return isinstance(v, str)
+def _is_check(name: str, test, on_error: bool = False):
+    """Excel's IS* functions never fail: an error inside their argument is an answer (FALSE, or TRUE for ISERROR), not a crash.
+    ``IF(ISNUMBER(SEARCH("x", A1)), ...)`` is the classic "contains" test and SEARCH errors when there is no match."""
+    @function(name, lazy=True)
+    def _check(ev, args):
+        try:
+            return bool(test(ev(args[0])))
+        except ExcelError as err:
+            return on_error(err) if callable(on_error) else on_error
+    return _check
+
+
+_is_check("ISBLANK", lambda v: v is None or v == "")
+_is_check("ISNUMBER", lambda v: isinstance(v, (int, float)) and not isinstance(v, bool))
+_is_check("ISTEXT", lambda v: isinstance(v, str))
+_is_check("ISERROR", lambda v: False, on_error=True)
+_is_check("ISERR", lambda v: False, on_error=lambda err: err.code != "#N/A")
+_is_check("ISNA", lambda v: False, on_error=lambda err: err.code == "#N/A")
 
 
 _NUMBER_TEXT = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
