@@ -125,6 +125,12 @@ ${b ? html`<div class="hl ${bad ? 'bad' : ''}" style="left: ${b.x}%; top: ${b.y}
 <div class="cap">live · after step ${t.shotStep}</div></div>`;
 }
 
+/** Cancel just this test: the run and the other tests go on (POST /api/runs/<id>/tests/<test>/cancel). */
+function cancelTestButton(run, t) {
+  if (t.cancelling) return html`<span class="pill p-warn">${icon('clock', 12)}Cancelling…</span>`;
+  return html`<button class="btn btn-sm btn-dng" data-act="cancel-test" data-id="${run.id}" data-test="${t.id}" title="Stop only this test. The run and the other tests go on.">${icon('stop', 14)} Cancel test</button>`;
+}
+
 function laneCard(S, run, t) {
   const c = t.fails.length;
   const last = c ? t.fails[c - 1] : null;
@@ -147,7 +153,8 @@ ${last ? html`<div style="display: flex; gap: 9px; align-items: flex-start; padd
 <span style="color: var(--fail); display: inline-flex; margin-top: 1px">${icon('failc', 16)}</span>
 <span style="color: var(--tx); overflow-wrap: anywhere">Step ${last.seq} failed: ${last.name || last.action}${last.error ? ' · ' + last.error.split('\n')[0] : ''}</span></div>` : ''}
 <div class="mono" style="display: flex; gap: 14px; font-size: 11.5px; color: var(--tx3); padding-top: 12px; border-top: 1px solid var(--line)">
-<span>${dur(elapsed)} elapsed</span><span style="color: ${c ? 'var(--fail)' : 'var(--tx3)'}">${plural(c, 'failed step')}</span></div></article>`;
+<span>${dur(elapsed)} elapsed</span><span style="color: ${c ? 'var(--fail)' : 'var(--tx3)'}">${plural(c, 'failed step')}</span>
+<span style="margin-left: auto">${cancelTestButton(run, t)}</span></div></article>`;
 }
 
 function statCard(iconHtml, tint, label, big, sub, subColor, border) {
@@ -309,7 +316,8 @@ ${last ? html`<div style="display: flex; gap: 9px; align-items: flex-start; padd
 <span style="color: var(--fail); display: inline-flex; margin-top: 1px">${icon('failc', 16)}</span>
 <span style="color: var(--tx); overflow-wrap: anywhere">Step ${last.seq} failed: ${last.name || last.action}${last.error ? ' · ' + last.error.split('\n')[0] : ''}</span></div>` : ''}
 <div class="mono" style="display: flex; gap: 14px; font-size: 11.5px; color: var(--tx3); padding-top: 12px; border-top: 1px solid var(--line)">
-<span>${dur(elapsed)} elapsed</span><span style="color: ${c ? 'var(--fail)' : 'var(--tx3)'}">${plural(c, 'failed step')}</span></div></article>`;
+<span>${dur(elapsed)} elapsed</span><span style="color: ${c ? 'var(--fail)' : 'var(--tx3)'}">${plural(c, 'failed step')}</span>
+<span style="margin-left: auto">${cancelTestButton(entry.run, t)}</span></div></article>`;
 }
 
 /** One row per workbook: its own progress bar and counts, coloured to match its worker cards below - click filters everything to it. */

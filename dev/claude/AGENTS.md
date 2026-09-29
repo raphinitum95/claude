@@ -100,6 +100,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Environment of a run (a builder workbook with `_rr_environments` has no default: the run must name one; 422 `env_required`/`env_unknown`, CLI exits 2) | `engine/runner.py` (`_load_and_plan`), `web/app.py` (`RunManager._validate`), `cli.py`, `web/static/js/views/newrun.js` (environment choice), `views/build/index.js` (Build tab's picker) | `test_builder_variables.py`, `test_cli.py`, `test_web_api.py -k "run or env"`, `test_web_ui.py -k env` |
 | Test order, dependencies, chains ("waits for") | `engine/order.py`, `engine/schedule.py` | `test_run_order.py`, `test_web_run_order.py` if UI touched |
 | Workers, several workbooks at once, joining a run, progress, shutdown/cancel | `engine/runner.py`, `engine/pool.py`, `engine/inbox.py`, `engine/diagnostics.py` | `test_multi_run.py`, `test_progress_and_parked_worker.py`, `test_shutdown.py`, `test_py39_compat.py` |
+| Cancel ONE test of a running run (the "Cancel test" button on its live card: it ends CANCELLED "Cancelled by user", frees its worker, the run and the other tests go on; a test waiting for it is skipped; a scenario lane releases the others) | `engine/cancel.py` (`OneTestCancel`, marker files), `engine/runner.py` (`RunCtx.switch_of`/`test_cancelled`, `Engine.cancel_test`, `watch_markers`, `run_case`/`run_one`, `producer_failed`), `engine/scenario.py` (`Coordinator.lane_cancelled`), `engine/ask.py`, `web/app.py` (`RunManager.cancel_test`, `POST /api/runs/{id}/tests/{test}/cancel`), `web/static/js/{actions,runstate}.js` + `views/live.js` (`cancelTestButton`), `reporting/from_events.py` | `test_cancel_one_test.py`, `test_web_cancel_test.py`, `test_scenario_run.py -k cancelled_by_the_person`, `test_shutdown.py`. **Restart UI** (app.py); the engine part runs in the next run |
 | WAF 403/429, cool-down, pacing per site | `engine/throttle.py`, `engine/session.py` (`raise_if_blocked`), `engine/runner.py` (`run_case`) | `test_waf.py`, `test_web_paused_banner.py` |
 | Captcha detection / solve-by-hand window (out of scope unless asked) | `engine/captcha.py`, `engine/test_runner.py` (`_captcha_gate`) | `test_captcha.py`, `test_web_captcha.py` |
 | ASK_USER step, asking a person mid-run | `engine/ask.py`, `cli.py` (`TerminalAsker`), `web/app.py` (answer endpoint) | `test_ask_user.py`, `test_web_ask_user.py` |
@@ -180,6 +181,7 @@ src/regrunner/
     patience.py    180  waits that end on evidence, not a clock (Patience) + WaitNotice (worker_waiting / worker_resumed events)
     timing.py      216  where a step's time went (site / wait / runner / computer / other; SiteClock, spans), run summary, site-version fingerprint
     resources.py   402  resources.jsonl sampler (CPU, free memory, swap, browsers' memory, loop lag; stdlib, psutil if present), machine_info, runner_version
+    cancel.py       55  cancel one test of a run: `OneTestCancel` (an Event look-alike set by the run's cancel OR that test's own Cancel), marker files `<run>/cancel_test/<quoted id>`
     settle.py 61 · enabled.py 97 · keys.py 87 · outcome.py 94 · order.py 243 · schedule.py 72 · pool.py 100
     inbox.py 115 · throttle.py 71 · captcha.py 65 · ask.py 118 · failure_capture.py 449 · api_runner.py 343 · diagnostics.py 17
     scenario.py    386  concurrency scenarios (P12): pick (named / lane id / Execute=Y), LaneCase ("<scenario> · <lane>"), adjust_order (lanes never
@@ -249,7 +251,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            88 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            90 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -472,6 +474,12 @@ item 26 in the tally (a formula pointing into another workbook, `=[4]Global!$B$2
 Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`, `third_party`, `site_version`, `machine`; opt-in benchmark)
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
 Unverified: the Windows paths of `engine/resources.py` (ctypes; no Windows here), numbers from real sites.
+
+**Done 2026-09-29: cancel one test** (`engine/cancel.py`). The UI writes `runs/<id>/cancel_test/<quoted test id>`; `Engine.watch_markers` (every 0.5 s) turns it into
+`Engine.cancel_test`: the test's `OneTestCancel` is set (every `cancel.is_set()` check - step loop, `Patience.give_up`, throttle, ASK_USER, scenario sync - sees it, no change to
+`patience.py`), event `test_cancel_requested`, and if the test is still in the same step after `TEST_CANCEL_GRACE_S` (5 s) its task is ended (`run_one` then returns
+CANCELLED "Cancelled by user"; a test cancelled before it got a worker never starts: `not_run(status="CANCELLED")`). A run with a cancelled test and no failure ends `INCOMPLETE`.
+Dependents: `producer_failed` says "X was cancelled by the user"; chain-only waits behave as for any ended test. Unverified on real sites/work computer.
 
 Gotchas:
 - `data-key` is the DOM patcher's (`morph.js`) identity attribute: never use it for action parameters (use `data-field`).

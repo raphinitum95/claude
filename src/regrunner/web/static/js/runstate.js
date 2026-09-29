@@ -21,7 +21,7 @@ function newTest(id, o = {}) {
     id, title: o.title || id, description: o.description || '', scenario: o.scenario || '', total: o.total_steps || 0,
     done: 0, failed: 0, status: 'QUEUED', worker: null, startedMs: null, endedMs: null, duration: null, step: null,
     shot: null, box: null, shotStep: 0, fails: [], review: [], attempt: 1, error: '', vars: [], waitsFor: o.waits_for || [],
-    lane: o.lane || null, syncs: [],                          // a lane of a concurrency scenario, and what happened at its sync points
+    lane: o.lane || null, syncs: [], cancelling: false,                          // a lane of a concurrency scenario, and what happened at its sync points
   };
 }
 
@@ -102,14 +102,20 @@ export function apply(run, e) {
     case 'review_item':
       if (t) t.review.push({ ...e });
       break;
+    case 'test_cancel_requested':                          // the person pressed Cancel on this one test: it stops at its next look (the card says so)
+      if (!t) break;
+      t.cancelling = true;
+      pushLog(run, e.ts, 'CANCEL', 'var(--warn)', `${t.id} · ${e.reason || 'Cancelled by user'}`);
+      break;
     case 'test_finished':
       if (!t) break;
       dropWaits(run, t.id);
+      t.cancelling = false;
       t.status = e.status || 'PASSED'; t.endedMs = at; t.duration = e.duration_s ?? null; t.error = e.error || '';
       t.done = t.total = Math.max(t.done, t.total);
       (e.review_counts || []).forEach((c, i) => { if (t.review[i]) t.review[i].count = c; });
       pushLog(run, e.ts, t.status === 'PASSED' ? 'PASS' : t.status === 'FAILED' ? 'FAIL' : 'END',
-        t.status === 'PASSED' ? 'var(--pass)' : t.status === 'NOT_RUN' ? 'var(--warn)' : 'var(--fail)', `${t.id} · ${t.status === 'NOT_RUN' ? 'not run · ' : ''}${t.done}/${t.total} · ${fmtSecs(t.duration)}`);
+        t.status === 'PASSED' ? 'var(--pass)' : t.status === 'NOT_RUN' || t.status === 'CANCELLED' ? 'var(--warn)' : 'var(--fail)', `${t.id} · ${t.status === 'NOT_RUN' ? 'not run · ' : t.status === 'CANCELLED' ? 'cancelled · ' : ''}${t.done}/${t.total} · ${fmtSecs(t.duration)}`);
       break;
     case 'user_input_needed':                              // an ASK_USER step: the run waits for a person (the answer never travels in an event)
       run.asks[e.ask] = { id: e.ask, test: e.test || '', step: e.step || 0, question: e.question || '', secret: !!e.secret, mode: e.mode || 'ui', kind: e.kind || 'text',

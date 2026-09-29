@@ -440,7 +440,7 @@ environment (set/missing only - the value never reaches the page), the SSO sessi
 
 **2 · Run in progress.** Global percentage ring, elapsed / estimated remaining / speed, passed-failed-in-flight-queued,
 one lane per worker with its **latest screenshot** (the element acted on is outlined) and a tick per step, the queue, finished
-tests, *Things to review* and an event log. **Cancel run** finishes the current steps; after 45 s the runner is told to stop now, and after ~12 s more it is killed, so a stuck browser can never keep a run alive. Closing a window, a browser or the report has a time limit too (`runner.close_timeout_s: 15`, `runner.report_timeout_s: 300`), and a run with no activity for longer than any step may take writes where everything is waiting to `runner.log`. Reloading the
+tests, *Things to review* and an event log. **Cancel test** on a running test's card stops just that test (it ends *Cancelled*, "Cancelled by user"; its worker moves on, the other tests carry on, tests that need its values are not run, and the run ends *Incomplete*). **Cancel run** finishes the current steps; after 45 s the runner is told to stop now, and after ~12 s more it is killed, so a stuck browser can never keep a run alive. Closing a window, a browser or the report has a time limit too (`runner.close_timeout_s: 15`, `runner.report_timeout_s: 300`), and a run with no activity for longer than any step may take writes where everything is waiting to `runner.log`. Reloading the
 page or losing the connection replays the event stream from the start, so nothing is missed.
 
 **3 · Run finished.** Verdict, test/step/wall-time summary (with the speed-up from running in parallel), tests sorted failed

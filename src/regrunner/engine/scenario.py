@@ -181,8 +181,9 @@ class Coordinator:
     """Where every lane of one running scenario is, and who waits for whom.  Built inside ``run_scenario``'s coroutine (Python 3.9 binds an
     ``asyncio.Condition`` to the loop that is current when it is made)."""
 
-    def __init__(self, plan: ScenarioPlan, bus, cancel: asyncio.Event):
+    def __init__(self, plan: ScenarioPlan, bus, cancel: asyncio.Event, lane_cancelled=None):
         self.plan, self.bus, self.cancel = plan, bus, cancel
+        self.lane_cancelled = lane_cancelled or (lambda test: False)      # did the person cancel this lane's test alone? (it stops waiting; it ends like a failed lane)
         self.changed = asyncio.Condition()
         self.keys = [c.lane for c in plan.lanes]
         self.test_of = {c.lane: c.id for c in plan.lanes}
@@ -242,7 +243,7 @@ class Coordinator:
                     self._emit(key, p, "done", f"{key} has done its part of {p.item}{': ' + then + ' may go on' if then else ''}.")
                     continue
                 why = await self._hold(key, p, notice, timing)
-                if why or self.cancel.is_set():
+                if why or self.cancel.is_set() or self.lane_cancelled(self.test_of[key]):
                     return why
         async with self.changed:
             self.pos[key] = max(self.pos[key], row)
@@ -295,7 +296,7 @@ class Coordinator:
                 async with self.changed:
                     while True:
                         released, there, missing, gone = self._state(key, p)
-                        if released or self.cancel.is_set():
+                        if released or self.cancel.is_set() or self.lane_cancelled(self.test_of[key]):
                             break
                         quiet = time.monotonic() - max([t0] + [self.moved[m] for m in missing])
                         if quiet >= p.timeout:
@@ -314,12 +315,12 @@ class Coordinator:
             self.waiting[key] = ""
             waited = time.monotonic() - t0
             if notice and wait_id:
-                note = f"waited {plain_seconds(waited)} at {p.item} ({'timed out' if why else 'released'})" if not self.cancel.is_set() else ""
+                note = f"waited {plain_seconds(waited)} at {p.item} ({'timed out' if why else 'released'})" if not (self.cancel.is_set() or self.lane_cancelled(self.test_of[key])) else ""
                 notice.end(wait_id, note)
         if why:
             self._emit(key, p, "timeout", why, reached=there, waiting=missing, ended=gone, waited=waited)
             return why
-        if not self.cancel.is_set():
+        if not (self.cancel.is_set() or self.lane_cancelled(self.test_of[key])):
             self._emit(key, p, "released", self._released_message(key, p, gone, waited), reached=there, ended=gone, waited=waited)
         return ""
 
@@ -358,7 +359,7 @@ async def run_scenario(engine, ctx, lanes: list[LaneCase], get_browser, n: int) 
     record each lane's result like any test's."""
     from .patience import WaitNotice
     plan = next(p for p in ctx.plan.scenarios if p.name == lanes[0].group)
-    coordinator = Coordinator(plan, ctx.bus, ctx.cancel)
+    coordinator = Coordinator(plan, ctx.bus, ctx.cancel, ctx.test_cancelled)
     ctx.note(f'Scenario "{plan.name}": {len(lanes)} lanes ({", ".join(c.lane for c in lanes)}) start together on worker {n}.', "info")
 
     async def one(case: LaneCase) -> None:
