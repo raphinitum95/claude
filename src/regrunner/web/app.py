@@ -695,6 +695,49 @@ class RunManager:
                     out.append(meta)
         return sorted(out, key=lambda m: m.get("started_at", ""), reverse=True)[:limit]
 
+    def delete_runs(self, run_ids: list[str]) -> list[str]:
+        """Take finished runs out of the list.  Each run folder is moved to ``runs/.trash/`` (not erased, like a deleted workbook), so a
+        mistake can be undone by hand; every scan of ``runs/`` reads ``<folder>/run.json`` or ``results.json`` and the trash has neither at
+        its top level, so a trashed run is simply gone from the UI, history and compare.
+
+        All-or-nothing on the checks: if any of the runs is still going (or is the folder its process still keeps its inbox and log in) nothing
+        is moved.  A folder the operating system will not move (Windows: a file open in a viewer) is reported by name after the others went."""
+        run_dirs: dict[str, Path] = {}
+        for run_id in run_ids:
+            run_dir = self.run_dir(run_id)
+            if run_id.startswith(".") or read_meta(run_dir) is None:          # (".trash" and ".build" are folders here too, but never runs)
+                raise ApiError(404, f"run {run_id} not found", "not_found", run_id=run_id)
+            if self.is_active(run_id):
+                raise ApiError(409, f"{run_id} is still running. Cancel it (or let it finish) before deleting it.", "busy", run_id=run_id)
+            pool = self.pools.get(self.pool_of.get(run_id, ""))
+            if pool is not None and pool.id == run_id and pool.proc.returncode is None:
+                raise ApiError(409, f"{run_id} has finished, but its workers are still shutting down or serving another run, and they keep "
+                                    "their files in this run's folder. Try again in a moment.", "busy", run_id=run_id)
+            run_dirs[run_id] = run_dir
+        trash = self.runs_dir() / ".trash"
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        deleted: list[str] = []
+        stuck: list[str] = []
+        for run_id, run_dir in run_dirs.items():
+            target = trash / f"{stamp}-{run_id}"
+            n = 1
+            while target.exists():
+                n += 1
+                target = trash / f"{stamp}-{run_id}-{n}"
+            try:
+                trash.mkdir(exist_ok=True)
+                os.replace(run_dir, target)
+            except OSError as err:
+                stuck.append(f"{run_id} ({err.strerror or err})")
+                continue
+            deleted.append(run_id)
+            self.procs.pop(run_id, None)
+            self.pool_of.pop(run_id, None)
+        if stuck:
+            raise ApiError(409, f"{', '.join(stuck)} could not be removed. If a file of the run is open in another program, close it and try again."
+                                + (f" Already removed: {', '.join(deleted)}." if deleted else ""), "locked", deleted=deleted)
+        return deleted
+
     def existing_batch_ids(self) -> set[str]:
         """So a new batch (a UI label: web/run_batch.py) never reuses one already on disk, however briefly."""
         return {m["batch_id"] for m in self.list_runs(1000) if m.get("batch_id")}
@@ -1064,6 +1107,11 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
                  "screenshots": sum(1 for _ in (run_dir / "tests").rglob("*.jpg")) if (run_dir / "tests").is_dir() else 0}
         return {"meta": meta, "active": meta["active"], "files": files,
                 "results": json.loads(results.read_text(encoding="utf-8")) if results.is_file() else None}
+
+    @app.delete("/api/runs/{run_id}")
+    async def delete_run(run_id: str):
+        """Delete one finished run (moved to ``runs/.trash/``).  A run inside a batch is deleted the same way: the batch just has one run fewer."""
+        return {"deleted": await asyncio.to_thread(mgr.delete_runs, [run_id]), "kept_in": "runs/.trash"}
 
     @app.post("/api/runs/{run_id}/cancel")
     async def cancel_run(run_id: str):

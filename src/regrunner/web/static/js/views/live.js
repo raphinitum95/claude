@@ -112,7 +112,8 @@ function waitClock(S, w) {
 export function runHeaderActions(S, run, meta, active) {
   return html`<div style="margin-left: auto; display: flex; gap: 10px; padding-top: 4px; flex-wrap: wrap">
 ${meta && meta.command ? html`<button class="btn" data-act="copy-run-cmd">${icon('term', 16)} Copy command</button>` : ''}
-${active ? html`<button class="btn btn-dng" data-act="cancel-run" data-id="${run.id}" ${S.view.cancelAtMs || (meta && meta.cancel_requested_at) ? raw('disabled') : ''}>${icon('stop', 16)} Cancel run</button>` : ''}</div>`;
+${active ? html`<button class="btn btn-dng" data-act="cancel-run" data-id="${run.id}" ${S.view.cancelAtMs || (meta && meta.cancel_requested_at) ? raw('disabled') : ''}>${icon('stop', 16)} Cancel run</button>`
+  : meta ? html`<button class="btn" style="color: var(--fail)" data-act="ask-delete-run" data-id="${run.id}" data-batch="${meta.batch_id || ''}">${icon('trash', 16)} Delete run</button>` : ''}</div>`;
 }
 
 function shotBox(run, t, big) {
@@ -370,7 +371,7 @@ ${Number.isFinite(startedMs) ? html`<span class="chip mono">${icon('clock', 14)}
 <div style="font-size: 12px; color: var(--tx3)">Each workbook is its own run, with its own folder and report. This page shows them together.</div></div>
 <div style="margin-left: auto; display: flex; gap: 10px; padding-top: 4px; flex-wrap: wrap">
 <button class="btn" data-act="add-to-batch" data-id="${batch.id}">${icon('plus', 16)} Add tests to this batch</button>
-${active ? html`<button class="btn btn-dng" data-act="cancel-batch">${icon('stop', 16)} Stop</button>` : ''}</div></div>
+${active ? html`<button class="btn btn-dng" data-act="cancel-batch">${icon('stop', 16)} Stop</button>` : html`<button class="btn" style="color: var(--fail)" data-act="ask-delete-batch" data-id="${batch.id}">${icon('trash', 16)} Delete batch</button>`}</div></div>
 <div style="display: flex; height: 14px; border-radius: 6px; overflow: hidden; gap: 2px">
 <span style="flex: ${totals.done - totals.failedSteps || 0.001}; background: var(--pass)"></span>${totals.failedSteps ? html`<span style="flex: ${totals.failedSteps}; background: var(--fail)"></span>` : ''}
 <span style="flex: ${Math.max(0, totals.total - totals.done) || 0.001}; background: var(--track)"></span></div>
