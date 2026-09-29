@@ -11,16 +11,16 @@ function workbookGrid(wb, columns, rows) {
   const markers = columns[`${wb}__markers`] || [];
   const own = rows.filter((r) => r.workbook === wb);
   if (!cols.length) return html`<div class="card" style="padding: 14px"><b>${wb}</b><p style="color: var(--tx3); font-size: 12.5px">No finished runs yet.</p></div>`;
-  return html`<section class="card" style="padding: 14px 0 8px; overflow: hidden">
+  return html`<section class="card cmp-card" style="padding: 14px 0 8px; overflow: hidden">
 <div style="padding: 0 16px 10px"><b style="font-size: 14px">${wb}</b></div>
-<div style="display: grid; grid-template-columns: 200px repeat(${cols.length}, minmax(0, 1fr)) 130px; gap: 6px; align-items: end; padding: 0 16px 8px">
+<div class="cmp-row" style="display: grid; grid-template-columns: 200px repeat(${cols.length}, minmax(0, 1fr)) 130px; gap: 6px; align-items: end; padding: 0 16px 8px">
 <span class="lbl">Test</span>
 ${cols.map((c) => html`<span style="display: flex; flex-direction: column; align-items: center; font-size: 10.5px; color: var(--tx3)"><b class="mono">${dayKey(c.started_at).slice(5)}</b><span>${c.environment}</span></span>`)}
 <span class="lbl">Verdict</span></div>
 ${own.map((r) => {
     const lastIdx = [...r.cells.keys()].reverse().find((i) => r.cells[i]);
     const link = lastIdx != null ? resultsUrl('test', cols[lastIdx].run_id, r.test) : null;
-    return html`<div style="display: grid; grid-template-columns: 200px repeat(${cols.length}, minmax(0, 1fr)) 130px; gap: 6px; align-items: center; padding: 5px 16px; border-top: 1px solid var(--line)">
+    return html`<div class="cmp-row" style="display: grid; grid-template-columns: 200px repeat(${cols.length}, minmax(0, 1fr)) 130px; gap: 6px; align-items: center; padding: 5px 16px; border-top: 1px solid var(--line)">
 ${link ? html`<a href="${link}" class="trunc" style="font-size: 13px; font-weight: 600; text-decoration: none">${r.test}</a>` : html`<b class="trunc" style="font-size: 13px">${r.test}</b>`}
 ${r.cells.map((c) => html`<span title="${c || 'not in this run'}" style="height: 20px; border-radius: 5px; background: ${CELL_COLOR[c] || 'transparent'}; ${!c ? 'border: 1px dashed var(--line2)' : ''}"></span>`)}
 <span>${VERDICT_TAG[r.verdict] ? html`<span class="tag ${VERDICT_TAG[r.verdict]}">${r.verdict}</span>` : ''}</span></div>`;

@@ -68,7 +68,7 @@ function listPane(m, sel) {
   const secrets = m.variables.filter((v) => v.secret);
   const rest = m.variables.filter((v) => !v.secret);
   const adding = S.build.selVariable === '+new';
-  return html`<aside class="scroll" style="width: 320px; flex: none; border-right: 1px solid var(--line); overflow: auto; padding: 12px 10px">
+  return html`<aside class="scroll b-lcol" style="--w: 320px; overflow: auto; padding: 12px 10px">
 <button class="btn btn-sm ${adding ? 'btn-pri' : ''}" style="width: 100%; justify-content: center; margin-bottom: 8px" data-act="bv-new" id="bv-new">${icon('plus', 13)} New variable</button>
 ${secrets.length ? html`<span class="lbl" style="padding: 6px 8px 2px; display: block">Secrets</span>${secrets.map((v) => varRow(v, !adding && sel && sel.key === v.key))}` : ''}
 ${groups.map(([k, label]) => { const list = rest.filter((v) => v.kind === k); return list.length ? html`<span class="lbl" style="padding: 8px 8px 2px; display: block">${label}</span>${list.map((v) => varRow(v, !adding && sel && sel.key === v.key))}` : ''; })}
@@ -97,7 +97,7 @@ function renamePanel(sel, r) {
   const changes = r.changes || [];
   return html`<div class="card" id="bv-rename" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: none; border-color: var(--acc-line)">
 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><b style="font-size: 13px">Rename {${sel.token}} to</b>
-<input class="fld mono" id="bv-rename-to" style="height: 32px; width: 240px; font-size: 13px" value="${r.to}" placeholder="NEW_NAME" data-input="bv-rename-to" data-enter="bv-rename-preview" autofocus>
+<input class="fld mono" id="bv-rename-to" style="height: 32px; width: 240px; max-width: 100%; font-size: 13px" value="${r.to}" placeholder="NEW_NAME" data-input="bv-rename-to" data-enter="bv-rename-preview" autofocus>
 <button class="btn btn-sm" data-act="bv-rename-preview" ${r.busy ? raw('disabled') : ''}>Show what changes</button>
 <span style="flex: 1"></span><button class="btn btn-sm btn-ghost" data-act="bv-rename-cancel">Cancel</button></div>
 ${r.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${r.error}</span></div>` : ''}
@@ -234,10 +234,10 @@ export function variableMap(S_) {
   const sel = selected();
   const adding = S.build.selVariable === '+new';
   const left = listPane(m, sel);
-  if (adding) return html`<div style="flex: 1; display: flex; min-height: 0">${left}${addPane(m)}</div>`;
-  if (!sel) return html`<div style="flex: 1; display: flex">${left}<main class="scroll" style="flex: 1; padding: 24px"><span style="color: var(--tx3)">No variables yet: add one.</span></main></div>`;
+  if (adding) return html`<div class="b-cols">${left}${addPane(m)}</div>`;
+  if (!sel) return html`<div class="b-cols">${left}<main class="scroll" style="flex: 1; padding: 24px"><span style="color: var(--tx3)">No variables yet: add one.</span></main></div>`;
   load(sel);
-  return html`<div style="flex: 1; display: flex; min-height: 0">${left}${detailPane(S_, m, sel)}</div>`;
+  return html`<div class="b-cols">${left}${detailPane(S_, m, sel)}</div>`;
 }
 
 // ---- doing ------------------------------------------------------------------------------------------------------------------------

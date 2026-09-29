@@ -247,7 +247,38 @@ export function setDataCell(row, column, value) { const t = currentTest(); if (t
 export const setDataCellDebounced = debounce((row, column, value) => setDataCell(row, column, value), 500);
 
 export function toggleDrawer() { S.build.ed.drawer = !S.build.ed.drawer; if (S.build.ed.drawer) loadDrawerGrid(); rerender(); }
-export function toggleProblems() { S.build.ed.problems = !S.build.ed.problems; rerender(); }
+export function toggleProblems() {
+  S.build.ed.problems = !S.build.ed.problems;
+  if (S.build.ed.problems) S.build.ed.pane = 'details';         // on a phone the problems list lives in the Details pane
+  rerender();
+}
+/** Phone layout: which of Steps / Details / Test shows.  Ignored above 820px, where all three are on screen. */
+export function setPane(el) {
+  const ed = S.build.ed;
+  ed.pane = el.dataset.val;
+  if (ed.pane === 'test' && !ed.drawer) { ed.drawer = true; loadDrawerGrid(); }          // the Test pane is the test's own data: show it open
+  window.scrollTo(0, 0);
+  rerender();
+}
+/** Details pane's Previous / Next: select the neighbouring step. */
+export function stepNav(el) {
+  const t = currentTest();
+  const at = t ? t.steps.findIndex((x) => x.row === S.build.ed.sel) : -1;
+  const next = t && t.steps[at + Number(el.dataset.dir)];
+  if (next) { selectStep(next.row); window.scrollTo(0, 0); }
+}
+/** Under 1100px the rail is a drawer, and the header's ⋯ menu holds the buttons that do not fit. */
+export function toggleRail() { S.build.railOpen = !S.build.railOpen; rerender(); }
+export function toggleHdrMenu() { S.build.hdrMenu = !S.build.hdrMenu; rerender(); }
+// Choosing something in the drawer or the ⋯ menu closes it (after the choice's own action has run).
+document.addEventListener('click', (ev) => {
+  const el = ev.target instanceof Element ? ev.target : null;
+  if (!el) return;
+  const inMenu = el.closest('.hdr-menu [data-act]');
+  const inRail = el.closest('.b-rail.open a, .b-rail.open [data-act]:not(.rail-close)');
+  if (!inMenu && !inRail) return;
+  setTimeout(() => { S.build.hdrMenu = false; S.build.railOpen = false; rerender(); }, 0);
+});
 export function toggleMenu() {
   S.build.ed.menu = !S.build.ed.menu;
   if (S.build.ed.menu && !S.build.keywords) buildApi.keywords().then((k) => { S.build.keywords = k; rerender(); }).catch(() => {});
@@ -758,6 +789,10 @@ export const acts = {
   'build-download-go'(el) { const name = el.dataset.name; S.modal = null; rerender(); startDownload(name); },
   'build-history': openHistory,
   'build-toggle-problems': toggleProblems,
+  'build-pane': setPane,
+  'build-step-nav': stepNav,
+  'build-rail-toggle': toggleRail,
+  'build-hdr-menu': toggleHdrMenu,
   'build-new-workbook': openNewWorkbook,
   'build-new-test': openNewTest,
   'build-nt-kind'(el) { if (S.modal) { S.modal.testKind = el.dataset.val; rerender(); } },

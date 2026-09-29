@@ -55,7 +55,7 @@ export function failedStepCard(S, runId, s) {
 ${s.box ? html`<div class="hl bad" style="left: ${s.box.x}%; top: ${s.box.y}%; width: ${s.box.w}%; height: ${s.box.h}%"></div>` : ''}
 <div class="cap">after step ${s.seq}</div></div>${s.screenshot_full ? html`<a class="lnk" style="font-size: 12.5px; margin-top: 6px; display: inline-block" href="${runFileUrl(runId, s.screenshot_full)}" target="_blank" rel="noopener">Whole page (scroll)</a>` : ''}`
     : html`<div class="shot"><div class="wait">No screenshot for this step</div></div>`;
-  return html`<div style="display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 20px; padding: 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line2); margin-top: 14px" data-key="step-${s.seq}">
+  return html`<div class="rsplit" style="display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 20px; padding: 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line2); margin-top: 14px" data-key="step-${s.seq}">
 <div style="display: flex; flex-direction: column; gap: 13px; min-width: 0">
 <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap">${pill('FAILED')}<b class="mono" style="font-size: 13px">Step ${s.seq}</b><span class="mono" style="font-size: 11.5px; color: var(--tx3)">row ${s.row} · ${s.action}</span></div>
 <div style="font-weight: 650; font-size: 16px; overflow-wrap: anywhere">${s.name || s.action}</div>
@@ -94,7 +94,7 @@ function testRows(S, runId, r) {
     const stateGlyph = t.status === 'PASSED' ? ['passc', 'var(--pass)'] : t.status === 'FAILED' ? ['failc', 'var(--fail)'] : ['warn', STATUS[t.status] ? STATUS[t.status].color : 'var(--warn)'];
     const shownFails = v.showAllFails[t.id] ? failedSteps : failedSteps.slice(0, 5);
     return html`<div style="border-top: 1px solid var(--line)" data-key="${t.id}">
-<${raw(bad ? 'button' : 'div')} class="trow" ${bad ? html`data-act="expand-test" data-id="${t.id}" aria-expanded="${String(open)}"` : ''} style="width: 100%; display: grid; grid-template-columns: 22px 168px minmax(0, 1fr) 84px 60px; gap: 16px; align-items: center; padding: 15px 22px; background: ${bad ? 'var(--fail-soft)' : 'transparent'}; text-align: left">
+<${raw(bad ? 'button' : 'div')} class="trow rrow-a" ${bad ? html`data-act="expand-test" data-id="${t.id}" aria-expanded="${String(open)}"` : ''} style="width: 100%; display: grid; grid-template-columns: 22px 168px minmax(0, 1fr) 84px 60px; gap: 16px; align-items: center; padding: 15px 22px; background: ${bad ? 'var(--fail-soft)' : 'transparent'}; text-align: left">
 <span style="color: ${stateGlyph[1]}; display: inline-flex">${icon(stateGlyph[0], 22)}</span>
 <div style="min-width: 0"><div style="display: flex; gap: 8px; align-items: baseline"><b class="mono" style="font-size: 13.5px">${t.id}</b><span class="mono" style="font-size: 10.5px; color: var(--tx3)">${t.scenario}</span></div>
 <div style="font-size: 12.5px; color: var(--tx2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.description}</div></div>

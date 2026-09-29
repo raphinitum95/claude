@@ -1,6 +1,6 @@
 // The Build tab's left rail: this workbook's tests, its data sheets, and workbook-wide settings.
 // Shown on every Build screen (map, variables, test editor) so switching tests never needs a trip back to the map.
-import { html } from '../../util.js';
+import { html, cx } from '../../util.js';
 import { icon } from '../../icons.js';
 import { buildUrl, bm } from './actions.js';
 import { scenarioRailItems } from './scenario.js';
@@ -21,16 +21,23 @@ function testRow(S, t) {
 <span class="pdot" style="background: ${lastDot(t)}" title="${t.lastRun ? t.lastRun.status : 'Not run'}"></span></button>`;
 }
 
+/** Under 1100px the rail is a drawer over the page (opened by the header's list button); this is its way out. */
+function railClose() {
+  return html`<button class="btn btn-sm rail-close" data-act="build-rail-toggle" aria-label="Close">${icon('x', 13)} Close</button>`;
+}
+
+const railScrim = (S) => (S.build.railOpen ? html`<div class="rail-scrim" data-act="build-rail-toggle" aria-hidden="true"></div>` : '');
+
 export function buildRail(S) {
   const m = bm();
   if (!m) {
-    return html`<aside class="b-rail scroll" aria-label="Workbook"><div class="lbl" style="padding: 6px">Workbooks</div>
+    return html`${railScrim(S)}<aside class="${cx('b-rail scroll', S.build.railOpen && 'open')}" aria-label="Workbook">${railClose()}<div class="lbl" style="padding: 6px">Workbooks</div>
 ${S.workbooks.map((w) => html`<button class="rail-item" data-act="build-open-wb" data-name="${w.name}">${icon('grid', 14)} <span class="trunc">${w.name}</span></button>`)}
 <button class="btn btn-sm" style="margin-top: 8px" data-act="build-new-workbook">${icon('plus', 13)} New workbook</button></aside>`;
   }
   const params = m.sheets.filter((s) => s.role === 'params');
   const dataRowsOf = (sheetName) => { const t = m.tests.find((x) => x.paramSheet === sheetName); return t ? t.dataRows.length : null; };
-  return html`<aside class="b-rail scroll" aria-label="Workbook">
+  return html`${railScrim(S)}<aside class="${cx('b-rail scroll', S.build.railOpen && 'open')}" aria-label="Workbook">${railClose()}
 <a href="#/build/all" class="lbl" style="display: flex; align-items: center; gap: 5px; padding: 2px 6px; color: var(--tx3); text-decoration: none">${icon('chevl', 11)} All workbooks</a>
 <a href="${buildUrl(S.build.name, 'map')}" style="display: flex; flex-direction: column; gap: 5px; padding: 2px 6px; color: inherit; text-decoration: none">
 <span class="lbl" style="display: flex; align-items: center; gap: 5px">${icon('grid', 11)} Workbook map</span>

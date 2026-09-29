@@ -209,7 +209,7 @@ function inspector(S, sc, m) {
   else if (sel.kind === 'sync' && sc.syncs.some((s) => s.name === sel.key)) body = syncInspector(S, sc, sc.syncs.find((s) => s.name === sel.key));
   else if (sel.kind === 'order' && sc.orders.some((o) => o.name === sel.key)) body = orderInspector(S, sc, sc.orders.find((o) => o.name === sel.key));
   else body = scenarioInspector(S, sc, m);
-  return html`<aside class="scroll" aria-label="Selected" style="width: 330px; flex: none; border-left: 1px solid var(--line); background: var(--rail); padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; overflow: auto">
+  return html`<aside class="scroll b-aside" aria-label="Selected" style="--w: 330px; padding: 18px 16px; gap: 14px; overflow: auto">
 ${sel.kind !== 'scenario' ? html`<button class="lnk" style="align-self: flex-start" data-act="sc-select" data-kind="scenario" data-key="">${icon('chevl', 11)} Scenario settings</button>` : ''}${body}</aside>`;
 }
 
@@ -247,15 +247,15 @@ export function scenarioBoard(S) {
   if (ui.name !== sc.name) { ui.name = sc.name; ui.sel = { kind: 'scenario', key: '' }; loadScenarioRuns(sc.name); }
   const errors = sc.problems.filter((p) => p.severity === 'error');
   const twins = sc.lanes.length > 1 && new Set(sc.lanes.map((l) => l.test)).size < sc.lanes.length;
-  return html`<div class="app-body">${buildRail(S)}<main class="main" style="display: flex; flex-direction: column; min-width: 0; overflow: hidden">
-<div style="height: 52px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--rail)">
+  return html`<div class="app-body">${buildRail(S)}<main class="main" style="display: flex; flex-direction: column; min-width: 0">
+<div style="min-height: 52px; flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--rail)">
 <span class="chip" style="height: 28px">${icon('sync', 14)} Scenario</span><span class="trunc" style="font-size: 12.5px; color: var(--tx3)">Runs as one unit and reports per lane. For concurrency cases, not load.</span>
 <span style="flex-grow: 1"></span>
 <button class="btn btn-sm" data-act="sc-add-lane">${icon('plus', 13)} Lane</button>
 <button class="btn btn-sm" data-act="sc-add-sync" ${sc.lanes.length < 2 ? raw('disabled') : ''}>${icon('sync', 13)} Sync line</button>
 <button class="btn btn-sm" data-act="sc-add-order" ${sc.lanes.length < 2 ? raw('disabled') : ''}>${icon('arrowr', 13)} Order marker</button>
 <button class="btn btn-sm btn-pri" data-act="sc-run" ${errors.length ? raw('disabled title="Fix the problems below first"') : ''}>${icon('play', 12)} Run it on ${m.environment || 'the default environment'}</button></div>
-<div style="flex-grow: 1; display: flex; min-height: 0">
+<div class="b-cols" style="flex-grow: 1">
 <div class="scroll" style="flex: 1; min-width: 0; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px">
 <div style="display: flex; align-items: baseline; gap: 12px"><h1 class="disp" style="font-size: 24px; margin: 0">${sc.name}</h1>${sc.enabled ? '' : html`<span class="tag">not in default runs</span>`}
 <span style="font-size: 12.5px; color: var(--tx2)">${sc.notes || ''}</span></div>

@@ -310,7 +310,7 @@ function wordButtons(st, t) {
   return html`<div style="display: flex; flex-wrap: wrap; gap: 5px; align-items: center">
 ${p.words.map((w) => (w.role === 'name' || w.role === 'context')
     ? html`<span style="position: relative"><button class="${w.variable ? 'var' : 'btn btn-sm'}" data-act="build-sess-word" data-role="${w.role}" title="Make it a variable">${w.variable ? html`${icon('braces', 11)} ${w.variable}` : `“${w.text}”`}</button>
-${ui.wordMenu === w.role ? html`<div class="menu" style="position: absolute; left: 0; top: 30px; width: 250px; padding: 6px; z-index: 7">
+${ui.wordMenu === w.role ? html`<div class="menu" style="position: absolute; left: 0; top: 30px; width: min(250px, calc(100vw - 32px)); padding: 6px; z-index: 7">
 <span class="lbl" style="display: block; padding: 4px 8px">Make “${w.text}” a variable</span>
 ${vars.map((v) => html`<button class="mitem" data-act="build-sess-var" data-role="${w.role}" data-token="${v.token}">${icon('braces', 13)}<span style="flex: 1">${v.label} <span class="mono" style="color: var(--tx3); font-size: 11px">{${v.token}}</span></span></button>`)}
 <button class="mitem" data-act="build-sess-var-new" data-role="${w.role}">${icon('plus', 13)}<span style="flex: 1">New variable…</span></button></div>` : ''}</span>`
