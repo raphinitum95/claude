@@ -32,6 +32,7 @@ def results_from_events(run_dir: Path) -> RunResult:
         tests[t["id"]] = TestResult(id=t["id"], title=t.get("title", t["id"]), scenario=t.get("scenario", ""),
                                     description=t.get("description", ""), total_steps=t.get("total_steps", 0), lane=dict(t.get("lane") or {}))
     finished: set[str] = set()
+    cancelled_by_user: dict[str, str] = {}                   # tests the person cancelled on their own: id -> the reason the event gave
     last_ts = start["ts"]
     for e in events:
         last_ts = e["ts"]
@@ -67,6 +68,8 @@ def results_from_events(run_dir: Path) -> RunResult:
         elif kind in _REVIEW_TYPES and test:
             item = {k: v for k, v in e.items() if k not in ("ts", "run_id")}
             test.review.append(item)
+        elif kind == "test_cancel_requested" and test:
+            cancelled_by_user[test.id] = e.get("reason", "Cancelled by user")
         elif kind == "test_finished" and test:
             test.status = e["status"]
             test.passed, test.failed, test.skipped = e.get("passed", 0), e.get("failed", 0), e.get("skipped", 0)
@@ -81,7 +84,9 @@ def results_from_events(run_dir: Path) -> RunResult:
             continue
         test.passed = sum(s.status == "PASSED" for s in test.steps)
         test.failed = sum(s.status == "FAILED" for s in test.steps)
-        if test.status == "RUNNING":
+        if test.status == "RUNNING" and test.id in cancelled_by_user:        # its Cancel was pressed, the log ended before it said it had stopped
+            test.status, test.error = "CANCELLED", cancelled_by_user[test.id]
+        elif test.status == "RUNNING":
             test.status, test.error = "INTERRUPTED", "The run stopped while this test was running"
         else:
             test.status, test.error = "QUEUED", "The run stopped before this test started"

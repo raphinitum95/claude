@@ -24,6 +24,7 @@ from ..workbook.sheet import cell_text
 from ..workbook.variables import INLINE_RE, MARKERS, VariablePool, evaluate_condition, parse_condition
 from .actions import ASK_METHODS, NO_PAGE_METHODS, ActionError, StepContext, run_action
 from .ask import AskCancelled, AskTimeout, AskUnavailable
+from .cancel import cancel_reason
 from .failure_capture import capture_failure
 from .gates import SIDE_EFFECT_MODES
 from .outcome import FAILED, PASSED, Verdict, evaluate
@@ -320,7 +321,7 @@ class TestRunner:
             row = 2
             while row <= runtime.total_rows:
                 if self.cancel.is_set():
-                    result.status, stop_reason = "CANCELLED", "cancelled"
+                    result.status, stop_reason = "CANCELLED", cancel_reason(self.cancel)
                     break
                 marker = runtime.method_at(row)
                 if marker in MARKERS:                            # ELSE / END_IF / ITERATION_END: where to go next, not a step
@@ -335,7 +336,7 @@ class TestRunner:
                 if self.lane is not None:                        # a scenario's sync point / order marker before this step: wait for the other lanes
                     why = await self.lane.before_step(row, self.notice, self.timing)
                     if self.cancel.is_set():
-                        result.status, stop_reason = "CANCELLED", "cancelled"
+                        result.status, stop_reason = "CANCELLED", cancel_reason(self.cancel)
                         break
                     if why:
                         self._lane_stop = stop_reason = why

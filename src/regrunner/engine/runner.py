@@ -32,6 +32,7 @@ from ..workbook.variables import VariablePool
 from .diagnostics import dump_tasks
 from .api_runner import ApiTestRunner
 from .ask import Asker
+from .cancel import CANCELLED_BY_USER, OneTestCancel, requested_tests
 from .inbox import Inbox
 from .order import Flow, Order, load_chains, plan_order
 from .patience import WaitNotice, plain_seconds
@@ -41,6 +42,8 @@ from .schedule import Schedule
 from .test_runner import TestRunner
 from .throttle import Throttle
 from .timing import run_summary
+
+TEST_CANCEL_GRACE_S = 5.0        # a test the person cancelled gets this long to stop by itself (next look of a wait / step) before its task is ended
 
 
 @dataclass
@@ -161,6 +164,8 @@ class RunCtx:
     closed: bool = False                                                       # its event stream is closed: nothing more can be said in it
     stopped: bool = False
     abandoned: bool = False                                                    # a forced stop that some test did not obey: finish without it
+    switches: dict[str, OneTestCancel] = field(default_factory=dict)           # per test: the run's cancel or the person's Cancel on that test (engine/cancel.py)
+    test_tasks: dict[str, Any] = field(default_factory=dict)                   # the task of each test that is going (so its own Cancel can end it)
 
     # shortcuts the workers use
     @property
@@ -190,6 +195,16 @@ class RunCtx:
     @property
     def environment(self) -> str:
         return self.plan.environment
+
+    def switch_of(self, test_id: str) -> OneTestCancel:
+        """What the test ``test_id`` asks "am I cancelled?": set by the run's cancel, or by the person cancelling that one test."""
+        if test_id not in self.switches:
+            self.switches[test_id] = OneTestCancel(self.cancel, test_id)
+        return self.switches[test_id]
+
+    def test_cancelled(self, test_id: str) -> bool:
+        """Did the person cancel this test on its own (the run's cancel does not count)?"""
+        return self.switches[test_id].by_user if test_id in self.switches else False
 
     def note(self, message: str, level: str = "warning") -> None:
         if not self.closed:
@@ -301,9 +316,11 @@ async def open_run(plan: RunPlan, bus: EventBus | None, browser_info: dict[str, 
     schedule = Schedule(sorted(plan.cases, key=lambda c: (c.id in plan.order.after_stream, c.id not in feeds, -len(plan.plans[c.id]))), plan.order.deps,
                         groups=groups_of(plan.scenarios))        # a scenario is handed to one worker as a whole
     asker = Asker(run_dir, bus, cancel, mode=ask_mode, default_timeout_s=cfg.ask.timeout_s)           # ASK_USER: who can answer
-    return RunCtx(plan=plan, run_id=run_id, run_dir=run_dir, bus=bus, jsonl=jsonl, schedule=schedule, cancel=cancel, asker=asker,
+    ctx = RunCtx(plan=plan, run_id=run_id, run_dir=run_dir, bus=bus, jsonl=jsonl, schedule=schedule, cancel=cancel, asker=asker,
                   selector_map=SelectorMap.load(cfg.path(cfg.selectors.map)), harvest=HarvestStore() if cfg.selectors.harvest else None,
                   result=result, browser_info=browser_info)
+    asker.test_cancelled = ctx.test_cancelled                   # a question a cancelled test is waiting on closes
+    return ctx
 
 
 def announce_run(ctx: RunCtx, workers: int) -> None:
@@ -345,6 +362,7 @@ class Engine:
                  browser_info: dict[str, Any], inbox: Inbox | None = None):
         self.cfg = cfg                                                # (a copy that names the browser the workers use)
         self.cancel = cancel
+        self._test_cancels: set = set()
         self.kind, self.headless, self.ask_mode, self.browser_info = kind, headless, ask_mode, browser_info
         self.want_workers = want_workers                              # what the person asked for (the ceiling a pool grows to as runs join)
         self.pool = Pool(cancel, joinable=inbox is not None, gate=self.site_full)
@@ -497,19 +515,20 @@ class Engine:
             key = ctx.order.cells.get(case.id, {}).get(param)
             if key is None or tuple(key) in ctx.shared:
                 continue
-            states = ", ".join(f"{p} ended {ctx.results[p].status}" if p in ctx.results else p for p in producers)
+            states = ", ".join((f"{p} was cancelled by the user" if ctx.results[p].status == "CANCELLED" and ctx.test_cancelled(p) else f"{p} ended {ctx.results[p].status}")
+                               if p in ctx.results else p for p in producers)
             name = next((i["param"] for f in ctx.flows if f.id == case.id for i in f.reads.values() if i["param"].upper() == param), param)
             return (f"Not run: {case.id} needs {name}, which {' and '.join(producers)} should have set ({states}) and did not. "
                     "Nothing was typed in its place.")
         return ""
 
     @staticmethod
-    def not_run(ctx: RunCtx, case: TestCase, reason: str, worker: int) -> TestResult:
+    def not_run(ctx: RunCtx, case: TestCase, reason: str, worker: int, status: str = "ERROR") -> TestResult:
         total = len(ctx.plans[case.id])
-        res = TestResult(id=case.id, title=case.title, sheet=case.sheet, scenario=case.scenario, description=case.description, status="ERROR",
+        res = TestResult(id=case.id, title=case.title, sheet=case.sheet, scenario=case.scenario, description=case.description, status=status,
                          started_at=now_iso(), ended_at=now_iso(), total_steps=total, skipped=total, error=reason)
         ctx.bus.emit("test_started", test=case.id, title=case.title, total_steps=total, worker=worker, attempt=1)
-        ctx.bus.emit("test_finished", test=case.id, status="ERROR", passed=0, failed=0, skipped=total, duration_s=0.0, error=reason, review_counts=[])
+        ctx.bus.emit("test_finished", test=case.id, status=status, passed=0, failed=0, skipped=total, duration_s=0.0, error=reason, review_counts=[])
         ctx.note(f"{case.id}: {reason}")
         return res
 
@@ -535,13 +554,14 @@ class Engine:
         captcha_tries = 0
         infra_tries = 0
         throttle = self.throttle_for(ctx)
+        cancel = ctx.switch_of(case.id)                         # the run's cancel, or this one test's own Cancel button (engine/cancel.py)
         while True:
             attempt += 1
             generation = self.driver_generation
             async with contextlib.AsyncExitStack() as stack:
                 if at_window:
                     await stack.enter_async_context(self.window_lock)
-                    if ctx.cancel.is_set():                     # cancelled while waiting for the window: no need to open it
+                    if cancel.is_set():                     # cancelled while waiting for the window: no need to open it
                         res.attempts = attempts[:-1]
                         return res
                     try:
@@ -553,12 +573,12 @@ class Engine:
                         res.attempts = attempts[:-1]
                         return res
                 if case.kind == "api":
-                    runner = ApiTestRunner(workbook=ctx.workbook, case=case, pw=self.pw, cfg=cfg, bus=bus, run_dir=ctx.run_dir, cancel=ctx.cancel,
+                    runner = ApiTestRunner(workbook=ctx.workbook, case=case, pw=self.pw, cfg=cfg, bus=bus, run_dir=ctx.run_dir, cancel=cancel,
                                            planned=len(ctx.plans[case.id]), shared=ctx.shared, worker=n, attempt=attempt, throttle=throttle, asker=ctx.asker,
                                            pool=ctx.pool)
                 else:
                     runner = TestRunner(workbook=ctx.workbook, case=case, browser_getter=self.get_window if at_window else get_browser, cfg=cfg, bus=bus,
-                                        run_dir=ctx.run_dir, selector_map=ctx.selector_map, cancel=ctx.cancel,
+                                        run_dir=ctx.run_dir, selector_map=ctx.selector_map, cancel=cancel,
                                         planned_rows=ctx.plans[case.id], worker=n, harvest=ctx.harvest, devices=self.devices,
                                         attempt=attempt, throttle=throttle, asker=ctx.asker, visible=at_window or not ctx.plan.headless, shared=ctx.shared,
                                         pool=ctx.pool, pw=self.pw, lane=lane)
@@ -580,7 +600,7 @@ class Engine:
                                  "(the moment the lanes shared has passed): run the scenario again.")
                 res.attempts = attempts
                 return res
-            if res.captcha and not at_window and ctx.plan.headless and cfg.captcha.solve == "ask" and ctx.asker.available and not ctx.cancel.is_set():
+            if res.captcha and not at_window and ctx.plan.headless and cfg.captcha.solve == "ask" and ctx.asker.available and not cancel.is_set():
                 # A captcha needs a person.  The test was stopped where it met it; it is run again from the start in a visible browser window,
                 # and there it waits for the person to solve the captcha (a headless browser cannot be turned into a visible one).
                 captcha_tries += 1
@@ -589,7 +609,7 @@ class Engine:
                                  "duration_s": res.duration_s, "captcha": True})
                 ctx.note(f"{case.id}: a captcha stopped this attempt. Opening a browser window: solve the captcha there and the test carries on by itself.")
                 continue
-            if res.infra and not ctx.cancel.is_set():
+            if res.infra and not cancel.is_set():
                 # The machine, not the site: the browser crashed / ran out of memory / was disconnected, or the driver died.  No verdict: the test is run
                 # again from the start (every attempt stays in attempts[]), after a pause that lets the computer recover.
                 attempts.append({"attempt": attempt, "status": res.status, "failed": res.failed, "error": res.error,
@@ -605,7 +625,7 @@ class Engine:
                         if "driver" in res.error.lower() or "driver" in res.infra.lower():
                             await self.restart_driver(generation)
                         try:
-                            await asyncio.wait_for(ctx.cancel.wait(), timeout=pause)
+                            await asyncio.wait_for(cancel.wait(), timeout=pause)
                         except asyncio.TimeoutError:
                             pass
                     finally:
@@ -616,7 +636,7 @@ class Engine:
                 res.attempts = attempts[:-1]
                 return res
             budget = throttle.retry_budget(cfg.runner.block_retries)
-            if res.blocked and block_tries < budget and not ctx.cancel.is_set():
+            if res.blocked and block_tries < budget and not cancel.is_set():
                 # The WAF refused us (HTTP 403 / 429).  Not a verdict on the application: pause every page load, take a worker out of
                 # service so the load stays lower, and run this test again from the start.
                 block_tries += 1
@@ -629,10 +649,10 @@ class Engine:
                 bus.emit("run_paused", test=case.id, seconds=cfg.runner.block_cooldown_s, attempt=block_tries, of=budget,
                          reason=res.blocked[:240])
                 continue
-            if res.blocked and not throttle.loaded_ok and block_tries and not ctx.cancel.is_set():
+            if res.blocked and not throttle.loaded_ok and block_tries and not cancel.is_set():
                 res.error = (f"{res.error} Blocked again after waiting, and nothing has loaded from this machine in this run: this looks like a "
                              "standing access rule (allow-list, VPN, country), not rate limiting, so retrying will not help until it changes.")
-            if res.status in ("PASSED", "CANCELLED", "NOT_RUN") or (attempt - block_tries - captcha_tries - infra_tries) > cfg.behaviour.retries or ctx.cancel.is_set():
+            if res.status in ("PASSED", "CANCELLED", "NOT_RUN") or (attempt - block_tries - captcha_tries - infra_tries) > cfg.behaviour.retries or cancel.is_set():
                 res.attempts = attempts
                 return res
             attempts.append({"attempt": attempt, "status": res.status, "failed": res.failed,
@@ -641,15 +661,21 @@ class Engine:
 
     async def run_one(self, ctx: RunCtx, case: TestCase, get_browser, n: int, lane=None) -> TestResult:
         """One test on worker ``n``, as a task a forced stop can end; whatever happens, a result."""
+        if ctx.test_cancelled(case.id):                          # the person cancelled it before it got a worker: it does not start
+            return self.not_run(ctx, case, CANCELLED_BY_USER, n, status="CANCELLED")
         reason = self.producer_failed(ctx, case)
         if reason:
             return self.not_run(ctx, case, reason, n)
         task = asyncio.ensure_future(self.run_case(ctx, case, get_browser, n, lane=lane))
         ctx.tasks.add(task)
+        ctx.test_tasks[case.id] = task
         try:
             await asyncio.wait({task})
         finally:
             ctx.tasks.discard(task)
+            ctx.test_tasks.pop(case.id, None)
+        if task.cancelled() and ctx.test_cancelled(case.id):     # its own Cancel button ended it (the step it was in did not end in time)
+            return self.stopped(ctx, case, CANCELLED_BY_USER, "CANCELLED")
         if task.cancelled():
             return self.stopped(ctx, case, "Stopped by force: the run was cancelled and this test did not end in time.", "CANCELLED")
         if task.exception() is not None:
@@ -706,10 +732,31 @@ class Engine:
                 except Exception:
                     pass
 
+    # -- one test's own Cancel ------------------------------------------------------------------------------------
+    async def cancel_test(self, ctx: RunCtx, test_id: str) -> None:
+        """The person cancelled ``test_id`` alone: it stops at its next look (a patient wait, the next step, a sync point, a question), and if it
+        is still in the same step after ``TEST_CANCEL_GRACE_S`` its task is ended so the worker is free.  The run and the other tests go on."""
+        if test_id not in ctx.plans or ctx.test_cancelled(test_id) or ctx.cancel.is_set():
+            return
+        ctx.switch_of(test_id).set()
+        ctx.bus.emit("test_cancel_requested", test=test_id, reason=CANCELLED_BY_USER)
+        ctx.note(f"{test_id}: cancelled by the user; it stops now and the rest of the run goes on", "warning")
+        task = ctx.test_tasks.get(test_id)
+        if task is not None:
+            await asyncio.wait({task}, timeout=TEST_CANCEL_GRACE_S)
+            if not task.done():
+                task.cancel()
+
     # -- one run's life -----------------------------------------------------------------------------------------
     async def watch_markers(self, ctx: RunCtx) -> None:
-        """``cancel`` in the run's folder = finish the current steps and stop; ``stop`` = end the tests now (the web UI writes it when a cancel takes too long)."""
+        """``cancel`` in the run's folder = finish the current steps and stop; ``stop`` = end the tests now (the web UI writes it when a cancel takes too long);
+        ``cancel_test/<id>`` = cancel that one test only."""
         while not ctx.ended:
+            for test_id in requested_tests(ctx.run_dir):
+                if test_id in ctx.plans and not ctx.test_cancelled(test_id):
+                    task = asyncio.ensure_future(self.cancel_test(ctx, test_id))
+                    self._test_cancels.add(task)                        # (a reference, or the task may be collected while it waits)
+                    task.add_done_callback(self._test_cancels.discard)
             if not ctx.cancel.is_set() and (ctx.run_dir / "cancel").exists():
                 ctx.cancel.set()
                 ctx.note("Cancellation requested; finishing the current step")
@@ -769,8 +816,8 @@ class Engine:
             result.status = "CANCELLED"
         elif any(t.status in ("FAILED", "ERROR") for t in result.tests):
             result.status = "FAILED"
-        elif any(t.status == "NOT_RUN" for t in result.tests):
-            result.status = "INCOMPLETE"                              # nothing failed, but not everything could be run: not a pass either
+        elif any(t.status in ("NOT_RUN", "CANCELLED") for t in result.tests):
+            result.status = "INCOMPLETE"                              # nothing failed, but not everything could be run (or a person cancelled a test): not a pass either
         else:
             result.status = "PASSED"
         if ctx.harvest is not None:

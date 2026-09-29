@@ -45,6 +45,8 @@ Event types (all carry ``type``, ``ts`` and ``run_id``):
     network_error  test, step, kind, url, status, method, message   (kind: requestfailed|http_error)
     review_item    test, step, category, severity, message           (selector fallback, ignored error ...)
     test_finished  test, status, passed, failed, skipped, duration_s, error      (status NOT_RUN: the machine could not run it; run again)
+    test_cancel_requested  test, reason   the person cancelled this one test (the Cancel button on its live card; engine/cancel.py): it stops at its next
+                   look and ends test_finished status CANCELLED, error "Cancelled by user"; the run and the other tests go on
     worker_waiting   test, worker, step, wait, code, message, [seconds]   a worker waits on purpose (code: login_code | slow_page | infra_rerun | scenario_sync)
     worker_resumed   test, worker, step, wait, code, waited_s             ...and that wait is over
     run_progress   done, total, percent, tests:{id:{done,total,percent,status}}

@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 
 from ..config import Config
 from .ask import AskCancelled, AskTimeout, AskUnavailable
+from .cancel import cancel_reason
 from ..events import EventBus, now_iso
 from ..reporting.results import StepRecord, TestResult
 from ..workbook.api import METHODS, RESPONSE_CHECK, ApiRuntime, json_get, json_set, output_json_text, output_text, template_candidates
@@ -269,7 +270,7 @@ class ApiTestRunner:
         self._emit("test_started", title=case.title, total_steps=result.total_steps, worker=self.worker, attempt=self.attempt)
         try:
             if self.cancel.is_set():
-                result.status = "CANCELLED"
+                result.status, result.error = "CANCELLED", cancel_reason(self.cancel, "")
                 return result
             runtime = self._runtime = self.workbook.api_runtime(case, self.shared, pool=self._pool)
             checks = runtime.checkpoints()
@@ -283,7 +284,7 @@ class ApiTestRunner:
                 return result
             for n, point in enumerate(checks, start=2):
                 if self.cancel.is_set():
-                    result.status = "CANCELLED"
+                    result.status, result.error = "CANCELLED", cancel_reason(self.cancel, "")
                     break
                 self._check(runtime, point, n)
             if result.status != "CANCELLED":
