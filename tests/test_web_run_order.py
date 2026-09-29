@@ -214,3 +214,18 @@ def test_asking_a_workbook_for_its_tests_twice_does_not_say_every_warning_twice(
     first = list(book.warnings)
     book.discover()
     assert first and book.warnings == first
+
+
+@pytest.mark.browser
+async def test_the_variable_chips_of_a_stream_wrap_instead_of_running_past_the_run_plan_card(web):
+    """A stream that passes six values along showed six chips on one line that left the card; the row must wrap (the mock workbook has too few
+    values to overflow by itself, so the row's own layout is what is checked)."""
+    build(web.root / "workbooks" / "order-ui.xlsx", web.site)
+    async with open_ui(web, width=560) as page:
+        await pick_only(page, "order-ui.xlsx")
+        await page.wait_for_selector("#run-order [data-key=stream-0]")
+        row = "document.querySelector('#run-order [data-key=stream-0] > div')"
+        assert await page.evaluate(f"getComputedStyle({row}).flexWrap") == "wrap"
+        card = await page.evaluate("(() => { const c = document.querySelector('#run-order').getBoundingClientRect(); return [c.left, c.right] })()")
+        inside = await page.evaluate("Array.from(document.querySelectorAll('#run-order .tag')).every(t => { const r = t.getBoundingClientRect(); return r.right <= %s + 1 })" % card[1])
+        assert inside

@@ -2,6 +2,7 @@
 import { html } from '../../util.js';
 import { icon, pill } from '../../icons.js';
 import { dur, timeOf } from '../../fmt.js';
+import { runFileUrl } from '../../api.js';
 import { banner } from '../shell.js';
 import { failedStepCard } from '../results.js';
 import { resultsUrl } from './actions.js';
@@ -69,6 +70,7 @@ ${banner('fail', 'failc', t.error.message)}</div>`;
 <h1 class="disp" style="font-size: 28px; font-weight: 700; margin: 0">${test.status === 'PASSED' ? `${t.testId} passed` : `${t.testId} ${test.status.toLowerCase()}${failedSteps.length ? ` at step ${failedSteps[0].seq}` : ''}`}</h1>
 <span class="mono" style="font-size: 12.5px; color: var(--tx3)">${wb} · ${meta.environment || ''} · ${dur(test.duration_s)}${test.ended_at ? ' · ' + timeOf(test.ended_at) : ''}</span>
 </div><span style="flex-grow: 1"></span>${pill(test.status)}
+${t.run.files && t.run.files.report_html ? html`<a class="btn" href="${runFileUrl(t.runId, 'report.html')}#t-${encodeURIComponent(t.testId)}" target="_blank" rel="noopener" style="text-decoration: none">${icon('external', 14)} HTML report</a>` : ''}
 ${fixInBuilder(wbFile, testSheet, failedSteps[0] && failedSteps[0].row)}
 </div>
 <section class="card" style="padding: 14px; display: flex; flex-direction: column; gap: 10px">

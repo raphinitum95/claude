@@ -109,7 +109,10 @@ def cause_message(test: dict[str, Any], cause: str) -> str:
 
 
 def build_batch_page(batch_id: str, metas: list[dict[str, Any]], runs_dir: Path) -> dict[str, Any]:
-    summary = {**batch_summary(batch_id, metas), "runs": metas}
+    # each run also says which of its reports exist, so the page can link "HTML report" straight to the file (the same one the Run tab opens)
+    runs = [{**m, "report_html": (runs_dir / m["run_id"] / "report.html").is_file(), "report_pdf": (runs_dir / m["run_id"] / "report.pdf").is_file()}
+            for m in metas]
+    summary = {**batch_summary(batch_id, metas), "runs": runs}
     rerun_of = next((m.get("rerun_of") for m in metas if m.get("rerun_of")), None)
 
     groups: dict[str, list[dict[str, Any]]] = {}

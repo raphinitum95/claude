@@ -416,7 +416,7 @@ ${b.chainsDirty ? html`<button class="lnk" data-act="order-save" ${w}>Save this 
 ${b.chains.length ? html`<button class="lnk" data-act="order-reset" ${w}>Clear chains</button>` : ''}</div></div>
 <p style="font-size: 12.5px; color: var(--tx2); margin: 8px 0 12px">A test that uses a value another test sets waits for it. Streams that do not touch each other run side by side. Use the arrows to make tests in a stream run one after another in the order shown.</p>
 ${streams.map((st, i) => html`<div style="${i ? 'border-top: 1px solid var(--line); ' : ''}padding: 12px 0 8px" data-key="stream-${i}">
-<div style="display: flex; align-items: center; gap: 9px; margin-bottom: 6px"><span class="lbl">Stream ${i + 1}</span>${st.params.map((x) => html`<span class="tag tag-acc">${x}</span>`)}</div>
+<div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; margin-bottom: 6px"><span class="lbl" style="flex: none">Stream ${i + 1}</span>${st.params.map((x) => html`<span class="tag tag-acc">${x}</span>`)}</div>
 ${st.tests.map((t, k) => {
     const waits = (o.deps[t] || []).filter((d) => st.tests.includes(d));
     return html`<div style="display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 7px 0" data-key="ord-${t}">

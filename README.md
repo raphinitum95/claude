@@ -568,6 +568,10 @@ Build tab already on that exact step, not just the test: the same error and scre
 inspector, next to the tools to pick the element again or replay up to it. **Compare** is a tests-by-last-N-runs grid
 per workbook with the same verdicts and change markers.
 
+**Reports from here.** A batch page has a **Runs in this batch** card: each run links to its full results page (the same one
+the Run tab shows, kept inside the Results tab), to its **HTML report** and PDF (only when those files exist), and to delete.
+A test page has an **HTML report** button that opens the report at that test.
+
 **Deleting.** A finished run has a **Delete run** button on its page, a batch page has **Delete batch**, and each run's chip
 on a batch page has its own trash button, so one run can be removed from inside a batch (the batch keeps the rest and goes
 when its last run does). Each asks first. The run folders are moved to `runs/.trash/` (not erased), so a mistake can be
