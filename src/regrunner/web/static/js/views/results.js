@@ -159,7 +159,8 @@ ${sharesStrip(meta.shares)}</div>
 ${files.report_html ? html`<a class="btn btn-pri" href="${runFileUrl(id, 'report.html')}" target="_blank" rel="noopener">${icon('external', 16)} Open HTML report</a>` : html`<button class="btn btn-pri" data-act="build-report" data-id="${id}">${icon('filetext', 16)} Build HTML report</button>`}
 ${files.report_pdf ? html`<a class="btn" href="${runFileUrl(id, 'report.pdf', true)}">${icon('file', 16)} PDF</a>` : html`<button class="btn ${v.buildingPdf ? 'busy' : ''}" data-act="build-pdf" data-id="${id}">${icon('file', 16)} ${v.buildingPdf ? 'Building PDF…' : 'Build PDF'}</button>`}
 ${failedIds.length ? html`<button class="btn" data-act="rerun-failed">${icon('undo', 16)} Re-run ${failedIds.length} failed test${failedIds.length === 1 ? '' : 's'}</button>` : ''}
-${meta.command ? html`<button class="btn" data-act="copy-run-cmd">${icon('term', 16)} Copy command</button>` : ''}</div></div>
+${meta.command ? html`<button class="btn" data-act="copy-run-cmd">${icon('term', 16)} Copy command</button>` : ''}
+<button class="btn" style="color: var(--fail)" data-act="ask-delete-run" data-id="${id}" data-batch="${meta.batch_id || ''}">${icon('trash', 16)} Delete run</button></div></div>
 ${runBanners(S, pseudo, meta)}
 ${r.partial ? banner('warn', 'warn', html`<b>Rebuilt from the event log.</b> This run stopped early; tests that were mid-flight are marked INTERRUPTED and repeat counts of review items restart at 1.`) : ''}
 <div style="display: grid; grid-template-columns: 1.05fr 1.15fr 1fr; gap: 20px" class="stats3">

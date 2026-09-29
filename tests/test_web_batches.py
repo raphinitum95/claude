@@ -101,3 +101,74 @@ def test_launching_two_workbooks_together_gets_one_batch_id_that_a_later_run_can
 
         web.wait_finished(third, 240)
         web.wait_finished(solo.json()["run_id"], 240)
+
+
+# ---- deleting runs and batches ------------------------------------------------------------------------------------------------------
+def test_deleting_one_run_of_a_batch_leaves_the_batch_with_one_run_fewer_and_keeps_the_folder_in_the_trash(web):
+    fake_run(web, "d1-mock", workbook="mock.xlsx", started_at="2026-02-01T00:00:00", batch_id="d1")
+    fake_run(web, "d1-bad", workbook="bad.xlsx", status="FAILED", started_at="2026-02-01T00:00:01", batch_id="d1")
+    (web.run_dir("d1-bad") / "results.json").write_text("{}")
+    with web.client() as c:
+        gone = c.delete("/api/runs/d1-bad")
+        assert gone.status_code == 200, gone.text
+        assert gone.json()["deleted"] == ["d1-bad"]
+        assert c.get("/api/runs/d1-bad").status_code == 404
+        batch = c.get("/api/batches/d1").json()
+        assert batch["run_ids"] == ["d1-mock"] and batch["total"] == 1 and batch["failed"] == 0
+        assert "d1-bad" not in [r["run_id"] for r in c.get("/api/runs").json()]
+    trashed = list((web.root / "runs" / ".trash").glob("*-d1-bad"))
+    assert len(trashed) == 1 and (trashed[0] / "results.json").is_file()
+
+
+def test_deleting_the_last_run_of_a_batch_makes_the_batch_disappear(web):
+    fake_run(web, "d2-only", workbook="mock.xlsx", started_at="2026-02-02T00:00:00", batch_id="d2")
+    with web.client() as c:
+        assert c.delete("/api/runs/d2-only").status_code == 200
+        assert "d2" not in [b["id"] for b in c.get("/api/batches").json()]
+        assert c.get("/api/batches/d2").status_code == 404
+
+
+def test_deleting_a_batch_removes_every_run_in_it_and_no_other_run(web):
+    fake_run(web, "d3-a", workbook="mock.xlsx", started_at="2026-02-03T00:00:00", batch_id="d3")
+    fake_run(web, "d3-b", workbook="bad.xlsx", started_at="2026-02-03T00:00:01", batch_id="d3")
+    fake_run(web, "d3-other", workbook="mock.xlsx", started_at="2026-02-03T00:00:02", batch_id="d3-elsewhere")
+    fake_run(web, "d3-solo", workbook="mock.xlsx", started_at="2026-02-03T00:00:03")
+    with web.client() as c:
+        gone = c.delete("/api/batches/d3")
+        assert gone.status_code == 200, gone.text
+        assert sorted(gone.json()["deleted"]) == ["d3-a", "d3-b"]
+        assert c.get("/api/batches/d3").status_code == 404
+        left = {r["run_id"] for r in c.get("/api/runs").json()}
+        assert {"d3-other", "d3-solo"} <= left and not ({"d3-a", "d3-b"} & left)
+        assert c.get("/api/batches/d3-elsewhere").status_code == 200
+        assert c.delete("/api/batches/d3").status_code == 404                       # already gone
+
+
+def test_a_running_run_cannot_be_deleted_and_a_batch_with_one_running_run_moves_nothing(web):
+    fake_run(web, "d4-done", workbook="mock.xlsx", started_at="2026-02-04T00:00:00", batch_id="d4")
+    fake_run(web, "d4-live", workbook="bad.xlsx", status="RUNNING", started_at="2026-02-04T00:00:01", batch_id="d4")
+    (web.run_dir("d4-live") / "events.jsonl").write_text("")                        # fresh events + RUNNING = the UI counts it as going
+    with web.client() as c:
+        one = c.delete("/api/runs/d4-live")
+        assert one.status_code == 409 and one.json()["kind"] == "busy"
+        many = c.delete("/api/batches/d4")
+        assert many.status_code == 409 and many.json()["kind"] == "busy"
+        assert c.get("/api/runs/d4-done").status_code == 200                        # the finished one was not touched either
+
+
+def test_only_real_runs_can_be_deleted_never_the_trash_or_the_build_folders(web):
+    fake_run(web, "d5-a", workbook="mock.xlsx", started_at="2026-02-05T00:00:00")
+    with web.client() as c:
+        assert c.delete("/api/runs/d5-a").status_code == 200                        # makes runs/.trash
+        (web.root / "runs" / ".build").mkdir(exist_ok=True)
+        for odd in (".trash", ".build", "no-such-run"):
+            assert c.delete(f"/api/runs/{odd}").status_code == 404, odd
+    assert (web.root / "runs" / ".trash").is_dir() and (web.root / "runs" / ".build").is_dir()
+
+
+def test_deleting_the_same_run_id_twice_in_one_second_keeps_both_copies(web):
+    with web.client() as c:
+        for _ in range(2):
+            fake_run(web, "d6-again", workbook="mock.xlsx", started_at="2026-02-06T00:00:00")
+            assert c.delete("/api/runs/d6-again").status_code == 200
+    assert len(list((web.root / "runs" / ".trash").glob("*-d6-again*"))) == 2
