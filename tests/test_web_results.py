@@ -256,3 +256,33 @@ async def test_a_run_opened_from_the_results_history_stays_in_the_results_tab(we
         await page.wait_for_selector("text=Bypass cookie")                                         # the run's own page...
         assert await page.locator(".tab-btn.on").inner_text() == "Results"                          # ...inside the Results tab
         assert not page.errors, page.errors
+
+
+@pytest.mark.browser
+async def test_the_batch_and_test_pages_open_each_runs_full_results_and_its_html_report(web):
+    """Everything the Run tab's run page offers is reachable from the Results tab: each run of a batch links to its full results page and
+    its HTML report (only when the report exists), and a test page links to the report at that test."""
+    for run_id, wb, when in (("rp1-mock", "mock.xlsx", "2026-05-01T00:00:00"), ("rp1-bad", "bad.xlsx", "2026-05-01T00:00:01")):
+        fake_run(web, run_id, workbook=wb, status="PASSED", started_at=when, batch_id="rp1")
+        (web.run_dir(run_id) / "results.json").write_text(json.dumps({"environment": "UAT", "workbook": wb, "status": "PASSED", "tests": [
+            {"id": "FlowA", "sheet": "FlowA", "status": "PASSED", "duration_s": 1.0, "steps": [{"row": 3, "seq": 1, "status": "PASSED", "name": "Open", "action": "OPEN"}]}]}),
+            encoding="utf-8")
+    (web.run_dir("rp1-mock") / "report.html").write_text("<html><body>the report</body></html>", encoding="utf-8")     # only this run has a report
+    async with open_ui(web, path="/#/results/batch/rp1") as page:
+        await page.wait_for_selector("text=Runs in this batch")
+        row_mock, row_bad = page.locator('[data-key="run-rp1-mock"]'), page.locator('[data-key="run-rp1-bad"]')
+        assert await row_mock.get_by_role("link", name="HTML report").get_attribute("href") == "/runs/rp1-mock/files/report.html"
+        assert await row_bad.get_by_role("link", name="HTML report").count() == 0                                        # no report file, no dead link
+        assert await row_mock.get_by_role("link", name="Results").get_attribute("href") == "#/results/run/rp1-mock"
+        async with page.context.expect_page() as popup:
+            await row_mock.get_by_role("link", name="HTML report").click()
+        assert "the report" in await (await popup.value).inner_text("body")
+        await row_mock.get_by_role("link", name="Results").click()
+        await page.wait_for_selector("text=Open HTML report")                                                             # the same run page the Run tab shows
+        assert await page.locator(".tab-btn.on").inner_text() == "Results"
+
+        await page.goto(web.base + "/#/results/test/rp1-mock/FlowA")
+        link = page.get_by_role("link", name="HTML report")
+        await link.wait_for()
+        assert (await link.get_attribute("href")).endswith("/runs/rp1-mock/files/report.html#t-FlowA")
+        assert not page.errors, page.errors

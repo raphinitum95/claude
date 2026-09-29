@@ -3,6 +3,7 @@ import { html } from '../../util.js';
 import { icon, pill } from '../../icons.js';
 import { dur, timeOf, plural } from '../../fmt.js';
 import { banner } from '../shell.js';
+import { runFileUrl } from '../../api.js';
 import { resultsUrl } from './actions.js';
 
 const VERDICT_TAG = { new: ['tag-fail', 'new failure'], failing: ['tag-fail', 'failing'], flaky: ['tag-warn', 'flaky'],
@@ -26,6 +27,25 @@ ${g.items.map((it) => html`<div style="display: flex; align-items: center; flex-
 ${VERDICT_TAG[it.verdict] && VERDICT_TAG[it.verdict][1] ? html`<span class="tag ${VERDICT_TAG[it.verdict][0]}">${VERDICT_TAG[it.verdict][1]}</span>` : ''}
 <a class="btn btn-sm" href="${resultsUrl('test', it.run_id, it.test)}" style="text-decoration: none">Open</a></div>`)}
 </div>`;
+}
+
+/** One row per run of the batch: its verdict, the full run page (the same one the Run tab shows) and its HTML report, each opening from here. */
+function runsCard(bt) {
+  const runs = bt.runs || [];
+  return html`<section class="card" style="overflow: hidden">
+<div style="padding: 12px 16px; display: flex; align-items: center; gap: 10px"><span class="ttl" style="font-size: 17px">Runs in this batch</span>
+<span style="font-size: 12.5px; color: var(--tx3)">One run per workbook. Open its full results or its HTML report.</span></div>
+${runs.map((r) => {
+    const wb = String(r.workbook || '').split(/[\\/]/).pop() || r.run_id;
+    return html`<div data-key="run-${r.run_id}" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 10px 16px; border-top: 1px solid var(--line)">
+<b class="trunc mono" style="font-size: 13px; min-width: 140px; max-width: 100%">${wb}</b>${pill(r.active ? 'RUNNING' : r.status)}
+<span class="mono" style="font-size: 11.5px; color: var(--tx3); flex-grow: 1">${r.run_id}${r.duration_s != null ? ' · ' + dur(r.duration_s) : ''}</span>
+<a class="btn btn-sm" href="${resultsUrl('run', r.run_id)}" style="text-decoration: none">${icon('list', 13)} Results</a>
+${r.report_html ? html`<a class="btn btn-sm" href="${runFileUrl(r.run_id, 'report.html')}" target="_blank" rel="noopener" style="text-decoration: none">${icon('external', 13)} HTML report</a>` : ''}
+${r.report_pdf ? html`<a class="btn btn-sm" href="${runFileUrl(r.run_id, 'report.pdf', true)}" style="text-decoration: none">${icon('file', 13)} PDF</a>` : ''}
+<button class="icon-btn" style="width: 28px; height: 28px" data-act="ask-delete-run" data-id="${r.run_id}" data-batch="${bt.id}" aria-label="Delete the run of ${wb}" title="Delete this run from the batch">${icon('trash', 13)}</button></div>`;
+  })}
+</section>`;
 }
 
 function allTestsTable(tests) {
@@ -66,11 +86,7 @@ ${!bt.active ? html`<button class="btn" data-act="results-rerun-failed" data-id=
 </div>
 ${d.what_changed.length ? html`<div class="bn">${icon('info', 15, 'color: var(--tx3)')}
 <span><b>What changed since last time:</b> ${d.what_changed.join(' · ')}</span></div>` : ''}
-<div style="display: flex; flex-wrap: wrap; gap: 8px">
-${bt.run_ids.map((id, i) => html`<span class="tag" style="display: inline-flex; align-items: center; gap: 4px; padding-right: 2px" data-key="run-${id}">
-<a href="${resultsUrl('run', id)}" style="text-decoration: none; color: inherit">${bt.workbooks[i] || id}</a>
-<button class="icon-btn" style="width: 22px; height: 22px" data-act="ask-delete-run" data-id="${id}" data-batch="${bt.id}" aria-label="Delete the run of ${bt.workbooks[i] || id}" title="Delete this run from the batch">${icon('trash', 12)}</button></span>`)}
-</div>
+${runsCard(bt)}
 ${d.groups.length ? html`<div style="display: flex; flex-direction: column; gap: 12px">
 <div style="display: flex; align-items: center; gap: 10px"><span class="ttl">Failures, grouped by cause</span>
 <span style="font-size: 12.5px; color: var(--tx3)">Start at the top; the ones below often go away once it's fixed.</span></div>
