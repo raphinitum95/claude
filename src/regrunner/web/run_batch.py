@@ -124,6 +124,16 @@ def register_batch_routes(app: FastAPI, mgr: Any) -> None:
             raise BatchApiError(404, "batch not found", "not_found")
         return {**batch_summary(batch_id, runs), "runs": sorted(runs, key=lambda m: m.get("started_at") or "")}
 
+    @app.delete("/api/batches/{batch_id}")
+    async def delete_batch(batch_id: str):
+        """Delete a batch: every run carrying its ``batch_id`` goes to ``runs/.trash/`` (a batch is only a label, so nothing else exists to
+        remove).  Refused, with nothing moved, while any of its runs is still going.  One run of a batch is deleted with ``DELETE /api/runs/{id}``."""
+        runs = grouped(await asyncio.to_thread(mgr.list_runs, 1000)).get(batch_id)
+        if not runs:
+            raise BatchApiError(404, "batch not found", "not_found")
+        deleted = await asyncio.to_thread(mgr.delete_runs, [m["run_id"] for m in runs])
+        return {"deleted": deleted, "batch_id": batch_id, "kept_in": "runs/.trash"}
+
     @app.post("/api/batches/last-durations")
     async def last_durations(body: dict[str, Any]):
         names = {str(n) for n in (body.get("workbooks") or []) if str(n)}

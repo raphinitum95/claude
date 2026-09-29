@@ -118,6 +118,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Run plan: Order view (chains, arrows) or Timeline view (workers, estimated durations) | `web/static/js/views/newrun.js` (`orderGroup`/`runOrderView`, `planTimeline`/`timelineView`), `web/run_batch.py` (`last-durations`) | `test_web_run_order.py` |
 | Run-in-progress screen, banners, live state (yellow "waiting on purpose" banner, lane waitline) | `web/static/js/views/live.js`, `runstate.js` | `test_web_waiting_banner.py`, `test_web_paused_banner.py`, `test_web_variables.py`, `test_web_ask_user.py`, `test_web_ui.py -k "run_from_click"` |
 | Batches (a UI label over several runs: batch id/label, live batch view, `/api/batches`) | `src/regrunner/runmeta.py` (`new_batch_id`), `web/app.py` (`StartRun.batch_id/batch_label`, `RunManager._start`), `web/run_batch.py` (new), `web/static/js/views/live.js` (`batchView`), `runstate.js` (batch helpers), `actions.js` (`openBatch`), `main.js` (`#/batch/:id`) | `test_web_batches.py`, `test_web_multi_ui.py`, `test_web_multi_run.py` |
+| Delete a run or a whole batch (moved to `runs/.trash/`; a run inside a batch too; refused while running) | `web/app.py` (`RunManager.delete_runs`, `DELETE /api/runs/{id}`), `web/run_batch.py` (`DELETE /api/batches/{id}`), `web/static/js/views/results/actions.js` (`askDeleteRun`/`askDeleteBatch`/`confirmDeleteRuns`/`afterDelete`), `views/modals.js` (`deleteRuns`), buttons in `views/results.js`, `views/results/batch.js`, `views/live.js` | `test_web_batches.py -k delet`, `test_web_delete_runs.py`. **Restart UI** (app.py) |
 | Results screen for one finished run (opened from Run, `#/run/:id`) | `web/static/js/views/results.js` (`failedStepCard`/`why` exported for the Results tab's test page to reuse) | `test_web_ui.py -k "failed_run or failed_step"` |
 | Results tab (history list, batch page: causes/trend/what-changed/re-run-failed, test page: block map/backups/history, compare) | `web/static/js/views/results/*.js` (new), `src/regrunner/web/results_api.py` (new), `history.py` (`last_n_statuses`, `trend_verdict`), `main.js` (`#/results...` routes), `state.js` (`freshResults`) | `test_web_results.py`, `test_history.py` |
 | Dialogs (delete workbook, lint/plan/audit, PROD confirm, sign-in) | `web/static/js/views/modals.js`, `actions.js` | `test_web_delete_workbook.py`, `test_web_ui.py -k "prod or lint or signing"` |
@@ -153,7 +154,7 @@ Start QA Regression.command/.bat   double-click launchers: first run creates .ve
                      reinstalls when pyproject.toml changes, then `python -m regrunner serve --app --exit-when-closed` (own Edge/Chrome window;
                      closing it stops the server, then the .command closes its Terminal window via osascript)
 workbooks/           the user's real workbooks (DO NOT EDIT, DO NOT RUN live). .trash/ = deleted from UI, .chains/ = saved run orders
-runs/<run-id>/       run folders (git-ignored); many are copies from the work computer
+runs/<run-id>/       run folders (git-ignored); many are copies from the work computer. runs/.trash/ = deleted from the UI (runs/.build/ = Build tab drafts)
 .auth/               saved sign-in state + totp_last.json (git-ignored)
 
 src/regrunner/

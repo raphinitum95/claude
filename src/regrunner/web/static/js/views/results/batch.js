@@ -61,12 +61,15 @@ ${banner('fail', 'failc', b.error.message)}</div>`;
 <span class="mono" style="font-size: 12.5px; color: var(--tx3)">${plural(bt.workbooks.length, 'workbook')} · ${plural(bt.tests, 'test')}${bt.started_at ? ' · ' + timeOf(bt.started_at) : ''}</span>
 ${d.rerun_of ? html`<span style="font-size: 12px; color: var(--tx3)">Re-run of <a href="${resultsUrl('batch', d.rerun_of)}">batch ${d.rerun_of}</a></span>` : ''}
 </div><span style="flex-grow: 1"></span>
-${!bt.active ? html`<button class="btn" data-act="results-rerun-failed" data-id="${bt.id}" ${failing ? '' : 'disabled'}>${icon('undo', 14)} Re-run failed</button>` : ''}
+${!bt.active ? html`<button class="btn" data-act="results-rerun-failed" data-id="${bt.id}" ${failing ? '' : 'disabled'}>${icon('undo', 14)} Re-run failed</button>
+<button class="btn" style="color: var(--fail)" data-act="ask-delete-batch" data-id="${bt.id}">${icon('trash', 14)} Delete batch</button>` : ''}
 </div>
 ${d.what_changed.length ? html`<div class="bn">${icon('info', 15, 'color: var(--tx3)')}
 <span><b>What changed since last time:</b> ${d.what_changed.join(' · ')}</span></div>` : ''}
 <div style="display: flex; flex-wrap: wrap; gap: 8px">
-${bt.run_ids.map((id, i) => html`<a class="tag" href="${resultsUrl('run', id)}" style="text-decoration: none">${bt.workbooks[i] || id}</a>`)}
+${bt.run_ids.map((id, i) => html`<span class="tag" style="display: inline-flex; align-items: center; gap: 4px; padding-right: 2px" data-key="run-${id}">
+<a href="${resultsUrl('run', id)}" style="text-decoration: none; color: inherit">${bt.workbooks[i] || id}</a>
+<button class="icon-btn" style="width: 22px; height: 22px" data-act="ask-delete-run" data-id="${id}" data-batch="${bt.id}" aria-label="Delete the run of ${bt.workbooks[i] || id}" title="Delete this run from the batch">${icon('trash', 12)}</button></span>`)}
 </div>
 ${d.groups.length ? html`<div style="display: flex; flex-direction: column; gap: 12px">
 <div style="display: flex; align-items: center; gap: 10px"><span class="ttl">Failures, grouped by cause</span>

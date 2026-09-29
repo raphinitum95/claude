@@ -568,6 +568,12 @@ Build tab already on that exact step, not just the test: the same error and scre
 inspector, next to the tools to pick the element again or replay up to it. **Compare** is a tests-by-last-N-runs grid
 per workbook with the same verdicts and change markers.
 
+**Deleting.** A finished run has a **Delete run** button on its page, a batch page has **Delete batch**, and each run's chip
+on a batch page has its own trash button, so one run can be removed from inside a batch (the batch keeps the rest and goes
+when its last run does). Each asks first. The run folders are moved to `runs/.trash/` (not erased), so a mistake can be
+undone by hand; they leave the run list, History and Compare. A run that is still going cannot be deleted. The workbooks
+and the shared copy in `publish.dir` are never touched.
+
 **Security.** The server listens on `127.0.0.1` only and has no login, so instead every state-changing request must
 come from the page itself: the `Host` must be local (blocks DNS rebinding), the `Origin` must match, and a custom
 header is required (a different website in your browser cannot send it). PROD runs and PROD sends are also refused *by
@@ -586,7 +592,7 @@ Build tab: `GET|POST /api/build/workbooks` `GET /api/build/workbooks/{name}[/sta
 `GET|POST /api/build/templates[/{name}[/mapping]]` `DELETE /api/build/templates/{name}` `GET /api/build/workbooks/{name}/scenarios[/{scenario}/runs]`
 `GET /api/build/api/{name}/tests/{test}|templates[/fields]` `POST /api/build/api/send|curl|postman`
 Build window: `GET /api/build/session/{name}[?since=]` `POST /api/build/session/{name}/start|pick|which|choose|variable|use|run-to-here|run-step|run-next|stop|answer|close|record|check|save|prompt`
-Results tab: `GET /api/batches` `POST /api/batches/last-durations` `GET /api/results/batches/{id}` `POST /api/results/batches/{id}/rerun-failed`
+Results tab: `GET /api/batches` `DELETE /api/batches/{id}` `DELETE /api/runs/{id}` `POST /api/batches/last-durations` `GET /api/results/batches/{id}` `POST /api/results/batches/{id}/rerun-failed`
 `GET /api/results/runs/{id}/tests/{test}` `GET /api/results/compare`
 
 ## Evidence (`runs/<run-id>/`)

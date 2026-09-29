@@ -62,6 +62,25 @@ ${m.error ? html`<div style="margin-top: 12px">${banner('fail', 'failc', m.error
 <button class="btn btn-dng ${m.busy ? 'busy' : ''}" style="flex: 1.4; border-color: var(--fail)" data-act="confirm-delete-wb" ${m.busy ? raw('disabled') : ''}>${icon('trash', 15)} ${m.busy ? 'Deleting…' : 'Delete workbook'}</button></div>`, { danger: true });
 }
 
+// ---- delete a run, or a whole batch -------------------------------------------------------------------------------------
+function deleteRuns(S, m) {
+  const batch = m.scope === 'batch';
+  const n = m.runIds.length;
+  const left = !batch && m.batchId ? S.runs.filter((r) => r.batch_id === m.batchId && r.run_id !== m.id).length : 0;
+  return frame(batch ? 'Delete this batch?' : 'Delete this run?', html`
+<div style="width: 44px; height: 44px; border-radius: 13px; background: var(--fail-soft); border: 1px solid var(--fail-line); color: var(--fail); display: grid; place-items: center; margin-top: 12px">${icon('trash', 22)}</div>
+<div class="mono" style="margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--line); font-size: 12.5px; overflow-wrap: anywhere">${m.label}${m.detail ? html`<div style="color: var(--tx3); margin-top: 2px">${m.detail}</div>` : ''}</div>
+<p style="font-size: 13px; color: var(--tx2); margin-top: 12px; line-height: 1.55">${batch
+    ? html`All ${n} run${n === 1 ? '' : 's'} of this batch leave the list, and so do their results in History and Compare.`
+    : m.batchId
+      ? html`This run leaves the list and its batch${left ? html`, which keeps its other ${left} run${left === 1 ? '' : 's'}` : html` (it is the batch's last run, so the batch goes too)`}.`
+      : 'The run leaves the list, and so do its results in History and Compare.'}
+The workbooks are not touched. The run folder${n === 1 ? ' is' : 's are'} moved to <span class="mono">runs/.trash/</span> rather than erased, so ${n === 1 ? 'it' : 'they'} can be put back by hand. A copy already shared with the team (publish folder) stays where it is.</p>
+${m.error ? html`<div style="margin-top: 12px">${banner('fail', 'failc', m.error)}</div>` : ''}
+<div style="display: flex; gap: 10px; margin-top: 20px"><button class="btn" style="flex: 1" data-act="close-modal">Keep it</button>
+<button class="btn btn-dng ${m.busy ? 'busy' : ''}" style="flex: 1.4; border-color: var(--fail)" data-act="confirm-delete-runs" ${m.busy ? raw('disabled') : ''}>${icon('trash', 15)} ${m.busy ? 'Deleting…' : batch ? `Delete batch (${plural(n, 'run')})` : 'Delete run'}</button></div>`, { danger: true });
+}
+
 // ---- SSO sign-in -------------------------------------------------------------------------------------------------------
 function signin(S, m) {
   const opened = m.stage === 'open' || m.stage === 'saving';
@@ -176,6 +195,7 @@ export function modalView(S) {
   switch (m.kind) {
     case 'prod': return prod(S, m);
     case 'delete-wb': return deleteWb(S, m);
+    case 'delete-runs': return deleteRuns(S, m);
     case 'signin': return signin(S, m);
     case 'lint': return lint(S, m);
     case 'plan': return plan(S, m);
