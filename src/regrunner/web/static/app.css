@@ -313,7 +313,9 @@ details.more > summary::-webkit-details-marker { display: none }
    test editor shows one pane (Steps / Details / Test) at a time.  Shared building blocks: .b-aside / .b-lcol (side columns, width in
    --w), .b-cols (a row of them), .pane-* (editor panes), .rsplit, .rrow-a/.rrow-b (result cards and rows), .add-menu. */
 .hdr-brand { display: flex; align-items: center; gap: 11px; flex: none }
-.hdr-mid { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; overflow: hidden }
+/* The breadcrumb + environment area never shrinks below 340px (the workbook and test names ellipsize to fit it), so the environment
+   picker cannot be clipped; the status strip beside it scrolls instead, and under 820px the header wraps into rows. */
+.hdr-mid { display: flex; align-items: center; gap: 10px; min-width: min(340px, 100%); flex: 1 1 0; overflow: visible }
 .hdr-mid:empty { display: none }
 .hdr-strip { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none }
 .hdr-strip::-webkit-scrollbar { display: none }
@@ -333,13 +335,18 @@ details.more > summary::-webkit-details-marker { display: none }
 .pane-tab { flex: 1 1 0; min-width: 0; text-align: center; height: 40px; border-radius: 9px; font-weight: 600; font-size: 14px; color: var(--tx2) }
 .pane-tab.on { background: var(--surface3); color: var(--tx); box-shadow: 0 0 0 1px var(--line2) }
 
-@media (min-width: 821px) { .mi-p { display: none } }
+@media (min-width: 1061px) { .mi-p { display: none } }
+
+/* smaller laptops: the rarely used header buttons move into the ... menu and the title shrinks to the logo */
+@media (max-width: 1360px) {
+  .hdr-t { display: none !important }
+  .hdr-more { display: inline-grid }
+  .hdr-title { display: none }
+}
 
 /* tablet and down */
 @media (max-width: 1100px) {
-  .hdr-t { display: none !important }
-  .hdr-more, .rail-btn { display: inline-grid }
-  .hdr-title { display: none }
+  .rail-btn { display: inline-grid }
   .app-header { gap: 12px; padding: 0 16px }
   .hdr-mid { gap: 8px }
   .b-rail { position: fixed; left: 0; top: 0; bottom: 0; z-index: 60; width: min(300px, 86vw); height: auto; max-height: none; transform: translateX(-104%); transition: transform .18s ease; box-shadow: none; padding-top: 12px }
@@ -354,8 +361,8 @@ details.more > summary::-webkit-details-marker { display: none }
   .page { padding: 32px 28px 56px }
 }
 
-/* phone-sized header (820px and under) */
-@media (max-width: 820px) {
+/* header in rows (1060px and under: one row no longer holds the tabs, the breadcrumb + environment and the buttons) */
+@media (max-width: 1060px) {
   .hdr-p { display: none !important }
   .app-header { flex-wrap: wrap; padding: 8px 12px; gap: 8px 10px }
   .hdr-brand { order: 1 }
