@@ -322,6 +322,16 @@ def test_run_files_cannot_escape_their_folder_and_logs_are_bounded(web, bad_run)
         assert c.get("/api/runs/does-not-exist").status_code == 404
 
 
+def test_a_runs_logs_download_as_one_zip_without_screenshots(web, bad_run):
+    import io, zipfile
+    with web.client() as c:
+        res = c.get(f"/api/runs/{bad_run}/logs.zip")
+        assert res.status_code == 200 and res.headers["content-disposition"].startswith("attachment")
+        names = zipfile.ZipFile(io.BytesIO(res.content)).namelist()
+        assert "about.txt" in names and "run.json" in names and not any(n.endswith((".jpg", ".png", ".html")) for n in names)
+        assert c.get("/api/runs/does-not-exist/logs.zip").status_code == 404
+
+
 def test_the_page_carries_a_strict_content_security_policy(web):
     with web.client() as c:
         res = c.get("/")

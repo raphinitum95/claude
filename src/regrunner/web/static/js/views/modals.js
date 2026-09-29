@@ -158,7 +158,7 @@ ${d.skipped.length ? html`<p style="font-size: 12px; color: var(--tx3); margin-t
 
 // ---- log / doctor ---------------------------------------------------------------------------------------------------------------
 function log(S, m) {
-  return frame('Runner log', m.loading ? spinner('Reading the log…') : html`<div class="code" style="margin-top: 14px; max-height: 60vh; overflow: auto; white-space: pre-wrap; font-size: 11.5px; line-height: 1.55">${m.lines.length ? m.lines.join('\n') : 'The log is empty.'}</div>`, { wide: true });
+  return frame('Runner log', m.loading ? spinner('Reading the log…') : html`${m.runId ? html`<a class="lnk" href="/api/runs/${encodeURIComponent(m.runId)}/logs.zip" style="display: inline-block; margin-top: 10px; font-size: 13px">Download all logs of this run (zip)</a>` : ''}<div class="code" style="margin-top: 14px; max-height: 60vh; overflow: auto; white-space: pre-wrap; font-size: 11.5px; line-height: 1.55">${m.lines.length ? m.lines.join('\n') : 'The log is empty.'}</div>`, { wide: true });
 }
 
 function doctor(S, m) {

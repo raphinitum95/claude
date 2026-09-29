@@ -1065,6 +1065,26 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
             return {"lines": []}
         return {"lines": log.read_text(errors="replace").splitlines()[-max(1, min(tail, 2000)):]}
 
+    @app.get("/api/runs/{run_id}/logs.zip")
+    async def run_logs_zip(run_id: str):
+        """One zip of a run's logs (no screenshots or saved pages) to send to whoever investigates: what happened (events.jsonl, results.json,
+        runner.log, resources.jsonl, summary.txt, run.json), each test's first-party calls (network.jsonl) and which build/computer made it."""
+        run_dir = mgr.run_dir(run_id)
+        if not run_dir.is_dir():
+            raise ApiError(404, "run not found", "not_found")
+        names = ("run.json", "results.json", "events.jsonl", "runner.log", "resources.jsonl", "summary.txt")
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as bundle:
+            for name in names:
+                if (run_dir / name).is_file():
+                    bundle.write(run_dir / name, name)
+            for network in sorted(run_dir.glob("tests/*/network.jsonl")):
+                bundle.write(network, network.relative_to(run_dir).as_posix())
+            bundle.writestr("about.txt", f"regrunner {__version__}\nrun {run_id}\nPython {sys.version.split()[0]} on {sys.platform}\n"
+                                         f"zipped {now_iso()}\n")
+        return Response(buffer.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{run_id}-logs.zip"'})
+
     @app.post("/api/runs/{run_id}/report")
     async def rebuild_report(run_id: str, body: dict[str, Any] | None = None):
         body = body or {}

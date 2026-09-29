@@ -419,7 +419,7 @@ async function openDoctor() {
   S.modal.loading = false; rerender();
 }
 async function openLog(id) {
-  S.modal = { kind: 'log', loading: true, lines: [] };
+  S.modal = { kind: 'log', loading: true, lines: [], runId: id };
   rerender();
   try { S.modal.lines = (await api(`/api/runs/${enc(id)}/log?tail=400`)).lines; } catch (e) { S.modal.lines = [e.message]; }
   S.modal.loading = false; rerender();

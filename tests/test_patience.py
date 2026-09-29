@@ -118,6 +118,21 @@ async def test_a_wrong_page_or_a_stuck_page_still_fails_in_bounded_time_with_the
     assert all(t.status != "NOT_RUN" for t in result.tests)                     # a site problem, not the machine's
 
 
+async def test_one_servlet_call_that_never_answers_is_a_hard_stop_that_ends_the_test_and_says_which_call(site, make_cfg, tmp_path):
+    """One request unanswered for patience.request_stall_s stops the step and the test, however long patience.stall_s is; the error names the call."""
+    def hung_then_more(sheet) -> None:
+        busy_flow(sheet)
+        sheet.add("Output", "Never reached", FindBy="xpath", FindBy_Value="//p[@id='plan']", Index=0, Output_Property="innertext")
+    wb = workbook(tmp_path, site, {"Hung": hung_then_more}, {"Hung": site + "slow.html?path=/bin/forever"})
+    cfg = make_cfg(**{"runner.stagger_s": 0, "runner.min_page_load_gap_s": 0, "patience.stall_s": 600, "patience.request_stall_s": 4})
+    result, _, took = await asyncio.wait_for(run(wb, cfg, ["Hung"], 1), 120)
+    test = result.tests[0]
+    stuck = next(s for s in test.steps if s.action == "OUTPUT")
+    assert took < 60 and test.status == "FAILED" and stuck.status == "FAILED"
+    assert "/bin/forever" in stuck.error and "did not answer" in stuck.error and "test was stopped" in stuck.error, stuck.error
+    assert not any(s.name == "Never reached" and s.status == "PASSED" for s in test.steps)      # the steps after it were not run
+
+
 def dialog_flow(sheet) -> None:
     sheet.add("Open", "Open", Value="DT_URL")
     sheet.add("Click", "Show the alert", FindBy="xpath", FindBy_Value="//button[@id='al']", Index=0)

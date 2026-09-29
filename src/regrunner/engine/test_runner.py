@@ -626,6 +626,12 @@ class TestRunner:
                 spec_element = spec.element
             except asyncio.TimeoutError:
                 ctx.out.error = f"Step exceeded the {cfg.runner.step_hard_cap_s}s hard limit"
+        if self.session is not None and self.session.stuck_request:
+            stuck, self.session.stuck_request = self.session.stuck_request, ""
+            ctx.out.hard = True                                  # never swallowed by Ignore_not_existing_object: the site is not answering
+            ctx.out.stop = ctx.out.stuck = f"{stuck}, so the test was stopped here and the steps after it were not run"
+            ctx.out.error = ctx.out.error or ctx.out.stop         # (the step may have "carried on"; it still failed)
+            ctx.out.notes.append(ctx.out.stop)
         ctx.out.notes.extend(self.notice.take_notes())           # the waits this step went through (a login code, a slow page) stay on it
         return ctx, spec_element
 
@@ -775,8 +781,10 @@ class TestRunner:
         output = self._output_of(runtime, step, ctx)
         actual = cell_text(output)
         verdict = evaluate(step, ctx.out, element_action=spec_element, actual=actual)
+        if ctx.out.stuck:
+            verdict = Verdict(FAILED, ctx.out.stuck)                   # not "Comparison Failed": the run tab shows which call did not answer
         if stop:
-            verdict, self._captcha_stop = Verdict(FAILED, stop), stop        # never swallowed by Ignore_not_existing_object
+            verdict, self._captcha_stop = Verdict(FAILED, stop), stop       # never swallowed by Ignore_not_existing_object
         writes = runtime.record(step, verdict.status, verdict.error, output)      # the parameters this step set
         failed = verdict.status == FAILED
         if failed and ctx.out.stop:
