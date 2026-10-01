@@ -338,6 +338,40 @@ async def test_check_this_offers_every_check_prefilled_from_the_page_and_the_add
     assert [st for _, st in results(state)] == ["PASSED"] * 12, state["replay"]
 
 
+async def test_the_check_card_lists_every_variable_it_can_expect_and_marks_the_one_that_equals_the_page(session):
+    s = session
+    page = s._page()
+    await page.fill("input[name=lastName]", "Doe")
+    form = (await pick_for(s, "check", page.locator("input[name=lastName]")))["card"]["form"]
+    got = {v["token"]: v for v in form["variables"]}
+    assert (got["LAST_NAME"]["group"], got["LAST_NAME"]["value"], got["LAST_NAME"]["match"]) == ("data", "Doe", True)     # the "Building with" row's value
+    assert got["DOMAIN"]["group"] == "environment" and got["DOMAIN"]["value"].startswith("http") and not got["DOMAIN"]["match"]
+    assert [v["token"] for v in form["variables"]] == ["LAST_NAME", "NOTES", "DOMAIN"]                                  # data first, then the environment's; nothing saved yet
+    await pick_for(s, "save", page.locator("#total"))
+    await s.recorder.add_check("save", token="TOTAL_SHOWN")
+    later = (await pick_for(s, "check", page.locator("#total")))["card"]["form"]
+    saved = next(v for v in later["variables"] if v["token"] == "TOTAL_SHOWN")
+    assert (saved["group"], saved["n"], saved["value"]) == ("saved", 2, "")                                             # its value only exists in a run
+    assert "ACCOUNT_PASSWORD" not in {v["token"] for v in later["variables"]}
+
+
+async def test_a_check_can_expect_a_variable_and_passes_on_replay(session):
+    s = session
+    page = s._page()
+    await pick_for(s, "save", page.locator("#total"))
+    await s.recorder.add_check("save", token="TOTAL_SHOWN")
+    await pick_for(s, "check", page.locator("#total"))
+    await s.recorder.add_check("text_is", "{TOTAL_SHOWN}")
+    await pick_for(s, "check", page.locator("#offers"))
+    await s.recorder.add_check("ticked", "{TOTAL_SHOWN}")                       # (a variable is kept as it is, never turned into Y/N)
+    await pick_for(s, "check", page.locator("#total"))
+    await s.recorder.add_check("gt", "{TOTAL_SHOWN}")                           # (nor refused as "not a number": it is only known when the test runs)
+    assert [step_at(s, n)["expected"] for n in (3, 4, 5)] == ["{TOTAL_SHOWN}"] * 3
+    s.run("to", row=step_at(s, 3)["row"])
+    state = await settled(s)
+    assert [st for _, st in results(state)] == ["PASSED"] * 3, state["replay"]
+
+
 async def test_save_this_and_wait_until_become_steps_that_save_and_wait(session):
     s = session
     page = s._page()

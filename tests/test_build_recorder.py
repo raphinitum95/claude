@@ -94,6 +94,19 @@ def test_a_check_refuses_what_the_engine_would_refuse_and_only_text_checks_also_
         R.check_step("save", TOTAL, LOC, "")
 
 
+def test_a_check_that_expects_a_variable_keeps_it_as_written_and_is_not_judged_by_its_shape():
+    assert R.check_step("ticked", BOX, LOC, "{OFFERS}")["expected"] == "{OFFERS}"
+    assert R.check_step("enabled", FIELD, LOC, "{ENABLED_NOW}")["expected"] == "{ENABLED_NOW}"
+    assert R.check_step("gt", TOTAL, LOC, "{FLOOR}")["expected"] == "{FLOOR}"
+    assert R.check_step("between", TOTAL, LOC, "{LOW};{HIGH}")["expected"] == "{LOW};{HIGH}"
+    assert R.check_step("date_format", TOTAL, LOC, "{FORMAT}")["expected"] == "{FORMAT}"
+    assert R.check_step("regex", TOTAL, LOC, r"^{PREFIX}-\d+$")["method"] == "CHECK_REGEX"
+    with pytest.raises(BuildError, match="regular expression"):
+        R.check_step("regex", TOTAL, LOC, "({PREFIX}")                       # (a variable does not hide a broken pattern)
+    with pytest.raises(BuildError, match="number"):
+        R.check_step("gt", TOTAL, LOC, "lots")                              # (and typed text is still judged)
+
+
 def test_secrets_env_gets_the_line_once_and_another_value_is_never_overwritten(tmp_path):
     path = tmp_path / "secrets.env"
     path.write_text("# mine\nRR_VAR_X=1\n", encoding="utf-8")
