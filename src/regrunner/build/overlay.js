@@ -704,7 +704,7 @@ button.vopt.on { background: #5cc8ff; color: #06121c; }
       ft.appendChild(btn('Cancel', 'rename-cancel', ''));
     } else {
       for (const choice of p.choices || []) {
-        if (choice === 'edit') continue;                                                 // (the fingerprint editor is in the Build tab)
+        if (choice === 'edit' || choice === 'unique') continue;                          // (the fingerprint editor and the copy choice are in the Build tab)
         const label = choice === 'gate' ? 'Save fingerprint + add gate' : choice === 'dismiss' && p.kind === 'fingerprint' ? 'Not now' : CHOICE_WORDS[choice] || choice;
         ft.appendChild(btn(label, choice === 'rename' ? 'rename' : 'prompt', choice === 'gate' || choice === 'keep' ? 'pri' : '', { id: p.id, choice, token: p.token || '' }));
       }

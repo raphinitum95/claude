@@ -17,11 +17,12 @@ import * as BS from './views/build/session.js';
 import * as BA from './views/build/api_editor.js';
 import * as SC from './views/build/scenario.js';
 import * as BV from './views/build/variables.js';
+import * as VP from './views/build/varpick.js';
 import './views/build/dragsort.js';                       // (drag a step card / the selected bar: document listeners)
 import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
-const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...BV.acts, ...AR.acts };
+const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...BV.acts, ...VP.acts, ...AR.acts };
 const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes, ...BV.changes, ...AR.changes };
 const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...SC.inputs, ...BV.inputs, ...AR.inputs };
 const enters = { ...A.enters, ...BV.enters };

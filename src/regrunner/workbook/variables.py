@@ -9,11 +9,17 @@
   masks it (``engine/test_runner.py``).
 * ``{TOKEN}`` inside text is looked up in: the loop row (inside ``ITERATION_START``), the test's Params row, the pool, the environment table.
   A name nobody has a value for fails the step with "variable X has no value": its name is never typed into the page.
+* **Unique variables** (``_rr_variables`` Unique = Y; brief: ``dev/claude/CONTEXT_unique_variables.md``): ``{NAME#2}`` is the run's copy
+  number 2 of NAME, its base value plus random characters (``qalast`` -> ``qalastsofdijkw``).  A step that types it (the Value column of a step
+  that is not a check) makes the copy the first time and reuses it after; a check (Expected_Value, a CHECK_* / WAIT_UNTIL / OUTPUT step) only
+  reads it, and fails when this run never made it.  ``{NAME#first}`` / ``{NAME#last}`` read the lowest / highest copy made so far.  The numbers
+  are chosen while building, never at run time, so the same step points at the same copy on every run; a new run makes new values.
 """
 from __future__ import annotations
 
 import os
 import re
+import secrets as _system_random
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
@@ -22,6 +28,7 @@ from .sheet import SheetData, WorkbookData, cell_text
 INLINE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")                # same as builder.INLINE_RE (the builder imports the engine, not the other way)
 SECRET_RE = re.compile(r"\{SECRET:([A-Za-z_][A-Za-z0-9_]*)\}", re.I)
 UNMAPPED_RE = re.compile(r"\{\?([A-Za-z_][A-Za-z0-9_]*)\}")
+COPY_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)#(\d+|first|last)\}", re.I)    # {NAME#2} / {NAME#first} / {NAME#last}: a unique variable's copy
 TOKEN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 INLINE_COLUMNS = ("VALUE", "FINDBY_VALUE", "EXPECTED_VALUE", "LOCATOR", "PAGE", "BACKUP_LOCATORS")
@@ -50,12 +57,39 @@ def secret_value(name: str, environment: str = "", environ: Mapping[str, str] | 
 
 # -- the run's pool --------------------------------------------------------------------------------------------------------------------------------
 class VariablePool:
-    """Values the tests of one run saved, by UPPER name (last write wins), plus every secret value any of them used (masked everywhere)."""
+    """Values the tests of one run saved, by UPPER name (last write wins), plus every secret value any of them used (masked everywhere), plus
+    the numbered copies of the unique variables (``{NAME#2}``): made once, then the same value for every step and test of the run."""
 
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
         self.set_by: dict[str, str] = {}                # NAME -> test that set it last
         self.secret_values: set[str] = set()
+        self.copies: dict[str, dict[int, str]] = {}     # NAME -> {copy number: value}
+        self.copy_made_by: dict[tuple[str, int], str] = {}
+
+    def copy(self, name: str, which: str | int) -> str | None:
+        """Copy ``which`` (a number, ``first`` or ``last``) of NAME, or ``None`` when this run has not made it.  ``first`` / ``last`` = the lowest /
+        highest number made so far (numbers can have gaps: a step that used #3 may have been deleted)."""
+        made = self.copies.get(name.upper().strip()) or {}
+        if not made:
+            return None
+        w = str(which).strip().lower()
+        if w == "first":
+            return made[min(made)]
+        if w == "last":
+            return made[max(made)]
+        return made.get(int(w)) if w.isdigit() else None
+
+    def make_copy(self, name: str, number: int, make: Callable[[], str], test: str = "") -> tuple[str, bool]:
+        """Copy ``number`` of NAME: the one already made in this run, else ``make()``'s value, kept for the rest of the run.  ``(value, made now)``.
+        Tests of one run share one event loop and nothing here awaits, so two tests asking for the same copy at once still get one value."""
+        key = name.upper().strip()
+        held = self.copies.setdefault(key, {})
+        if number in held:
+            return held[number], False
+        held[number] = cell_text(make())
+        self.copy_made_by[(key, number)] = test
+        return held[number], True
 
     def get(self, name: str) -> str | None:
         return self.values.get(name.upper().strip())
@@ -67,6 +101,55 @@ class VariablePool:
 
     def __contains__(self, name: str) -> bool:
         return name.upper().strip() in self.values
+
+
+# -- unique variables -----------------------------------------------------------------------------------------------------------------------------
+UNIQUE_FORMATS = {"letters": "abcdefghijklmnopqrstuvwxyz", "mixed": "abcdefghijklmnopqrstuvwxyz0123456789", "digits": "0123456789"}
+UNIQUE_LENGTH = 8
+_NAME_LIKE = re.compile(r"NAME|SURNAME|FIRST|LAST|GIVEN|FAMILY|MIDDLE|CITY|TOWN|STREET", re.I)
+
+
+def default_unique_format(name: str) -> str:
+    """Letters only for anything that looks like a name (sites often refuse digits in a name field), letters and numbers otherwise."""
+    return "letters" if _NAME_LIKE.search(name or "") else "mixed"
+
+
+@dataclass
+class UniqueSpec:
+    """How a unique variable's copies are made: ``base`` (blank = the variable's own value for the test) + ``length`` random characters."""
+    base: str = ""
+    format: str = "mixed"            # letters | mixed (letters and numbers) | digits
+    length: int = UNIQUE_LENGTH
+
+    def make(self, base: str) -> str:
+        chars = UNIQUE_FORMATS.get(self.format, UNIQUE_FORMATS["mixed"])
+        return base + "".join(_system_random.choice(chars) for _ in range(max(1, min(int(self.length or UNIQUE_LENGTH), 64))))
+
+
+def unique_spec(name: str, base: str = "", fmt: str = "", length: Any = None) -> UniqueSpec:
+    """A ``UniqueSpec`` from the cells of a ``_rr_variables`` row (blanks get the defaults)."""
+    fmt = (fmt or "").strip().lower()
+    try:
+        n = int(float(str(length).strip())) if str(length or "").strip() else UNIQUE_LENGTH
+    except ValueError:
+        n = UNIQUE_LENGTH
+    return UniqueSpec(base=base or "", format=fmt if fmt in UNIQUE_FORMATS else default_unique_format(name), length=max(1, min(n, 64)))
+
+
+# Steps that only read a unique variable's copy ({NAME#2}): what they compare with must already exist, a check never makes one.
+CHECKING_METHODS = {"OUTPUT", "EXIST", "NOT_EXIST", "WAIT_UNTIL", "ASSERT_PAGE", "IF", "DISMISS_IF_SHOWN"}
+
+
+def makes_copies(method: str, column: str) -> bool:
+    """Does ``{NAME#2}`` in this column of this step make the copy when the run has none yet?  Only in the Value of a step that types / chooses /
+    saves it; anywhere else (Expected_Value, a locator, a check) the copy is only read."""
+    m = (method or "").upper().strip()
+    return column.upper() == "VALUE" and m not in CHECKING_METHODS and not m.startswith("CHECK_")
+
+
+def copy_token(name: str, which: str | int) -> str:
+    """``LASTNAME#2`` / ``LASTNAME#LAST``: how a copy is named in Needs / Provides, notes and the run's list of values set."""
+    return f"{name.upper()}#{str(which).upper()}"
 
 
 # -- the environment table --------------------------------------------------------------------------------------------------------------------------
@@ -167,17 +250,21 @@ def read_environment_table(data: WorkbookData) -> EnvironmentTable:
     return EnvironmentTable()
 
 
-def declared_variables(data: WorkbookData) -> dict[str, dict[str, bool]]:
-    """``_rr_variables``: UPPER token -> {secret, env}."""
+def declared_variables(data: WorkbookData) -> dict[str, dict[str, Any]]:
+    """``_rr_variables``: UPPER token -> {secret, env, unique}.  ``unique`` is a ``UniqueSpec`` for a variable with Unique = Y, else ``None``."""
     sheet = data.sheet(RR_VARIABLES)
-    out: dict[str, dict[str, bool]] = {}
+    out: dict[str, dict[str, Any]] = {}
     if sheet is None or "TOKEN" not in sheet.headers:
         return out
+    h = sheet.headers
     for r in range(2, sheet.max_row + 1):
-        token = _text(sheet, r, sheet.headers["TOKEN"])
+        token = _text(sheet, r, h["TOKEN"])
         if token:
-            out[token.upper()] = {"secret": _true(_text(sheet, r, sheet.headers.get("SECRET"))),
-                                  "env": _true(_text(sheet, r, sheet.headers.get("ENVSPECIFIC")))}
+            unique = (unique_spec(token, _text(sheet, r, h.get("UNIQUEBASE")), _text(sheet, r, h.get("UNIQUEFORMAT")),
+                                  _text(sheet, r, h.get("UNIQUELENGTH")))
+                      if _true(_text(sheet, r, h.get("UNIQUE"))) else None)
+            out[token.upper()] = {"secret": _true(_text(sheet, r, h.get("SECRET"))), "env": _true(_text(sheet, r, h.get("ENVSPECIFIC"))),
+                                  "unique": unique}
     return out
 
 
@@ -213,15 +300,18 @@ class Substituted:
     secrets: list[str] = field(default_factory=list)              # secret *values* put into the text (masked wherever the step is shown)
     unmapped: list[str] = field(default_factory=list)             # {?NAME}: a template placeholder nobody mapped
     used: list[str] = field(default_factory=list)                 # every {NAME} that was replaced
+    copy_problems: list[str] = field(default_factory=list)        # why a {NAME#2} has no value ("LASTNAME #2 was never created in this run")
 
 
 Lookup = Callable[[str], "tuple[str | None, bool]"]              # NAME -> (value or None, is it a Params column of the test)
+CopyLookup = Callable[[str, str], "tuple[str | None, str]"]       # (NAME, which) -> (value or None, why it has none)
 
 
 def substitute(text: str, lookup: Lookup, secret: Callable[[str], "str | None"], *, keep: set[str] | None = None,
-               soft: set[str] | None = None) -> Substituted:
-    """Replace ``{SECRET:NAME}`` and ``{NAME}`` in ``text``.  ``keep``: names that stay as written (``{TAB}`` in a SendKeys value).  ``soft``: names
-    that stay as written when nothing gives them a value, instead of failing the step (key names in older sheets' other steps)."""
+               soft: set[str] | None = None, copies: CopyLookup | None = None) -> Substituted:
+    """Replace ``{SECRET:NAME}``, ``{NAME#2}`` and ``{NAME}`` in ``text``.  ``keep``: names that stay as written (``{TAB}`` in a SendKeys value).
+    ``soft``: names that stay as written when nothing gives them a value, instead of failing the step (key names in older sheets' other steps).
+    ``copies``: the copies of the unique variables (none given: a ``{NAME#2}`` has no value)."""
     out = Substituted(text)
     out.unmapped = UNMAPPED_RE.findall(text)
 
@@ -246,7 +336,17 @@ def substitute(text: str, lookup: Lookup, secret: Callable[[str], "str | None"],
         out.used.append(name.upper())
         return value
 
+    def put_copy(m: re.Match) -> str:
+        name, which = m.group(1), m.group(2).lower()
+        value, why = copies(name, which) if copies is not None else (None, f"{name.upper()} #{which} has no value here")
+        if value is None:
+            out.copy_problems.append(why or f"{name.upper()} #{which} has no value")
+            return m.group(0)
+        out.used.append(copy_token(name, which))
+        return value
+
     text = SECRET_RE.sub(put_secret, text)
+    text = COPY_RE.sub(put_copy, text)
     out.text = INLINE_RE.sub(put, text)
     return out
 

@@ -46,6 +46,7 @@ class StepOut:
     stuck: str = ""                    # one of the site's calls never answered (patience.request_stall_s): the step fails with this, whatever else it compared
     stop: str = ""                   # when the step fails, the test stops here, for this reason (a failed page gate, a blocked side-effect step)
     backup: dict | None = None         # the element was not found, but a backup locator was: {locator, matches, screenshot, tried} (never used by the step)
+    not_run: bool = False              # the step was never done (an empty parameter, a variable with no value): nothing was compared, ``error`` says why
 
 
 @dataclass
@@ -73,6 +74,8 @@ def compare_ok(step: PreparedStep, actual: str) -> tuple[bool, str]:
 
 
 def evaluate(step: PreparedStep, out: StepOut, *, element_action: bool, actual: str) -> Verdict:
+    if out.not_run:                                                # (comparing would only say "Comparison Failed" over the real reason)
+        return Verdict(FAILED, out.error)
     status, error, ignored = PASSED, out.error or "", ""
     ignore = step.ignore_missing
     if error:

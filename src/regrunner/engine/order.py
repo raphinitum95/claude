@@ -173,6 +173,9 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
                 out |= provides(target, seen | {q.id})
         return out
 
+    def shown(name: str) -> str:                                   # LASTNAME#* (a check of the first / last copy) reads "a copy of {LASTNAME}"
+        return f"a copy of {{{name[:-2]}}}" if name.endswith("#*") else f"{{{name}}}"
+
     offered = {q.id: provides(q) for q in sel}
     for f in sel:
         for name in sorted(f.needs - offered[f.id]):
@@ -182,7 +185,7 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
             if not producers:
                 elsewhere = [q.id for q in flows if q.id not in chosen and name in provides(q)]
                 order.notes.append({"kind": "missing", "test": f.id, "param": name, "available": elsewhere,
-                                    "message": f"{f.id} uses {{{name}}}, which nothing in this run sets."
+                                    "message": f"{f.id} uses {shown(name)}, which nothing in this run sets."
                                                + (f" {' / '.join(elsewhere)} does: add it to the run." if elsewhere
                                                   else " The step that uses it will fail unless an environment value or a person gives it.")})
                 continue
@@ -191,7 +194,7 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
                 if q in order.deps[f.id]:
                     took.append(q)
                 elif depends_on(q, f.id):
-                    order.notes.append({"kind": "conflict", "test": f.id, "message": f"{f.id} uses {{{name}}}, which {q} sets, but {q} already waits for "
+                    order.notes.append({"kind": "conflict", "test": f.id, "message": f"{f.id} uses {shown(name)}, which {q} sets, but {q} already waits for "
                                                                                    f"{f.id}. It will not wait for it."})
                 else:
                     order.deps[f.id].append(q)
@@ -199,7 +202,7 @@ def plan_order(flows: list[Flow], selected: list[str], chains: list[list[str]] |
             if took:
                 order.data.setdefault(f.id, {})[name] = took
                 order.notes.append({"kind": "waits", "test": f.id, "param": name, "on": took, "blank": True,
-                                    "message": f"{f.id} waits for {' and '.join(took)}, which set{'s' if len(took) == 1 else ''} {{{name}}}."})
+                                    "message": f"{f.id} waits for {' and '.join(took)}, which set{'s' if len(took) == 1 else ''} {shown(name)}."})
 
     # streams: the tests that hang together (data + chains), in the order they will run in
     explicit = {t: list(d) for t, d in order.deps.items()}

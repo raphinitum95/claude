@@ -33,6 +33,7 @@ Existing columns keep their legacy meaning. How the builder maps them is in 2.3 
 | `{TOKEN}` inside text | `Value`, `FindBy_Value`, `Expected_Value`, `Locator`, `Page`, `BACKUP_LOCATORS`, IF conditions | **New (P03)**: replaced inline. Lookup order: the test's Params row → the run's shared variable pool (values other tests set, Q21) → the environment table for the run's environment (1.4). Unknown = the step fails with "variable X has no value" (never types the token) |
 | `{SECRET:NAME}` | same | **New (P03)**: value from `secrets.env` key `RR_SECRET_<ENV>_<NAME>`, falling back to `RR_SECRET_<NAME>`, then the existing `RR_VAR_<NAME>`. Never written to the workbook, events, logs, results or reports (masked `••••••`) |
 | `{?NAME}` | anywhere | A template placeholder that was not mapped when the template was inserted (P11). Always a problem (`unmapped_template_variable`); the engine fails the step |
+| `{NAME#2}`, `{NAME#first}`, `{NAME#last}` | same as `{TOKEN}`, API URL / headers / body / paths | A copy of a **unique** variable (`_rr_variables` Unique = Y; brief `dev/claude/CONTEXT_unique_variables.md`): its start (`UniqueBase`, else the variable's own value for the test) + random characters. In the `Value` of a step that is not a check (`variables.makes_copies`: not OUTPUT / EXIST / NOT_EXIST / WAIT_UNTIL / ASSERT_PAGE / IF / DISMISS_IF_SHOWN / CHECK_*), `#N` makes the copy the first time the run needs it and reuses it after; anywhere else (Expected_Value, a check, an API request) it is only read. `#first` / `#last` = the lowest / highest number made so far, never made. A copy the run never made, or a number on a variable that is not unique, fails the step ("LASTNAME #2 was never created in this run"). One pool per run: every test of that run sees the same copies; a new run makes new ones |
 
 In a `SENDKEYS`-type step's `Value`, `{TAB}`, `{ENTER}`, `{DOWN}`... (the key names of `engine/keys.py`) stay keys, never variables.
 A key name with no value elsewhere is the one exception to "unknown = the step fails": it stays as written instead, so older sheets that used
@@ -88,7 +89,9 @@ one of its rows, `new_workbook`); files saved before stay as they were until the
 
 Each is a plain table: row 1 = headers (exactly these, case-insensitive on read), one row per item. Written with `WorkbookEditor.write_table`.
 
-**`_rr_variables`**: `Token | Label | Secret | EnvSpecific | Notes`
+**`_rr_variables`**: `Token | Label | Secret | EnvSpecific | Notes | Unique | UniqueBase | UniqueFormat | UniqueLength`
+(`Unique` = Y: copies `{TOKEN#N}`, 1.2; `UniqueFormat` = `letters` | `mixed` | `digits`, blank = letters for a name-like token, else mixed;
+`UniqueLength` blank = 8, 1-64)
 - `Label`: the friendly name shown everywhere (Q37). Blank = generated from the token (`DT_FirstName_IN` → "First name").
 - `Secret`: `Y` = value is secret (Q42): shown as `••••` in the UI, lives in `secrets.env`.
 - `EnvSpecific`: `Y` = the value comes from the environment table (1.4) rather than Params.
@@ -239,7 +242,8 @@ API/XML tests have `steps: []` and `blocks: []` (their editor reads `GET /api/bu
   flow: [ { kind: "if" | "else" | "loop", row: 40 } ],             // enclosing IF/ELSE/loop, outermost first
   call: "" ,                                                       // CALL_TEST target
   legacy: "" | "why it is locked",
-  uses: [ { token: "DT_LASTNAME_IN", column: "VALUE", form: "cell" | "inline" | "secret" | "flag" } ],
+  uses: [ { token: "DT_LASTNAME_IN", column: "VALUE", form: "cell" | "inline" | "secret" | "flag" | "copy",
+            copy?: "2" | "first" | "last", makes?: true } ],      // copy: a unique variable's {TOKEN#2}; makes: this step makes it (1.2)
   sets: ["DT_POLICYNUMBER"], notes: "",
   lastResult: null | { status: "PASSED" | "FAILED", error: "", runId, when, locatorMiss: false,
                        screenshot: null | "tests/Test#1/003.jpg", screenshotFull: null | "..." },   // paths relative to that run's folder (P13)
@@ -266,8 +270,10 @@ Field → column mapping for writes (`builder.FIELD_COLUMNS`): `name`→`Step_Na
   kind: "data" | "flag" | "env" | "set",         // flag = used as blnExecute; env = environment table; set = only ever set by steps
   secret: false, envSpecific: false,
   sources: [ { sheet: "USClaimsParams", column: "DT_FirstName_IN" } ],
-  setBy:  [ { test, row, n } ], usedBy: [ { test, row, n, column } ],
-  neededBy: ["ViewPolicy"], providedBy: ["Purchase"] }
+  setBy:  [ { test, row, n } ], usedBy: [ { test, row, n, column, copy?, makes? } ],
+  neededBy: ["ViewPolicy"], providedBy: ["Purchase"],
+  unique: null | { base: "qalast", format: "letters" | "mixed" | "digits", length: 8 },
+  copies: [1, 2, 4], copiesMade: [1, 2] }      // the copy numbers the workbook's steps name (gaps stay gaps), and those a step makes
 ```
 `needs` of a test: a token its steps use before any of its own steps sets it, that is not an environment variable or a secret, and whose
 Params cell is empty in some enabled data row (or that has no Params column at all). `provides`: tokens its steps set. P03 orders tests so that
@@ -288,7 +294,8 @@ Fingerprint  { name: "Payment page", urlContains: "/purchase/payment", landmark:
 ```
 `kind` is one of: `unset_variable`, `missing_expected`, `last_run_locator_miss`, `unmapped_template_variable`, `side_effect_on_prod`,
 `side_effect_suggested`, `missing_environment_value`, `unknown_method`, `missing_locator`, `unknown_test`, `unknown_fingerprint`,
-`bad_condition`, `unbalanced_flow`, `status_never_checked` (an API test, `row: null`, 1.6). Legacy rows are not problems (their card says why they are locked). New kinds may be added (the UI shows unknown kinds by severity and message).
+`bad_condition`, `unbalanced_flow`, `status_never_checked` (an API test, `row: null`, 1.6), `not_unique_variable` (a `{TOKEN#N}` on a
+variable that is not unique), `copy_never_made` (a check reads a copy no step makes). Legacy rows are not problems (their card says why they are locked). New kinds may be added (the UI shows unknown kinds by severity and message).
 
 ### 2.8 `Status`
 ```
@@ -444,7 +451,7 @@ Each op is `{op: "...", ...}`; `test` is the sheet name; rows are current sheet 
 | `merge_blocks` | `test, row` | the block of `row` joins the block before it |
 | `rename_variable` | `from, to` | every Params header, whole-cell token, `{TOKEN}`, `{SECRET:TOKEN}` (also inside formulas' text), `_rr_variables`, `_rr_environments`; in API sheets and `_rr_fingerprints` only the `{...}` forms. 409 `exists` when `to` is already a variable. `builder.rename_preview(editor, from, to)` lists the same cells without writing |
 | `delete_variable` | `token` | empties its Params column(s) (header and values; the column stays so nothing shifts), removes its `_rr_variables` and `_rr_environments` rows; steps that use it are left (problems list them), secrets.env is left. Refused for `DOMAIN`; 404 when nothing stores it |
-| `set_variable` | `token, label?, secret?, envSpecific?, notes?` | upsert in `_rr_variables` |
+| `set_variable` | `token, label?, secret?, envSpecific?, notes?, unique?, uniqueBase?, uniqueFormat?, uniqueLength?` | upsert in `_rr_variables`; 400 for a format that is not letters / mixed / digits or a length outside 1-64 |
 | `add_variable` | `token, label?, sheet: paramsSheet \| test: test id, value?` | new Params column (+ label); `value` goes in every data row. With `test` instead of `sheet`: that test's Params sheet, made (`<test>_Params`, `blnExecute` + one `Y` row, linked in DataSheets) when it has none |
 | `set_cell` | `sheet, row, column: header \| number, value` | grid view and data drawer; `=` starts a formula |
 | `set_environments` | `names, production, rows` (the `Environments` shape) | rewrites `_rr_environments` (visible, after Global: 1.4); names must be run-nameable (1.4) |

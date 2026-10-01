@@ -31,6 +31,7 @@ from openpyxl.formula.translate import Translator
 from openpyxl.utils import get_column_letter
 
 from ..build.locators import words_of_locator
+from .variables import COPY_RE, UNIQUE_FORMATS, makes_copies, unique_spec
 from .writer import (RR_PREFIX, RowMap, SaveResult, WorkbookEditor, WriterError, backups_dir, discard_draft, draft_path, has_draft,
                      is_locked)
 
@@ -47,7 +48,7 @@ RR_VARIABLES = "_rr_variables"
 RR_ENVIRONMENTS = "_rr_environments"
 RR_FINGERPRINTS = "_rr_fingerprints"
 RR_SCENARIOS = "_rr_scenarios"
-VARIABLE_HEADERS = ("Token", "Label", "Secret", "EnvSpecific", "Notes")
+VARIABLE_HEADERS = ("Token", "Label", "Secret", "EnvSpecific", "Notes", "Unique", "UniqueBase", "UniqueFormat", "UniqueLength")
 FINGERPRINT_HEADERS = ("Name", "UrlContains", "Landmark", "LandmarkText", "Notes")
 ENVIRONMENT_FIXED_HEADERS = ("Variable", "Required", "Secret")
 PRODUCTION_ROW = "#PRODUCTION"
@@ -500,8 +501,17 @@ def read_variable_labels(editor: WorkbookEditor) -> dict[str, dict]:
         token = _cell(r, header, "Token")
         if token:
             out[token.upper()] = {"token": token, "label": _cell(r, header, "Label"), "secret": is_true(_cell(r, header, "Secret")),
-                                  "envSpecific": is_true(_cell(r, header, "EnvSpecific")), "notes": _cell(r, header, "Notes")}
+                                  "envSpecific": is_true(_cell(r, header, "EnvSpecific")), "notes": _cell(r, header, "Notes"),
+                                  "unique": unique_of(token, r, header)}
     return out
+
+
+def unique_of(token: str, row: list[Any], header: dict[str, int]) -> dict | None:
+    """A ``_rr_variables`` row's "make unique each run" settings (``{base, format, length}``; defaults filled in), ``None`` when it is off."""
+    if not is_true(_cell(row, header, "Unique")):
+        return None
+    spec = unique_spec(token, _cell(row, header, "UniqueBase"), _cell(row, header, "UniqueFormat"), _cell(row, header, "UniqueLength"))
+    return {"base": spec.base, "format": spec.format, "length": spec.length}
 
 
 def read_environments(editor: WorkbookEditor) -> dict:
@@ -759,6 +769,9 @@ def parse_test_sheet(editor: WorkbookEditor, sheet: str, variables: set[str], *,
                 uses.append({"token": tok.upper(), "column": column, "form": "inline"})
             for tok in SECRET_RE.findall(t):
                 uses.append({"token": tok.upper(), "column": column, "form": "secret"})
+            for tok, which in COPY_RE.findall(t):                  # a unique variable's copy: {LASTNAME#2} makes it (typed), {LASTNAME#last} reads
+                uses.append({"token": tok.upper(), "column": column, "form": "copy", "copy": which.lower(),
+                             "makes": makes_copies(method, column) and which.isdigit()})
         if condition and condition["kind"] == "flag":
             uses.append({"token": flag_text.upper(), "column": "BLNEXECUTE", "form": "flag"})
         sets = [save_as.upper()] if save_as else []
@@ -953,7 +966,7 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
             var_index[k] = {"token": info.get("token") or token, "key": k, "label": info.get("label") or humanize(token),
                             "labelSet": bool(info.get("label")), "kind": "data", "secret": k in secret_keys,
                             "envSpecific": bool(info.get("envSpecific")) or k in env_keys, "sources": [], "setBy": [], "usedBy": [],
-                            "neededBy": [], "providedBy": []}
+                            "neededBy": [], "providedBy": [], "unique": info.get("unique"), "copies": [], "copiesMade": []}
         return var_index[k]
 
     for name in sorted(param_sheets):
@@ -972,7 +985,14 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
         for s in t["steps"]:
             for u in s["uses"]:
                 v = var(u["token"])
-                v["usedBy"].append({"test": t["id"], "row": s["row"], "n": s["n"], "column": u["column"]})
+                v["usedBy"].append({"test": t["id"], "row": s["row"], "n": s["n"], "column": u["column"],
+                                    **({"copy": u["copy"], "makes": u["makes"]} if u["form"] == "copy" else {})})
+                if u["form"] == "copy" and u["copy"].isdigit():            # the numbers the workbook uses (the "which one?" list): gaps stay gaps
+                    n = int(u["copy"])
+                    if n not in v["copies"]:
+                        v["copies"].append(n)
+                    if u["makes"] and n not in v["copiesMade"]:
+                        v["copiesMade"].append(n)
                 if u["form"] == "flag" and v["kind"] == "data":
                     v["kind"] = "flag"
                 if u["form"] == "secret":
@@ -982,6 +1002,8 @@ def build_model(editor: WorkbookEditor, *, runs_dir: Path | None = None, environ
     for v in var_index.values():
         if not v["sources"] and v["setBy"] and v["kind"] == "data":
             v["kind"] = "set"
+        v["copies"].sort()
+        v["copiesMade"].sort()
     for f in fingerprints:
         for t in tests:
             for s in t["steps"]:
@@ -1366,11 +1388,11 @@ class _Ops:
         if old == new:
             return []
         ou, nu = old.upper(), new.upper()
-        inline = re.compile(r"\{(\??)" + re.escape(old) + r"\}", re.I)
+        inline = re.compile(r"\{(\??)" + re.escape(old) + r"(#(?:\d+|first|last))?\}", re.I)     # (a unique variable's copy {OLD#2} too)
         secret = re.compile(r"\{SECRET:" + re.escape(old) + r"\}", re.I)
 
         def swap(text: str) -> str:
-            return secret.sub("{SECRET:" + new + "}", inline.sub(lambda m: "{" + m.group(1) + new + "}", text))
+            return secret.sub("{SECRET:" + new + "}", inline.sub(lambda m: "{" + m.group(1) + new + (m.group(2) or "") + "}", text))
         changes: list[dict] = []
 
         def change(sheet: str, row: int, col: int, header: str, before: Any, after: Any) -> None:
@@ -1519,8 +1541,20 @@ class _Ops:
         if not TOKEN_RE.match(token):
             raise BuildError("Variable names are letters, digits and _ (starting with a letter).")
         yn = lambda k: None if k not in op else ("Y" if op[k] else "")
+        fmt = op.get("uniqueFormat")
+        if fmt not in (None, "") and fmt not in UNIQUE_FORMATS:
+            raise BuildError(f"The random part is made of letters, mixed (letters and numbers) or digits, not {fmt!r}.")
+        length = op.get("uniqueLength")
+        if length not in (None, ""):
+            try:
+                length = int(length)
+            except (TypeError, ValueError):
+                raise BuildError("The length of the random part is a number.") from None
+            if not 1 <= length <= 64:
+                raise BuildError("The random part is 1 to 64 characters long.")
         self._upsert(RR_VARIABLES, VARIABLE_HEADERS, "Token", token,
-                     {"Label": op.get("label"), "Secret": yn("secret"), "EnvSpecific": yn("envSpecific"), "Notes": op.get("notes")})
+                     {"Label": op.get("label"), "Secret": yn("secret"), "EnvSpecific": yn("envSpecific"), "Notes": op.get("notes"),
+                      "Unique": yn("unique"), "UniqueBase": op.get("uniqueBase"), "UniqueFormat": fmt, "UniqueLength": length})
         return {"op": "set_variable", "token": token}
 
     def add_variable(self, op: dict) -> dict:

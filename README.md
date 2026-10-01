@@ -533,6 +533,17 @@ environment needs `PROD` typed to open the window at all). When a step that alre
 its own browser: it is not a run, is not listed with the runs, and a run of the same workbook can go on at the same
 time. One window per workbook (three at most); it closes itself after `build.idle_close_s` without use.
 
+**New each run (unique variables).** On the Variables screen, *Make unique each run* (or a new variable of the kind
+*New each run*) makes a variable whose values the site never sees twice: each copy is its start (`qalast`, or the
+variable's own value) plus random characters (letters only, letters and numbers, or numbers only; 8 by default), e.g.
+`qalastsofdijkw`. Steps name a copy, and you pick it in words with **Use a variable** beside a step's Value or Expected:
+a step that types it offers the copies the workbook already uses or *a new one* (the next number, written as
+`{LASTNAME#3}`), a check offers *the first*, *the last* or a number. A copy is made the first time a run needs it and is
+the same for every later step and test of that run (an API test can read it too); a new run makes new ones. A check of a
+copy no step made fails with "LASTNAME #2 was never created in this run", and a test that checks a copy waits for the test
+that makes it. Deleting the steps that used #3 leaves a gap: numbers are never renumbered. When only one copy exists, a
+check is pinned to #1 and says so. Recording offers the same: the card for a typed value has *New each run…*.
+
 **Recording.** With the build window open, **Rec** turns your own clicks/typing/selects into steps after the cursor:
 typed text becomes `{VARIABLE}` (a password becomes `{SECRET:NAME}`, kept in `secrets.env`, never in the workbook), a
 click in another window or frame gets its own SWITCHTOWINDOW/SWITCHTOFRAME step first, and a calendar or a suggestions
@@ -720,7 +731,8 @@ Tests run side by side, but one may need what another produces: `Purchase` write
 A step whose `Output_Value` names a Params column (`DT_Policy_Out`, `Quote_OUT`) *sets* that parameter. Every such value is listed in the report (**Values set by the tests**: test,
 variable, value, the step that set it, the Params cell it went to, and a `sets ...` line on the step), in the web UI (a **Values set** card on the run screen, live and after
 the run), in `results.json` (`variables` per test, `sets` per step) and in the shared `summary.txt`. A value a person typed in for an empty parameter is listed as *entered by hand*;
-a secret typed in (`ASK_USER` with `Output_Property=SECRET`) shows as `••••••` everywhere.
+a secret typed in (`ASK_USER` with `Output_Property=SECRET`) shows as `••••••` everywhere. A unique variable's copy a step made (`{LASTNAME#2}`, see the Build tab) is
+listed too, as `LASTNAME#2` with the place *unique copy*, and the step's notes say "made LASTNAME #2 for this run".
 
 ### Sharing results with the team (`publish`)
 

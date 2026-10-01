@@ -81,6 +81,7 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Output / Output_Property / Exact_Match / Contains / "actual" values | `engine/actions.py`, `engine/test_runner.py` (`_output_of`), `engine/outcome.py` | `test_outcome.py` (fast), `test_output_value_property.py`, `test_output_value_actual.py`, `test_option_text.py` |
 | Pass/fail rules (Ignore_not_existing_object etc.) | `engine/outcome.py` (port of legacy `validateresults`) | `test_outcome.py` (fast) |
 | Flow keywords (SET_VARIABLE, IF/ELSE/END_IF, ITERATION_START/END, CALL_TEST, JSON_READ), `{NAME}` / `{SECRET:NAME}` in cells, the run's variable pool, `_rr_environments` (required vars refuse the run) | `workbook/variables.py`, `workbook/model.py` (`prepare_row`, `value_of`, `record`, `plan`), `engine/test_runner.py` (`FlowControl`, row loop jumps, `run_called`, masking), `engine/actions.py` (handlers), `engine/order.py` (Needs/Provides), `preflight.py` (`environment_problem`) | `test_flow_variables.py` (fast), `test_flow_keywords.py` (mock site + one web API check) |
+| Unique variables ("new each run"): `{NAME#2}` / `#first` / `#last` copies (made by a typing step's Value, read by checks; one pool per run), `_rr_variables` Unique/UniqueBase/UniqueFormat/UniqueLength, the Variables screen's "Make unique each run", "Use a variable" beside a step's Value/Expected, the check card's copy list, the recorder's "New each run…" | `workbook/variables.py` (`COPY_RE`, `UniqueSpec`, `makes_copies`, `VariablePool.copy/make_copy`, `substitute(copies=)`), `workbook/model.py` (`TestRuntime.copy_of`, `plan`: `NAME#N` / `NAME#*` Needs/Provides), `workbook/api.py` (`copy_of`, read only), `engine/test_runner.py` (`_variable_error`, made copies in `sets`), `engine/outcome.py` (`StepOut.not_run`), `workbook/builder.py` (`unique_of`, uses form `copy`, `copies`/`copiesMade`, rename), `lint.py` (`not_unique_variable`, `copy_never_made`), `build/recorder.py` (`unique_read_choices`, prompt choice `unique`), `views/build/varpick.js` (new), `views/build/{variables,editor,record}.js`; brief `dev/claude/CONTEXT_unique_variables.md` | `test_unique_variables.py` (fast, one mock-site run), `test_build_recording.py -k unique`, `test_web_build_variables.py -k new_each_run`. **Restart UI** (builder/recorder/overlay.js); JS: reload |
 | One test's step loop: stop rules, captcha stop, blank params, skipped rows hint | `engine/test_runner.py` | `test_stop_after_failures.py`, `test_skipped_rows_hint.py`, `test_blank_params.py`, `test_captcha.py` |
 | P07 keywords: ASSERT_PAGE (page gate = hard stop), WAIT_UNTIL, DISMISS_IF_SHOWN, PICK_DATE, CHOOSE_SUGGESTION, CHECK_* (CHECK_LIST_ITEM: list must be visible, then item N); SIDE_EFFECTS steps (blocked on production, `TestRunner(side_effects="ask")` for build replays); BACKUP_LOCATORS (reported, never used) | `engine/actions.py` (handlers after "Safety steps", `side_effect_gate`, `probe_backup_locators`), `engine/checks.py`, `engine/gates.py`, `engine/outcome.py` (`StepOut.check/check_failed/stop/backup`), `selectors/spec.py` (`parse_backup_locators`), `engine/test_runner.py` (`_hard_stop`) | `test_checks.py` (fast), `test_engine_gates.py` (mock site `widgets.html`), `test_outcome.py` |
 | What a test records of the browser session: console at every step (all levels + page-error stacks), what the site's own calls sent and answered (`network.jsonl` bodies), form fields / storage / cookie names after each step (`state.jsonl`), the "disabled field with nothing in it" warning, Playwright trace (`capture:` in config.yaml) | `capture/state.py` (`STATE_JS`, `StateTracker`, `locked_without_value`, `replay`), `engine/session.py` (`_watch_console`, `keep_bodies` in `_watch_calls`, `mask_payload`, `capture_state`, `_start_trace`/`_stop_trace`, `drain_captures`), `engine/test_runner.py` (`_capture_state`, `_write_network_log`), `config.py` (`CaptureCfg`), `capture/review.py` (page-error stack) | `test_session_capture.py` (pure logic fast; one run on mock page `session_capture.html`), `test_keys_events_config.py`, `test_failure_capture.py` |
@@ -245,7 +246,8 @@ src/regrunner/
                   session (P08: build window strip, pick panel, which-one, side-effect dialog; polls /api/build/session/<wb>),
                   record (P09: Rec / Check / Save / Wait until buttons, the check card, the recorder's prompts),
                   api_editor (P10: the editor of an api/xml test, dispatched from editor.js's testEditor),
-                  variables (the Variables screen: add / edit / rename / delete), dragsort (drag a step card, drag the selected bar; document listeners),
+                  variables (the Variables screen: add / edit / rename / delete, "Make unique each run"), varpick ("Use a variable" beside a step's
+                  Value / Expected; a unique variable's copy by name: an existing number, a new one, first / last), dragsort (drag a step card, drag the selected bar; document listeners),
                   scenario (P12: `#/build/<wb>/scenario/<name>` board: lanes x blocks grid split by sync-line columns, order-marker chips,
                   inspector, last runs; the map's Scenarios cards and the rail's Scenarios list)}.js
     static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen + the Import a run card),batch,test,compare,session (the test page's "Session, step by step" card),index (header+screen dispatcher)}.js;
@@ -259,7 +261,7 @@ tests/
                        build_steps_workbook(): flows written by the test (sheet.add rows) with their own Params
   flow_books.py        book(): tiny workbooks as lists of rows (+ Params rows, loop data sheets, `_rr_environments`) for the flow keywords
   web_fixtures.py      `web` fixture: live UI server on a scratch project whose workbooks point only at the mock site
-  test_*.py            90 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
+  test_*.py            100 files; see section 5 (test_benchmark_scaling.py is opt-in: RR_BENCHMARK=1)
 ```
 
 ---
@@ -483,7 +485,9 @@ Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
 Unverified: the Windows paths of `engine/resources.py` (ctypes; no Windows here), numbers from real sites.
 
-**Planned (2026-10-01, not built): unique variables with numbered copies** (`{lastName#2}`, generated once per run, first/last/#N in checks). Design agreed with the user: `dev/claude/CONTEXT_unique_variables.md`.
+**Done 2026-10-01: unique variables with numbered copies** (brief with the user's decisions: `dev/claude/CONTEXT_unique_variables.md`). `{LASTNAME#2}` = copy 2 of a variable `_rr_variables` marks
+Unique: made by the first step that types it (a non-check step's Value), the same for the rest of the run; checks / API requests only read (`#first`/`#last` too), a copy never made fails the step
+with its own words (`StepOut.not_run`: no "Comparison Failed" over it). Not built: `{NAME#2}` in an IF condition or a page fingerprint (stays as written), a check that "all copies are shown".
 
 **Done 2026-09-29: cancel one test** (`engine/cancel.py`). The UI writes `runs/<id>/cancel_test/<quoted test id>`; `Engine.watch_markers` (every 0.5 s) turns it into
 `Engine.cancel_test`: the test's `OneTestCancel` is set (every `cancel.is_set()` check - step loop, `Patience.give_up`, throttle, ASK_USER, scenario sync - sees it, no change to

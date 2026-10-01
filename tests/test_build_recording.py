@@ -135,6 +135,24 @@ async def test_a_typed_value_can_be_kept_as_fixed_text_or_renamed_and_nothing_is
     assert steps(s) == [("SET", "Jane"), ("SET", "{SURNAME}")] and params(s)["SURNAME"] == ["Smith"] and "LAST_NAME_2" not in params(s)
 
 
+async def test_a_typed_value_can_become_a_copy_of_a_variable_that_is_new_each_run_and_nothing_is_left_behind(session):
+    s = session
+    s.doc.apply([{"op": "set_variable", "token": "SURNAME", "unique": True, "uniqueBase": "qalast"}])
+    await s.recorder.start(after=2)
+    page = s._page()
+    await page.fill("input[name=lastName]", "Smith")
+    await page.focus("#firstName")
+    await quiet(s, 1)
+    prompt = next(p for p in s.recorder.prompts if p["kind"] == "variable")
+    assert "unique" in prompt["choices"]
+    with pytest.raises(Exception, match="not set to be new each run"):
+        await s.recorder.answer(prompt["id"], "unique", token="LAST_NAME#1")
+    await s.recorder.answer(prompt["id"], "unique", token="SURNAME#2")
+    assert steps(s) == [("SET", "{SURNAME#2}")] and "LAST_NAME_2" not in params(s)
+    v = next(v for v in s.doc.model()["variables"] if v["key"] == "SURNAME")
+    assert v["copies"] == [2] and v["copiesMade"] == [2]
+
+
 async def test_a_password_becomes_a_secret_in_secrets_env_and_its_value_is_never_shown(session, tmp_path):
     s = session
     key = "RR_SECRET_UAT_ACCOUNT_PASSWORD"

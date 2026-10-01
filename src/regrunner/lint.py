@@ -229,6 +229,24 @@ def builder_problems(model: dict) -> list[dict]:
                 for name in UNMAPPED_RE.findall(text or ""):
                     add("error", "unmapped_template_variable", f"template variable {name} was never mapped to a variable of this workbook",
                         tid, s, name.upper())
+            # unique variables' copies ({LASTNAME#2}): only a unique variable has them, and a read needs a step that makes the copy
+            for u in s["uses"]:
+                if u["form"] != "copy":
+                    continue
+                k, which = u["token"], u["copy"]
+                v = variables.get(k, {})
+                label = v.get("label") or k
+                if not v.get("unique"):
+                    add("error", "not_unique_variable", f"{label} is not set to be unique, so {{{k}#{which}}} means nothing: tick \"Make unique "
+                                                        "each run\" on it in Variables, or use {" + k + "}", tid, s, k)
+                elif not u["makes"]:
+                    made = v.get("copiesMade") or []
+                    if which.isdigit() and int(which) not in made:
+                        add("warning", "copy_never_made", f"{label} #{which} is read here but no step types it, so a run never creates it",
+                            tid, s, k)
+                    elif not which.isdigit() and not made:
+                        add("warning", "copy_never_made", f"this reads the {which} {label}, but no step types any {label}, so a run never "
+                                                          "creates one", tid, s, k)
             # checks without an expected value
             if not str(s["expected"]).strip() and (
                     (m in ("OUTPUT", "CHECK_VALUE") and s["match"]) or m in ("CHECK_REGEX", "CHECK_COMPARE", "CHECK_COUNT", "CHECK_SELECTED",

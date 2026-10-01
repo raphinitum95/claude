@@ -176,3 +176,60 @@ async def test_download_says_which_secrets_are_not_in_the_file(web):
     finally:
         await browser.close()
         await pw.stop()
+
+
+async def test_a_variable_made_new_each_run_is_set_up_on_the_variables_screen_and_its_copies_are_picked_by_name_in_a_step(web):
+    async with web.aclient() as c:
+        r = await c.post("/api/build/workbooks", json={"name": "unique_vars", "environments": [{"name": "QA", "domain": web.site.rstrip("/")}]})
+        wb = r.json()["name"]
+        ops = [{"op": "add_test", "name": "Buy", "kind": "web"},
+               {"op": "set_variable", "token": "LASTNAME", "label": "Last name", "unique": True, "uniqueBase": "qalast"},
+               {"op": "insert_step", "test": "Buy", "step": {"method": "OPEN", "value": "{DOMAIN}/form.html", "page": "chrome"}},
+               {"op": "insert_step", "test": "Buy", "step": {"method": "SET", "findBy": "xpath", "locator": "//input[@id='first']", "value": "{LASTNAME#1}"}},
+               {"op": "insert_step", "test": "Buy", "step": {"method": "OUTPUT", "findBy": "xpath", "locator": "//input[@id='first']", "match": "exact"}}]
+        assert (await c.post(f"/api/build/workbooks/{wb}/edit", json={"ops": ops})).status_code == 200
+    pw, browser, page = await open_ui(web, f"/#/build/{wb}/variables")
+    try:
+        await page.locator('[data-act="build-select-variable"][data-field="LASTNAME"]').click()
+        await js_until(page, "!!document.querySelector('#bv-unique-on')")
+        assert await page.locator("#bv-unique-on").is_checked() and await page.locator("#bv-unique-base").input_value() == "qalast"
+        assert await page.locator("#bv-unique-format").input_value() == "letters"                 # (a name: letters only by default)
+        assert "#1" in await page.locator("#bv-unique").inner_text()
+        await page.locator("#bv-unique-length").fill("5")
+        await page.locator("#bv-unique-length").blur()
+
+        async def model():
+            async with web.aclient() as c:
+                return (await c.get(f"/api/build/workbooks/{wb}")).json()
+        deadline = asyncio.get_running_loop().time() + 10
+        while next(v for v in (await model())["variables"] if v["key"] == "LASTNAME")["unique"]["length"] != 5:
+            assert asyncio.get_running_loop().time() < deadline, "the length was not saved"
+            await asyncio.sleep(0.2)
+
+        await page.goto(f"{web.base}/#/build/{wb}/test/Buy")
+        await js_until(page, "document.querySelectorAll('.scard').length === 3")
+        await page.locator(".scard").nth(2).click()                                                 # the check
+        await page.locator('[data-act="build-varpick-open"][data-field="expected"]').click()
+        await page.locator('[data-act="build-varpick-var"][data-val="LASTNAME"]').click()
+        await js_until(page, "!!document.querySelector('[data-act=\"build-varpick-copy\"]')")
+        choice = page.locator('[data-act="build-varpick-copy"]')
+        assert await choice.count() == 1 and "Only one Last name exists, so this uses #1" in await choice.inner_text()
+        await choice.click()
+        await js_until(page, "document.querySelector('[data-input=\"build-step-expected\"]').value === '{LASTNAME#1}'")
+        await js_until(page, "document.querySelector('#build-varpick') === null")
+
+        await page.locator(".scard").nth(1).click()                                                 # the typing step
+        await page.locator('[data-act="build-varpick-open"][data-field="value"]').click()
+        await page.locator('[data-act="build-varpick-var"][data-val="LASTNAME"]').click()
+        await js_until(page, "document.querySelectorAll('[data-act=\"build-varpick-copy\"]').length === 2")
+        labels = await page.locator('[data-act="build-varpick-copy"]').all_inner_texts()
+        assert [t.split("\n")[0] for t in labels] == ["Last name #1", "A new one (#2)"]
+        await page.locator('[data-act="build-varpick-copy"][data-val="{LASTNAME#2}"]').click()
+        deadline = asyncio.get_running_loop().time() + 10
+        while [s["value"] for s in next(t for t in (await model())["tests"] if t["id"] == "Buy")["steps"]][1] != "{LASTNAME#2}":
+            assert asyncio.get_running_loop().time() < deadline, "the copy was not written into the step"
+            await asyncio.sleep(0.2)
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()

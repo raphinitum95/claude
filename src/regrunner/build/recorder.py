@@ -37,7 +37,7 @@ from ..engine.session import FrameStep
 from ..workbook.builder import (SIDE_EFFECT_WORDS, BuildError, auto_name, describe_target, make_token, read_environments, read_fingerprints,
                                 read_variable_labels)
 from ..workbook.sheet import cell_text
-from ..workbook.variables import INLINE_RE, secret_value
+from ..workbook.variables import COPY_RE, INLINE_RE, secret_value
 from . import locators as L
 
 if TYPE_CHECKING:                                     # pragma: no cover
@@ -185,6 +185,23 @@ def save_token_for(desc: dict, taken: set[str]) -> str:
     return token_for(" ".join(words), taken, "SAVED_VALUE")
 
 
+def unique_read_choices(v: dict) -> list[dict]:
+    """What a check can read of unique variable ``v`` (a builder model variable): ``[{token, label, warn}]``, ``token`` as it goes between braces
+    (``LASTNAME#last``).  Several numbers in the workbook: first, last and each number; one (or none): that number only (#1), with a warning
+    that it stays on that number if more are added later.  Mirrors ``copyChoices`` in views/build/varpick.js."""
+    nums = sorted(v.get("copies") or [])
+    made = set(v.get("copiesMade") or [])
+    token, label = v["token"], v.get("label") or v["token"]
+    if len(nums) <= 1:
+        n = nums[0] if nums else 1
+        warn = (f"Only one {label} exists, so this uses #{n}. If more get added later, it stays on #{n}." if nums
+                else f"No step makes a {label} yet: this check fails until one types {{{token}#1}}.")
+        return [{"token": f"{token}#{n}", "label": f"{label} #{n}", "warn": warn}]
+    return ([{"token": f"{token}#first", "label": f"The first {label}", "warn": ""}, {"token": f"{token}#last", "label": f"The last {label}", "warn": ""}]
+            + [{"token": f"{token}#{n}", "label": f"{label} #{n}", "warn": "" if n in made else f"No step types {{{token}#{n}}}: this check fails."}
+               for n in nums])
+
+
 # Check kinds (Q8): id -> (group, label).  The order is the card's.
 CHECK_KINDS = (
     ("text_is", "Text", "Text is"), ("text_contains", "Text", "Text contains"),
@@ -268,7 +285,7 @@ def check_step(kind: str, desc: dict, locator: dict, expected: str, *, token: st
     if kind not in ALL_KINDS:
         raise BuildError(f"{kind!r} is not a check this card knows.", "check", 400)
     expected = str(expected if expected is not None else "")
-    from_variable = bool(INLINE_RE.search(expected))          # ``{PRICE}``: only known when the test runs, so its shape cannot be checked here
+    from_variable = bool(INLINE_RE.search(expected) or COPY_RE.search(expected))   # ``{PRICE}`` / ``{LASTNAME#2}``: only known when the test runs
     fields: dict[str, Any] = {"findBy": locator.get("findBy") or "", "locator": locator.get("value") or "",
                               "index": locator.get("index") or None, "backups": locator.get("backups") or []}
     prop = "VALUE" if desc.get("kind") in ("field", "textbox") else "INNERTEXT"
@@ -304,7 +321,7 @@ def check_step(kind: str, desc: dict, locator: dict, expected: str, *, token: st
     elif kind == "regex":
         need("pattern")
         try:
-            re.compile(INLINE_RE.sub("x", expected))
+            re.compile(COPY_RE.sub("x", INLINE_RE.sub("x", expected)))
         except re.error as err:
             raise BuildError(f"That pattern is not a regular expression: {err}", "expected", 400) from None
         fields.update(method="CHECK_REGEX", expected=expected)
@@ -874,7 +891,7 @@ class Recorder:
                       f"New variable {token} in {sheet}, “{value}” in each data row: change a row's value to try other data.")
         fields["value"] = "{" + token + "}"
         prompt = {"kind": "variable", "token": token, "tag": tag, "text": f"You typed “{value}”: kept as the variable {{{token}}}.",
-                  "detail": detail, "choices": ["keep", "fixed", "rename"], "ref": p.get("ref"), "_value": value, "_cell": dynamic or value, "_dyn": bool(dynamic), "_label": label}
+                  "detail": detail, "choices": ["keep", "fixed", "rename", "unique"], "ref": p.get("ref"), "_value": value, "_cell": dynamic or value, "_dyn": bool(dynamic), "_label": label}
         await self._write(frame, page, fields, "type", extra_ops=ops, prompt=prompt, desc=desc)
 
     def _secret_for(self, label: str, value: str) -> tuple[str, str]:
@@ -1163,7 +1180,7 @@ class Recorder:
             if choice not in allowed:
                 raise BuildError(f"{choice!r} is not an answer to that question.", "prompt", 400)
             applied: list[dict] = []
-            if choice in ("fixed", "rename"):
+            if choice in ("fixed", "rename", "unique"):
                 applied = await self._revise_variable(prompt, choice, token)
             elif choice == "raw":
                 applied = await self._keep_raw(prompt)
@@ -1199,11 +1216,20 @@ class Recorder:
             token = token.strip().strip("{}").strip()
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token):
                 raise BuildError("A variable name is letters, digits and _ (such as FIRST_NAME).", "token", 400)
+        if choice == "unique":                                          # a unique variable's copy ({LASTNAME#3}): new on every run, nothing to add
+            token = token.strip().strip("{}").strip()
+            m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)#([1-9][0-9]*)", token)
+            if not m:
+                raise BuildError("Choose a variable that is new each run and which copy (such as LASTNAME#2).", "token", 400)
+            with self.s.doc.lock:
+                unique = (read_variable_labels(self.s.doc.editor).get(m.group(1).upper()) or {}).get("unique")
+            if not unique:
+                raise BuildError(f"{m.group(1)} is not set to be new each run: tick \"Make unique each run\" on it in Variables first.", "token", 400)
         sheet, headers, _ = self._param_rows()
-        header = next((h for h in headers if token and h.upper() == token.upper()), None)
+        header = next((h for h in headers if token and choice != "unique" and h.upper() == token.upper()), None)
         new_value = value if choice == "fixed" else "{" + (header or token) + "}"
-        add = [] if choice == "fixed" or header else [{"op": "add_variable", "token": token, "label": prompt["_label"], "sheet": sheet,
-                                                         "value": prompt.get("_cell", value)}]
+        add = [] if choice in ("fixed", "unique") or header else [{"op": "add_variable", "token": token, "label": prompt["_label"], "sheet": sheet,
+                                                                    "value": prompt.get("_cell", value)}]
         if self._latest(prompt):
             # nothing else changed since: take the recorded edit back and write it again the new way (no unused column is left behind)
             await asyncio.to_thread(self.s.doc.undo)
@@ -1318,6 +1344,12 @@ class Recorder:
         for row in environments["rows"]:
             if not row["secret"]:
                 add(row["variable"], next((str(v or "") for k, v in row["values"].items() if k.upper() == env), ""), "environment")
+        for v in self.s.doc.model().get("variables", []):            # a unique variable's copies: a check reads first / last / #N
+            if v.get("unique") and not v.get("secret"):
+                for choice in unique_read_choices(v):
+                    if choice["token"].upper() not in seen:
+                        seen.add(choice["token"].upper())
+                        out.append({**choice, "value": "", "group": "unique", "n": None, "match": False})
         return out
 
     def _next_n(self) -> int:

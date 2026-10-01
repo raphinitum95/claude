@@ -1,6 +1,6 @@
 # Brief: unique (generated) variables with numbered copies
 
-Status: **design agreed with the user 2026-10-01, nothing built.** Read this whole file before starting; the decisions below were talked
+Status: **built 2026-10-01** (branch `claude/unique-variables`, from `qa-regression`); see "As built" at the end. Design agreed with the user the same day. Read this whole file before starting; the decisions below were talked
 through with the user one by one and are settled. The words used here (`#N`, "copy", "make unique") are working names, not law: pick
 plain UI wording, but keep the behaviour.
 
@@ -61,3 +61,20 @@ into a policy lookup, check the travellers page shows the last traveller's name.
 Fast: pool get-or-create, first/last/#N, gaps, missing-copy failure text, generation format/length, `{x#n}` parsing next to plain `{x}`.
 Mock site: one workbook, two tests: test 1 sets #1 and #2, test 2 types #1 and checks #last; a second run gets different values; a
 re-run inside the run keeps them. Builder: "add a new one" takes the next free number, deleting leaves a gap, the single-copy warning.
+
+## As built (2026-10-01)
+
+- Cells: `{NAME#2}`, `{NAME#first}`, `{NAME#last}` (case-insensitive). "Makes" = the Value column of a step that is not a check
+  (`variables.makes_copies`); everything else reads. `_rr_variables` columns `Unique | UniqueBase | UniqueFormat | UniqueLength`
+  (format `letters` / `mixed` / `digits`; blank = letters for a name-like token, else mixed; length 8). Base = UniqueBase, else the variable's
+  own value for the test (Params row / pool / environment), else nothing.
+- Engine: `VariablePool.copies` (one per run; tests share one event loop and nothing awaits between "exists?" and "make", so one value per
+  copy without a lock). A made copy is a `variable_set` event / `sets` entry with cell `unique copy` and a step note. Needs/Provides:
+  `NAME#N` for a number, `NAME#*` for first/last (waits for every test that makes a copy). API requests read copies, never make one.
+- A step that could not run because of a variable (copy or plain `{NAME}`) now keeps that reason instead of "Comparison Failed"
+  (`StepOut.not_run`), which also changes the message of an Output step whose Expected_Value used an unknown `{NAME}`.
+- Builder: model `Variable.unique` / `copies` / `copiesMade`, uses form `copy`; problems `not_unique_variable` (error), `copy_never_made`
+  (warning); rename carries `#N`. UI: Variables screen card "Make unique each run" + new kind "New each run"; "Use a variable" beside a
+  step's Value / Expected (`views/build/varpick.js`); the check card lists first / last / #N ("New each run (which copy)"); the recorder's
+  typed-value card has "New each run…" (Build tab only, not the in-page card).
+- Not built: copies in IF conditions and page fingerprints (stay as written), a "page shows every copy" check, per-loop-pass copies.

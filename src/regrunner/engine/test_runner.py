@@ -688,6 +688,7 @@ class TestRunner:
         variable_error = self._variable_error(runtime, step) if not blank_error else ""
         if blank_error or variable_error:
             ctx.out.error, ctx.out.hard = blank_error or variable_error, True    # the step does not run: typing a variable's name would only be a wrong value
+            ctx.out.not_run = True
         elif step.page in UNSUPPORTED_PAGES:
             ctx.out.error = f"Page type {step.page} is not supported by regrunner (web UI steps only)"
         else:
@@ -712,6 +713,8 @@ class TestRunner:
         if step.unmapped:
             names = ", ".join("{?" + n + "}" for n in dict.fromkeys(step.unmapped))
             return f"{names} is a placeholder from a template that was never matched to a variable: choose the variable in the Build tab."
+        if step.copy_problems:                                   # a unique variable's copy ({NAME#2}) the run never made, or a misuse of one
+            return "The step was not run: " + "; ".join(dict.fromkeys(step.copy_problems)) + "."
         if not step.missing_vars:
             return ""
         secrets = [n.split(":", 1)[1] for n in dict.fromkeys(step.missing_vars) if n.startswith("SECRET:")]
@@ -869,6 +872,9 @@ class TestRunner:
         actual = MASK if ctx.out.secret else mask_text(actual, hidden)
         error_text = mask_text(error_text, hidden)
         ctx.out.notes[:] = [mask_text(n, hidden) for n in ctx.out.notes]
+        writes = [*({"name": m["name"], "value": m["value"], "stored": m["value"], "cell": "unique copy"} for m in step.made_copies), *writes]
+        for m in step.made_copies:                                     # (a unique variable's copy made by this step: the same value for the rest of the run)
+            ctx.out.notes.append(f"made {m['name'].replace('#', ' #')} for this run: {m['value']}")
         sets = [{**w, **{k: (MASK if ctx.out.secret else mask_text(w[k], hidden)) for k in ("value", "stored")}} for w in writes]      # shown in reports: masked
         if verdict.ignored_error:
             ctx.out.notes.append(f"ignored (Ignore_not_existing_object=Y): {verdict.ignored_error}")

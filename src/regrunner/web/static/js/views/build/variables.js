@@ -4,6 +4,8 @@
 // step each: add_variable, set_variable, set_cell, set_environments, delete_variable); the values on screen, the rename and a secret's value
 // go through web/variables_api.py. A secret's value only ever goes to secrets.env: the page shows "set" / "not set", never the value.
 // The Environments dialog stays for the environments themselves (their names, which one is production).
+// "Make unique each run" (brief: dev/claude/CONTEXT_unique_variables.md): a variable whose copies ({NAME#1}, {NAME#2}) are its start + random
+// characters, new on every run; set_variable ops carry unique / uniqueBase / uniqueFormat / uniqueLength.
 import { S, rerender } from '../../state.js';
 import { html, raw, cx, toast } from '../../util.js';
 import { icon } from '../../icons.js';
@@ -13,6 +15,17 @@ import { bm, applyOps } from './actions.js';
 const enc = encodeURIComponent;
 const VKIND = { env: ['globe', 'k-nav', 'Environment'], set: ['braces', 'k-save', 'Set by steps'], data: ['table', 'k-input', 'Data'], flag: ['flag', 'k-flow', 'Flag'] };
 const TOKEN_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const UFORMATS = [['letters', 'Letters only'], ['mixed', 'Letters and numbers'], ['digits', 'Numbers only']];
+const UCHARS = { letters: 'abcdefghijklmnopqrstuvwxyz', mixed: 'abcdefghijklmnopqrstuvwxyz0123456789', digits: '0123456789' };
+const NAME_LIKE = /NAME|SURNAME|FIRST|LAST|GIVEN|FAMILY|MIDDLE|CITY|TOWN|STREET/i;      // (variables.py default_unique_format: letters for names)
+const defaultFormat = (token) => (NAME_LIKE.test(token || '') ? 'letters' : 'mixed');
+/** What a copy could look like: an example only (every run makes its own). */
+function sampleOf(base, format, length) {
+  const chars = UCHARS[format] || UCHARS.mixed;
+  let out = '';
+  for (let i = 0; i < Math.max(1, Math.min(Number(length) || 8, 64)); i++) out += chars[(i * 7 + 3 * (base || '').length + i * i) % chars.length];
+  return (base || '') + out;
+}
 
 // What this screen knows beyond the model (module state: it follows S.build.name + the variable on screen + the model version).
 const vs = { key: '', loading: false, detail: null, error: null, rename: null, del: false, secret: {}, adding: null };
@@ -54,7 +67,7 @@ function varRow(v, on) {
 <span style="color: var(--${cls || 'tx3'}); margin-top: 1px; display: inline-flex">${icon(v.secret ? 'lock' : i, 13)}</span>
 <span style="display: flex; flex-direction: column; min-width: 0; flex: 1"><span style="font-weight: 600; color: var(--tx)">${v.label}</span>
 <span class="mono trunc" style="font-size: 10.5px; color: var(--tx3)">{${v.secret ? 'SECRET:' : ''}${v.token}}${v.sources[0] ? ' · ' + v.sources[0].sheet : ''}</span></span>
-${!v.setBy.length && !v.sources.length && v.kind !== 'env' && !v.secret ? html`<span class="pdot" style="background: var(--fail); margin-top: 5px" title="Used, never set"></span>` : ''}
+${!v.setBy.length && !v.sources.length && v.kind !== 'env' && !v.secret && !v.unique ? html`<span class="pdot" style="background: var(--fail); margin-top: 5px" title="Used, never set"></span>` : ''}
 </button>`;
 }
 
@@ -164,19 +177,41 @@ ${rows.map(([env, label, has, own]) => html`<tr data-key="sv-${env || 'all'}"><t
 </tbody></table></div></div>`;
 }
 
+/** "Make unique each run": the tick, what a copy starts with, what its random part is made of, and the copies the steps use. */
+function uniquePanel(sel, d) {
+  if (sel.secret) return '';
+  const u = sel.unique;
+  const own = (d.sources[0] && d.sources[0].rows.find((r) => r.value)) || null;
+  const start = u ? (u.base || (own ? own.value : '')) : '';
+  const made = new Set(sel.copiesMade || []);
+  return html`<div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px" id="bv-unique">
+<label style="display: flex; align-items: center; gap: 8px; font-weight: 600"><input type="checkbox" class="cb" id="bv-unique-on" ${u ? raw('checked') : ''} data-change="bv-unique-on">Make unique each run</label>
+<span style="font-size: 12.5px; color: var(--tx2)">${u ? html`Each copy a step types (${sel.token} #1, #2...) is its start plus random characters, made the first time a run needs it and the same for every later step and test of that run. A new run makes new ones.`
+    : html`Tick it when the site must never see the same value twice (a name, an email): steps then pick a copy (#1, #2...) and every run gets fresh ones.`}</span>
+${u ? html`<div style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr); gap: 12px">
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Starts with</span><input class="fld mono" id="bv-unique-base" value="${u.base}" placeholder="${own ? `${own.value} (its value in data row ${own.row})` : 'nothing: random characters only'}" data-change="bv-unique-base" aria-label="What a copy starts with"></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Random part</span><select class="fld" id="bv-unique-format" data-change="bv-unique-format" aria-label="What the random part is made of">${UFORMATS.map(([k, label]) => html`<option value="${k}" ${u.format === k ? raw('selected') : ''}>${label}</option>`)}</select></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Length</span><input class="fld mono" id="bv-unique-length" type="number" min="1" max="64" value="${u.length}" data-change="bv-unique-length" aria-label="How many random characters"></label></div>
+<span style="font-size: 12.5px; color: var(--tx2)">A copy looks like <b class="mono" style="color: var(--tx)">${sampleOf(start, u.format, u.length)}</b>${u.format !== 'letters' && NAME_LIKE.test(sel.token) ? ' · a name field may refuse numbers: "Letters only" is safer' : ''}</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center"><span class="lbl" style="margin-right: 4px">Copies the steps use</span>
+${(sel.copies || []).length ? sel.copies.map((n) => html`<span class="chip mono ${made.has(n) ? '' : 'chip-warn'}" title="${made.has(n) ? 'A step types it: made the first time a run needs it' : 'Only checked: no step types it, so a run never makes it'}">#${n}${made.has(n) ? '' : ' (only checked)'}</span>`)
+    : html`<span style="font-size: 12.5px; color: var(--tx3)">None yet: pick "${sel.token}" in a step's value and choose "a new one".</span>`}</div>` : ''}
+</div>`;
+}
+
 function detailPane(S_, m, sel) {
   const d = vs.detail;
   const ready = d && vs.key === keyOf(sel);
   return html`<main class="scroll" style="flex: 1; min-width: 0; overflow: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px" id="bv-detail">
 ${header(sel)}
 <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
-<div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="lbl">Kind</span><span style="font-weight: 600">${sel.kind === 'env' ? 'Environment table' : sel.kind === 'set' ? 'Saved by a step' : sel.kind === 'flag' ? 'Row flag' : sel.secret && !sel.sources.length ? 'Secret' : 'Data column'}</span></div>
+<div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="lbl">Kind</span><span style="font-weight: 600">${sel.kind === 'env' ? 'Environment table' : sel.kind === 'set' ? 'Saved by a step' : sel.kind === 'flag' ? 'Row flag' : sel.secret && !sel.sources.length ? 'Secret' : sel.unique && !sel.sources.length ? 'New each run' : 'Data column'}</span></div>
 <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="lbl">Secret</span><span style="font-weight: 600">${sel.secret ? 'Yes · masked everywhere' : 'No'}</span></div>
 <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 4px"><span class="lbl">Environment-specific</span><span style="font-weight: 600">${sel.envSpecific ? 'Yes' : 'No'}</span></div></div>
-${!sel.setBy.length && !sel.sources.length && sel.kind !== 'env' && !sel.secret ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>Used, but nothing sets it: ${sel.neededBy.join(', ') || 'a step'} will fail on "variable ${sel.token} has no value".</span></div>` : ''}
+${!sel.setBy.length && !sel.sources.length && sel.kind !== 'env' && !sel.secret && !sel.unique ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>Used, but nothing sets it: ${sel.neededBy.join(', ') || 'a step'} will fail on "variable ${sel.token} has no value".</span></div>` : ''}
 ${vs.error && !ready ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${vs.error.message}</span></div>` : ''}
 ${!ready ? (vs.error ? '' : html`<div class="skel" style="height: 90px"></div>`) : html`
-${dataValues(d)}${envValues(sel, d, m)}${secretValues(sel, d)}
+${uniquePanel(sel, d)}${dataValues(d)}${envValues(sel, d, m)}${secretValues(sel, d)}
 ${sel.kind === 'set' && !sel.sources.length ? html`<div style="font-size: 12.5px; color: var(--tx2)">A step saves it while the test runs: there is no stored value to edit. Change or remove the step${sel.setBy.length === 1 ? '' : 's'} that set${sel.setBy.length === 1 ? 's' : ''} it.</div>` : ''}`}
 <div style="display: flex; gap: 32px">
 <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px"><span class="lbl">Set by</span>
@@ -189,7 +224,7 @@ ${sel.usedBy.length ? sel.usedBy.map((u) => usePlace(u, u.column)) : html`<span 
 // ---- a new variable -------------------------------------------------------------------------------------------------------------
 function freshAdding(m) {
   const web = m.tests.filter((t) => t.kind === 'web');
-  return { token: '', label: '', kind: web.length ? 'data' : 'env', test: web[0] ? web[0].id : '', value: '', env: {}, busy: false, error: '' };
+  return { token: '', label: '', kind: web.length ? 'data' : 'env', test: web[0] ? web[0].id : '', value: '', env: {}, busy: false, error: '', format: '', length: '8' };
 }
 
 function addPane(m) {
@@ -198,7 +233,8 @@ function addPane(m) {
   const web = m.tests.filter((t) => t.kind === 'web');
   const kinds = [['data', 'Test data', 'A value per data row of one test (its Params sheet).', !web.length && 'No website test yet.'],
     ['env', 'Per environment', 'One value for each environment (QA, UAT...), like DOMAIN.', envs.source === 'legacy' && 'This workbook keeps its environments in the legacy Environments sheet: add it there in Excel.'],
-    ['secret', 'Secret', 'A password or key: its value goes in secrets.env, never in the workbook.', '']];
+    ['secret', 'Secret', 'A password or key: its value goes in secrets.env, never in the workbook.', ''],
+    ['unique', 'New each run', 'A start (qalast) plus random characters: every run makes fresh copies (#1, #2...).', '']];
   const test = web.find((t) => t.id === a.test);
   const token = a.token.trim();
   const taken = token && m.variables.some((v) => v.key === token.toUpperCase());
@@ -210,7 +246,7 @@ function addPane(m) {
 ${token && !TOKEN_RE.test(token) ? html`<span style="font-size: 12px; color: var(--fail)">Letters, digits and _ only, starting with a letter.</span>` : taken ? html`<span style="font-size: 12px; color: var(--fail)">There is already a variable called ${token}.</span>` : ''}</label>
 <label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Label (optional)</span><input class="fld" value="${a.label}" placeholder="First name" data-input="bv-add-field" data-field="label"></label></div>
 <div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">What kind</span>
-<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">${kinds.map(([k, label, what, off]) => html`<button class="card ${cx(a.kind === k && 'on')}" style="text-align: left; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; ${a.kind === k ? 'border-color: var(--acc); box-shadow: var(--glow)' : ''}; ${off ? 'opacity: .55' : ''}" data-act="bv-add-kind" data-val="${k}" ${off ? raw(`disabled title="${off.replace(/"/g, '&quot;')}"`) : ''} aria-pressed="${String(a.kind === k)}">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px">${kinds.map(([k, label, what, off]) => html`<button class="card ${cx(a.kind === k && 'on')}" style="text-align: left; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; ${a.kind === k ? 'border-color: var(--acc); box-shadow: var(--glow)' : ''}; ${off ? 'opacity: .55' : ''}" data-act="bv-add-kind" data-val="${k}" ${off ? raw(`disabled title="${off.replace(/"/g, '&quot;')}"`) : ''} aria-pressed="${String(a.kind === k)}">
 <b style="font-size: 13px">${label}</b><span style="font-size: 12px; color: var(--tx2)">${off || what}</span></button>`)}</div></div>
 ${a.kind === 'data' ? html`<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px">
 <label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">For the test</span><select class="fld" data-change="bv-add-test">${web.map((t) => html`<option value="${t.id}" ${t.id === a.test ? raw('selected') : ''}>${t.id}</option>`)}</select>
@@ -223,6 +259,11 @@ ${a.kind === 'secret' ? html`<div style="display: flex; flex-direction: column; 
 <div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden"><table class="tbl"><tbody>${[...envs.names, ''].map((n) => html`<tr data-key="as-${n || 'all'}"><td style="width: 180px">${n ? html`<b>${n}</b>` : html`<span style="color: var(--tx2)">Every environment</span>`}</td>
 <td><input class="fld mono" type="password" autocomplete="new-password" style="height: 30px; font-size: 12.5px" value="" placeholder="••••••" data-input="bv-add-env" data-env="${n}" aria-label="Secret value for ${n || 'every environment'}"></td></tr>`)}</tbody></table></div>
 <span style="font-size: 12px; color: var(--tx3)">Steps use it as {SECRET:${token || 'NAME'}}. The workbook only says it is a secret.</span></div>` : ''}
+${a.kind === 'unique' ? html`<div style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr); gap: 14px">
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Starts with</span><input class="fld mono" value="${a.value}" placeholder="qalast" data-input="bv-add-field" data-field="value"></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Random part</span><select class="fld" data-change="bv-add-format">${UFORMATS.map(([k, label]) => html`<option value="${k}" ${(a.format || defaultFormat(token)) === k ? raw('selected') : ''}>${label}</option>`)}</select></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Length</span><input class="fld mono" type="number" min="1" max="64" value="${a.length}" data-input="bv-add-field" data-field="length"></label></div>
+<span style="font-size: 12px; color: var(--tx3)">A copy looks like <b class="mono">${sampleOf(a.value, a.format || defaultFormat(token), a.length)}</b>. Steps use {${token || 'NAME'}#1}, {${token || 'NAME'}#2}...: you pick which one in the step.</span>` : ''}
 ${a.error ? html`<div class="bn bn-fail">${icon('warn', 15, 'color: var(--fail)')}<span>${a.error}</span></div>` : ''}
 <div style="display: flex; gap: 8px"><button class="btn btn-pri ${a.busy ? 'busy' : ''}" data-act="bv-add-create" id="bv-add-create" ${a.busy || !token || !TOKEN_RE.test(token) || taken ? raw('disabled') : ''}>${icon('plus', 14)} Add ${token || 'the variable'}</button>
 <button class="btn" data-act="bv-add-cancel">Cancel</button></div>
@@ -295,6 +336,8 @@ async function createVariable() {
   else if (a.kind === 'env') {
     ops = [environmentsOp((rows) => rows.push({ variable: token, required: false, secret: false, values: { ...a.env } }))];
     if (label) ops.push({ op: 'set_variable', token, label, envSpecific: true });
+  } else if (a.kind === 'unique') {
+    ops = [{ op: 'set_variable', token, unique: true, uniqueBase: a.value, uniqueFormat: a.format || defaultFormat(token), uniqueLength: Number(a.length) || 8, ...(label ? { label } : {}) }];
   } else ops = [{ op: 'set_variable', token, secret: true, ...(label ? { label } : {}) }];
   a.busy = true; a.error = ''; rerender();
   const applied = await applyOps(ops, { quiet: true });
@@ -354,6 +397,20 @@ export const changes = {
     applyOps([environmentsOp((rows) => { const r = rows.find((x) => x.variable.toUpperCase() === sel.key); if (r) r.required = el.checked; })]);
   },
   'bv-add-test'(el) { if (vs.adding) { vs.adding.test = el.value; rerender(); } },
+  'bv-add-format'(el) { if (vs.adding) { vs.adding.format = el.value; rerender(); } },
+  'bv-unique-on'(el) {
+    const sel = selected();
+    if (sel) applyOps([{ op: 'set_variable', token: sel.token, unique: el.checked, ...(el.checked && !sel.unique ? { uniqueFormat: defaultFormat(sel.token), uniqueLength: 8 } : {}) }]);
+  },
+  'bv-unique-base'(el) { const sel = selected(); if (sel && sel.unique) applyOps([{ op: 'set_variable', token: sel.token, uniqueBase: el.value }]); },
+  'bv-unique-format'(el) { const sel = selected(); if (sel && sel.unique) applyOps([{ op: 'set_variable', token: sel.token, uniqueFormat: el.value }]); },
+  'bv-unique-length'(el) {
+    const sel = selected();
+    const n = Number(el.value);
+    if (!sel || !sel.unique) return;
+    if (!Number.isInteger(n) || n < 1 || n > 64) { toast('The random part is 1 to 64 characters long.'); el.value = sel.unique.length; return; }
+    applyOps([{ op: 'set_variable', token: sel.token, uniqueLength: n }]);
+  },
 };
 
 export const inputs = {

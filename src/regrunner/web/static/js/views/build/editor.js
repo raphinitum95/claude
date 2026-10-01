@@ -8,6 +8,7 @@ import {
 } from './actions.js';
 import { sessionBar, sessionMark, pickPanel, sessionOpen } from './session.js';
 import { apiEditor } from './api_editor.js';
+import { varPick, varPickPanel, copyNotes } from './varpick.js';
 
 const enc = encodeURIComponent;
 
@@ -18,11 +19,11 @@ function tokenParts(text) {
   if (!text) return [];
   const out = [];
   let last = 0;
-  const re = /\{(SECRET:)?([A-Za-z_][A-Za-z0-9_]*)\}/g;
+  const re = /\{(SECRET:)?([A-Za-z_][A-Za-z0-9_]*)(?:#(\d+|first|last))?\}/gi;     // ({LASTNAME#2}: a unique variable's copy, "LASTNAME #2")
   let m;
   while ((m = re.exec(text))) {
     if (m.index > last) out.push({ t: text.slice(last, m.index), v: false });
-    out.push({ t: m[2], v: true, secret: !!m[1] });
+    out.push({ t: m[3] ? `${m[2]} ${/^\d+$/.test(m[3]) ? '#' + m[3] : m[3].toLowerCase()}` : m[2], v: true, secret: !!m[1] });
     last = re.lastIndex;
   }
   if (last < text.length) out.push({ t: text.slice(last), v: false });
@@ -312,11 +313,14 @@ ${s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><sp
 <div class="field" style="min-height: 40px">${icon('api', 15, 'color: var(--k-api)')}<b>${s.call}</b><span style="flex: 1"></span><a href="${buildUrl(S.build.name, 'test', s.call)}">Open</a></div></div>` : ''}
 ${s.element || (s.locator && (s.locator.value || s.locator.findBy)) ? elementSection(s) : ''}
 ${!s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><div style="display: flex; align-items: center; gap: 8px"><span class="lbl">Value</span><span style="flex: 1"></span>
-<button class="btn btn-ghost btn-sm" style="height: 22px; font-size: 11px; padding: 0 6px" data-act="build-open-value-builder" data-row="${s.row}" title="Value builder: writes a formula">ƒ Value builder</button></div>
+${varPick(s, 'value')}<button class="btn btn-ghost btn-sm" style="height: 22px; font-size: 11px; padding: 0 6px" data-act="build-open-value-builder" data-row="${s.row}" title="Value builder: writes a formula">ƒ Value builder</button></div>
+${varPickPanel(s, 'value')}
 <div class="field">${s.value ? html`<span style="flex-wrap: wrap; display: flex; gap: 3px">${tokenHtml(s.value)}</span>` : html`<span class="mono" style="font-size: 12px; color: var(--tx3)">(empty)</span>`}</div>
 <input class="fld mono" style="font-size: 12px" value="${s.value}" data-input="build-step-value" data-row="${s.row}"></div>
-<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Expected</span>
+<div style="display: flex; flex-direction: column; gap: 8px"><div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><span class="lbl">Expected</span><span style="flex: 1"></span>${varPick(s, 'expected')}</div>
+${varPickPanel(s, 'expected')}
 <input class="fld mono" style="font-size: 12px" value="${s.expected}" placeholder="(no comparison)" data-input="build-step-expected" data-row="${s.row}">
+${copyNotes(s)}
 <select class="fld" data-change="build-step-match" data-row="${s.row}">
 <option value="" ${s.match ? '' : raw('selected')}>No comparison</option><option value="exact" ${s.match === 'exact' ? raw('selected') : ''}>Exact match</option><option value="contains" ${s.match === 'contains' ? raw('selected') : ''}>Contains</option></select></div>
 <div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Save the result as</span>

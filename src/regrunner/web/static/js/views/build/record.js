@@ -6,14 +6,16 @@ import { html, raw, toast } from '../../util.js';
 import { icon } from '../../icons.js';
 import { sess, call } from './session.js';
 import { selectedStep } from './actions.js';
+import { copyChoices } from './varpick.js';
 
 const NEEDS_EXPECTED = new Set(['text_is', 'text_contains', 'value', 'ticked', 'selected', 'enabled', 'gt', 'lt', 'between', 'regex', 'date_format', 'count', 'wait_text']);
-const CHOICE_WORDS = { keep: 'Keep as variable', fixed: 'Use fixed text', rename: 'Rename…', raw: 'Keep raw clicks', gate: 'Save fingerprint + add gate',
+const CHOICE_WORDS = { keep: 'Keep as variable', fixed: 'Use fixed text', rename: 'Rename…', unique: 'New each run…', raw: 'Keep raw clicks', gate: 'Save fingerprint + add gate',
   edit: 'Edit', unflag: 'Not a side effect', dismiss: 'OK', ungate: 'Remove the check', regate: 'Save the fingerprint' };
 
 // What is being typed in the card (module state: the card is rebuilt on every poll).
 // `source` = where the expected value comes from: 'page' (read from the live page now), 'variable' (`{TOKEN}`, read when the test runs) or 'own' (typed).
-const ui = { cardId: null, kind: '', expected: '', source: 'own', variable: '', search: '', insertOpen: false, token: '', alsoSave: '', fp: {} };
+const ui = { cardId: null, kind: '', expected: '', source: 'own', variable: '', search: '', insertOpen: false, token: '', alsoSave: '', fp: {},
+  unique: null };      // a typed value becoming a unique variable's copy: {id (the prompt), token (the variable, once chosen)}
 
 const liveOf = (form, kind) => ((form.kinds.find((x) => x.id === kind) || {}).expected || '');
 
@@ -83,6 +85,12 @@ async function answer(el) {
   const id = el.dataset.id;
   const choice = el.dataset.choice;
   const body = { id, choice };
+  if (choice === 'unique' && !el.dataset.copy) {                   // (first which variable, then which copy: chosen in the card, see uniqueChooser)
+    ui.unique = ui.unique && ui.unique.id === id ? null : { id, token: '' };
+    rerender();
+    return;
+  }
+  if (choice === 'unique') { body.token = el.dataset.copy; ui.unique = null; }
   if (choice === 'rename') {
     const token = window.prompt('A name for the variable (letters, digits and _):', el.dataset.token || '');
     if (!token || !token.trim()) return;
@@ -106,6 +114,7 @@ export const recordActs = {
     else { ui.expected = k.expected || ''; ui.source = ui.expected ? 'page' : 'own'; }
     rerender();
   },
+  'build-rec-unique-var'(el) { if (ui.unique) { ui.unique.token = el.dataset.token; rerender(); } },
   'build-rec-use-var'(el) { const form = formOf(sess()); if (form) { ui.variable = el.dataset.token; setSource(form, 'variable'); rerender(); } },
   'build-rec-pick-var'(el) { ui.variable = el.dataset.token; ui.expected = `{${ui.variable}}`; rerender(); },
   'build-rec-insert-var'(el) { ui.expected = `${ui.expected}{${el.dataset.token}}`; ui.insertOpen = false; ui.search = ''; rerender(); },     // (typed text: add one to what is there, e.g. {LOW};{HIGH})
@@ -152,11 +161,26 @@ ${p.n ? html`<span class="mono" style="font-size: 10.5px; color: var(--tx3)">ste
 ${fp ? html`<div style="display: flex; flex-direction: column; gap: 6px">${[['name', 'Name'], ['urlContains', 'URL contains'], ['landmark', 'Landmark'], ['landmarkText', 'Landmark text']].map(([k, label]) => html`<label style="display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--tx3)">${label}
 <input class="fld mono" style="height: 28px; font-size: 11.5px" value="${fp[k] || ''}" data-input="build-rec-fp" data-id="${p.id}" data-field="${k}"></label>`)}</div>` : ''}
 <div style="display: flex; flex-wrap: wrap; gap: 6px">${(p.choices || []).map((c) => html`<button class="btn btn-sm ${c === 'keep' || c === 'gate' ? 'btn-pri' : ''}" data-act="${c === 'edit' ? 'build-rec-fp-edit' : 'build-rec-prompt'}" data-id="${p.id}" data-choice="${c}" data-token="${p.token || ''}">${c === 'edit' && fp ? 'Close editor' : c === 'dismiss' && p.kind === 'fingerprint' ? 'Not now' : CHOICE_WORDS[c] || c}</button>`)}
-${fp && p.kind === 'gate_added' ? html`<button class="btn btn-sm btn-pri" data-act="build-rec-prompt" data-id="${p.id}" data-choice="regate">${CHOICE_WORDS.regate}</button>` : ''}</div></div>`;
+${fp && p.kind === 'gate_added' ? html`<button class="btn btn-sm btn-pri" data-act="build-rec-prompt" data-id="${p.id}" data-choice="regate">${CHOICE_WORDS.regate}</button>` : ''}</div>
+${ui.unique && ui.unique.id === p.id ? uniqueChooser(p) : ''}</div>`;
+}
+
+/** "New each run…" on a typed value: which unique variable, then which of its copies (an existing number or a new one: views/build/varpick.js). */
+function uniqueChooser(p) {
+  const m = S.build.model;
+  const list = m ? m.variables.filter((v) => v.unique && !v.secret) : [];
+  if (!list.length) return html`<span style="font-size: 11.5px; color: var(--tx3)">No variable is new each run yet: add one on the Variables screen (kind “New each run”), or tick “Make unique each run” on one.</span>`;
+  const v = list.find((x) => x.key === ui.unique.token);
+  if (!v) {
+    return html`<div style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">Which variable?</span>
+${list.map((x) => html`<button class="btn btn-sm btn-ghost" style="justify-content: flex-start" data-act="build-rec-unique-var" data-token="${x.key}">${icon('braces', 11)} ${x.label}</button>`)}</div>`;
+  }
+  return html`<div style="display: flex; flex-direction: column; gap: 4px"><span class="lbl">Which ${v.label}?</span>
+${copyChoices(v, true).map((c) => html`<button class="btn btn-sm btn-ghost" style="justify-content: flex-start; height: auto; padding: 5px 8px; text-align: left" data-act="build-rec-prompt" data-id="${p.id}" data-choice="unique" data-copy="${c.token.slice(1, -1)}" title="${c.hint}">${c.label}</button>`)}</div>`;
 }
 
 const SOURCES = [['page', 'From the page'], ['variable', 'From a variable'], ['own', 'Type my own']];
-const VAR_GROUPS = { data: 'Test data', saved: 'Saved by earlier steps', environment: 'Environment' };
+const VAR_GROUPS = { data: 'Test data', saved: 'Saved by earlier steps', environment: 'Environment', unique: 'New each run (which copy)' };
 const COMPARES_TEXT = new Set(['text_is', 'text_contains', 'value', 'selected', 'ticked', 'enabled', 'wait_text']);   // (a check where the page's own value is what should be expected)
 const clip = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 
@@ -176,6 +200,9 @@ export function findVariables(vars, query) {
 /** What a variable is worth right now, in words (its value is only known for test data and the environment). */
 function variableNote(v, live, kind) {
   if (!v) return '';
+  if (v.group === 'unique') {                                             // (a unique variable's copy: made while the test runs, never known here)
+    return html`<span style="font-size: 11.5px; color: var(--tx3)">${v.label}: a new value on every run, the same for every step of that run.</span>${v.warn ? html`<span style="font-size: 11.5px; color: var(--warn)">${v.warn}</span>` : ''}`;
+  }
   const base = v.group === 'saved' ? `Set by step ${v.n}: its value only exists while the test runs.`
     : v.value ? `${v.group === 'environment' ? 'In this environment' : 'In the data row you are building with'} it is “${clip(v.value, 60)}”.`
       : `It is empty ${v.group === 'environment' ? 'in this environment' : 'in the data row you are building with'}.`;
@@ -189,7 +216,7 @@ function variablePicker(vars, act, selected) {
   const groups = Object.entries(VAR_GROUPS).map(([g, label]) => [label, hits.filter((v) => v.group === g)]).filter(([, list]) => list.length);
   const ranked = ui.search.trim() ? [['Best matches', hits]] : groups;                // (while searching the best match leads, whatever its group)
   return html`<input class="fld mono" style="height: 32px; font-size: 12px" type="search" placeholder="Search ${vars.length} variable${vars.length === 1 ? '' : 's'}…" value="${ui.search}" data-input="build-rec-var-search" data-rec-enter="${act}" data-key="rec-var-search-${ui.cardId}" autocomplete="off" aria-label="Search variables">
-<div class="vlist" role="listbox" aria-label="Variables">${hits.length ? ranked.map(([label, list]) => html`<span class="vg">${label}</span>${list.map((v) => html`<button class="vopt ${v.token === selected ? 'on' : ''}" role="option" aria-selected="${String(v.token === selected)}" data-act="${act}" data-token="${v.token}"><span class="tk">${v.token}</span><span class="vv">${v.value ? clip(v.value, 28) : v.group === 'saved' ? `step ${v.n}` : ''}${v.match ? `${v.value ? ' · ' : ''}same as page` : ''}</span></button>`)}`) : html`<span class="vg" style="text-transform: none; letter-spacing: 0; font-weight: 500">No variable matches “${ui.search}”.</span>`}</div>
+<div class="vlist" role="listbox" aria-label="Variables">${hits.length ? ranked.map(([label, list]) => html`<span class="vg">${label}</span>${list.map((v) => html`<button class="vopt ${v.token === selected ? 'on' : ''}" role="option" aria-selected="${String(v.token === selected)}" data-act="${act}" data-token="${v.token}"><span class="tk">${v.group === 'unique' ? v.label : v.token}</span><span class="vv">${v.value ? clip(v.value, 28) : v.group === 'saved' ? `step ${v.n}` : v.group === 'unique' ? `{${v.token}}` : ''}${v.match ? `${v.value ? ' · ' : ''}same as page` : ''}</span></button>`)}`) : html`<span class="vg" style="text-transform: none; letter-spacing: 0; font-weight: 500">No variable matches “${ui.search}”.</span>`}</div>
 ${ui.search.trim() && hits.length ? html`<span style="font-size: 11px; color: var(--tx3)">${hits.length} of ${vars.length} · Enter takes the first</span>` : ''}`;
 }
 

@@ -22,8 +22,8 @@ from typing import Any, Mapping
 
 from .api import is_api_sheet
 from .sheet import BookState, ErrorText, SheetState, WorkbookData, cell_text
-from .variables import (INLINE_COLUMNS, INLINE_RE, MARKERS, SAVE_METHODS, TOKEN_RE, EnvironmentTable, FlowMap, VariablePool, declared_variables,
-                        flow_map, read_environment_table, secret_value, substitute)
+from .variables import (COPY_RE, INLINE_COLUMNS, INLINE_RE, MARKERS, SAVE_METHODS, TOKEN_RE, EnvironmentTable, FlowMap, UniqueSpec, VariablePool,
+                        copy_token, declared_variables, flow_map, makes_copies, read_environment_table, secret_value, substitute)
 
 UI_COLUMNS = ("METHOD", "PAGE", "FINDBY", "FINDBY_VALUE")
 _KEY_METHODS = {"SENDKEYS", "SENDKEY", "SEND_KEY", "SEND_KEYS", "SPECIALKEY", "CLICK_SENDKEYS", "CUSTOMINPUTDATA"}   # {TAB}, {ENTER} in their Value are keys
@@ -97,6 +97,10 @@ class PreparedStep:
     unmapped: list[str] = field(default_factory=list)                    # {?NAME} template placeholders nobody mapped: the step fails
     inline_names: list[str] = field(default_factory=list)                # every {NAME} the row's cells use (for Needs / Provides)
     output_name: str = ""                                                # the variable this step saves into ("" = none)
+    copy_reads: list[str] = field(default_factory=list)                  # unique copies it only reads: LASTNAME#2, LASTNAME#LAST (Needs)
+    copy_makes: list[str] = field(default_factory=list)                  # unique copies it makes when the run has none yet: LASTNAME#2 (Provides)
+    copy_problems: list[str] = field(default_factory=list)               # why a {NAME#2} has no value: the step fails
+    made_copies: list[dict] = field(default_factory=list)                # copies this step made: {name: LASTNAME#2, value}
 
     def text(self, column: str) -> str:
         return cell_text(self.values.get(column))
@@ -182,8 +186,15 @@ class Workbook:
         self._discovered: list[TestCase] = []           # what discover() found last (param_writers reads it)
         self._env_table: EnvironmentTable | None = None
         self._variable_names: set[str] | None = None
+        self._unique: dict[str, UniqueSpec] | None = None
 
     # -- variables (CONTRACT.md 1.2 / 1.4) ----------------------------------------------------------
+    def unique_variables(self) -> dict[str, UniqueSpec]:
+        """The variables ``_rr_variables`` marks Unique = Y, UPPER name -> how their copies are made (``{NAME#2}``)."""
+        if self._unique is None:
+            self._unique = {k: v["unique"] for k, v in declared_variables(self.data).items() if v.get("unique") is not None}
+        return self._unique
+
     def environment_table(self) -> EnvironmentTable:
         if self._env_table is None:
             self._env_table = read_environment_table(self.data)
@@ -358,7 +369,7 @@ class Workbook:
         for (sheet, row, col), value in (shared or {}).items():
             if book.has_sheet(sheet):
                 book.sheet(sheet).set(row, col, value)
-        return ApiRuntime(book, case, globals_, self.secrets, pool=pool, env_table=self.environment_table())
+        return ApiRuntime(book, case, globals_, self.secrets, pool=pool, env_table=self.environment_table(), unique=self.unique_variables())
 
     def runtime(self, case: TestCase, *, seed: int | None = None, shared: dict | None = None, pool: VariablePool | None = None) -> "TestRuntime":
         """``shared``: parameter cells other tests of the run wrote (or a person supplied), ``{(sheet, row, col): value}``; this test sees them.
@@ -379,7 +390,7 @@ class Workbook:
                     book.sheet(sheet).set(row, col, value)
             params_state.freeze()            # one consistent value per volatile formula for this test
         return TestRuntime(book, case, globals_, params_state, self.secrets, writers=self.param_writers(), pool=pool,
-                           env_table=self.environment_table(), variable_names=self.variable_names())
+                           env_table=self.environment_table(), variable_names=self.variable_names(), unique=self.unique_variables())
 
     def param_writers(self) -> dict[str, list[str]]:
         """Which sheets have a step that writes a parameter (its Output_Value cell holds the parameter's name): ``{PARAMETER: [sheet, ...]}``.
@@ -417,7 +428,8 @@ class TestRuntime:
 
     def __init__(self, book: BookState, case: TestCase, globals_: dict[str, Any],
                  params: SheetState | None, secrets: Mapping[str, str], writers: Mapping[str, list[str]] | None = None,
-                 pool: VariablePool | None = None, env_table: EnvironmentTable | None = None, variable_names: set[str] | None = None):
+                 pool: VariablePool | None = None, env_table: EnvironmentTable | None = None, variable_names: set[str] | None = None,
+                 unique: dict[str, UniqueSpec] | None = None):
         self.book = book
         self.writers = writers or {}                             # PARAMETER -> sheets that fill it in (for the message about an empty one)
         self.needs: list[dict[str, Any]] = []                    # filled by plan(): parameters this test uses that are empty and nothing in it sets
@@ -440,6 +452,7 @@ class TestRuntime:
         self.secret_values: set[str] = self.pool.secret_values     # secrets (typed in by a person, {SECRET:X}): masked wherever a step is shown, in every test of the run
         self.env_table = env_table or EnvironmentTable()
         self.variable_names = variable_names or set()
+        self.unique = unique or {}                                 # unique variables: UPPER name -> how a copy ({NAME#2}) is made
         self.loops: list[dict[str, Any]] = []                      # the data rows of the loops the test is in (innermost last): {HEADER: value}
         self.pool_reads: set[str] = set()                          # filled by plan(): {NAME}s it needs from another test (Needs, Q21)
         self.pool_sets: set[str] = set()                           # filled by plan(): names its steps save (Provides)
@@ -538,6 +551,39 @@ class TestRuntime:
             return env, is_param
         return None, is_param
 
+    def copy_of(self, name: str, which: str, *, make: bool = False, made: list[dict] | None = None) -> tuple[str | None, str]:
+        """``{NAME#which}``: (value, "") or (None, why it has none).  ``make``: a number this run has not made yet is made now (base value +
+        random characters) and ``made`` gets ``{name, value}``; ``first`` / ``last`` and every read without ``make`` only find what exists."""
+        key = name.upper().strip()
+        spec = self.unique.get(key)
+        w = which.strip().lower()
+        if spec is None:
+            return None, (f"{key} is not a unique variable, so {{{name}#{which}}} means nothing: tick \"Make unique each run\" on it in the Build "
+                          "tab's Variables screen, or write {" + name + "}")
+        if w in ("first", "last"):
+            value = self.pool.copy(key, w)
+            return (value, "") if value is not None else (None, f"no {key} was created in this run, so there is no {w} one")
+        number = int(w)
+        if number < 1:
+            return None, f"{{{name}#{which}}}: copies are numbered from 1"
+        value = self.pool.copy(key, number)
+        if value is not None:
+            return value, ""
+        if not make:
+            return None, f"{key} #{number} was never created in this run"
+
+        def fresh() -> str:
+            base = spec.base
+            if not base:
+                hidden: list[str] = []
+                own, _ = self.value_of(key, hidden)
+                base = "" if hidden else own or ""                # (a secret never becomes the visible start of a copy)
+            return spec.make(base)
+        value, now = self.pool.make_copy(key, number, fresh, self.case.id)
+        if now and made is not None:
+            made.append({"name": copy_token(key, number), "value": value})
+        return value, ""
+
     def _substitute_inline(self, step: PreparedStep) -> None:
         """``{NAME}`` / ``{SECRET:NAME}`` / ``{?NAME}`` in the text columns (CONTRACT.md 1.2).  An IF keeps its condition as written (it reads the
         variables itself); a SendKeys value keeps ``{TAB}``, ``{ENTER}``... (keys, not variables)."""
@@ -557,11 +603,17 @@ class TestRuntime:
             if "{" not in text:
                 continue
             found: list[str] = []
+            make = makes_copies(step.method, column)
+            for name, which in COPY_RE.findall(text):
+                w = which.lower()
+                (step.copy_makes if make and w.isdigit() else step.copy_reads).append(copy_token(name, w))
             done = substitute(text, lambda n: self.value_of(n, found),
-                              lambda n: secret_value(n, self.environment), keep=keep if column == "VALUE" else None, soft=keys)
+                              lambda n: secret_value(n, self.environment), keep=keep if column == "VALUE" else None, soft=keys,
+                              copies=lambda n, w: self.copy_of(n, w, make=make and w.isdigit(), made=step.made_copies))
             step.inline_names.extend(n.upper() for n in INLINE_RE.findall(text) if not (keep and column == "VALUE" and n.upper() in keep))
             step.unmapped.extend(done.unmapped)
             step.missing_vars.extend(done.missing)
+            step.copy_problems.extend(done.copy_problems)
             for name in done.blank_params:
                 step.blank_params.append((column, name))
             secrets = done.secrets + found
@@ -775,6 +827,13 @@ class TestRuntime:
                 if key in in_loop or key in saved or key in env_names or (key in self.params and not is_blank(self.params[key])):
                     continue
                 pool_reads.add(key)
+            for token in step.copy_reads:                         # a check of LASTNAME#2 waits for the tests that make it; #FIRST / #LAST for
+                name, which = token.split("#", 1)                 # every test that makes any copy of LASTNAME (LASTNAME#*)
+                wanted = token if which.isdigit() else f"{name}#*"
+                if wanted not in saved:
+                    pool_reads.add(wanted)
+            for token in step.copy_makes:
+                saved.update((token, token.split("#", 1)[0] + "#*"))
             for _, token in step.param_reads:
                 if token.upper() not in setters:
                     col = self.params_sheet.data.headers.get(token.upper()) if self.params_sheet is not None else None

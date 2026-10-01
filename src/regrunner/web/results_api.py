@@ -93,8 +93,9 @@ def cause_of(test: dict[str, Any]) -> str:
     if step is not None:
         if str(step.get("action") or "").upper() == "ASSERT_PAGE":
             return "gate"
-        if "has no value" in str(step.get("error") or ""):
-            return "unmet_dependency"
+        error = str(step.get("error") or "")
+        if "has no value" in error or "was never created in this run" in error or "was created in this run, so there is no" in error:
+            return "unmet_dependency"                              # (the last two: a unique variable's copy nothing made: {LASTNAME#2})
     return history.test_error_kind(test)
 
 

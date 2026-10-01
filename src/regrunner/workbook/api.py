@@ -27,6 +27,7 @@ from typing import Any, Mapping
 
 from .api_compare import ignore_list
 from .sheet import BookState, ErrorText, cell_text
+from .variables import COPY_RE
 
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
 CHECK_KINDS = ("compare", "compare_ignore_case", "contains", "contains_ignore_case", "greater_than", "less_than", "between", "matches",
@@ -305,9 +306,10 @@ class ApiRuntime:
     filled from the row's own columns, then the run's shared variables (``pool``), then the environment table (``env_table``, ``_rr_environments``);
     a secret put in is kept in ``secret_values`` so every file and report masks it.  Legacy rows have no braces, so nothing changes for them."""
 
-    def __init__(self, book: BookState, case, globals_: dict[str, Any], secrets: Mapping[str, str], *, pool=None, env_table=None):
+    def __init__(self, book: BookState, case, globals_: dict[str, Any], secrets: Mapping[str, str], *, pool=None, env_table=None, unique=None):
         self.book, self.case, self.globals, self.secrets = book, case, globals_, secrets
         self.pool, self.env_table = pool, env_table
+        self.unique = unique or {}                                   # unique variables: an API request reads their copies ({NAME#2}), never makes one
         self.secret_values: set[str] = pool.secret_values if pool is not None else set()   # (the pool's own set: masked in every test of the run)
         self.sheet = book.sheet(case.sheet)
         self.row = case.param_row
@@ -400,6 +402,14 @@ class ApiRuntime:
             return value
         return SECRET_RE.sub(put, env)
 
+    def copy_of(self, name: str, which: str) -> tuple[str | None, str]:
+        """``{NAME#2}`` / ``{NAME#last}``: a copy a UI test of the run made (an API request only reads them)."""
+        key = name.upper().strip()
+        if key not in self.unique:
+            return None, f"{key} is not a unique variable"
+        value = self.pool.copy(key, which) if self.pool is not None else None
+        return (value, "") if value is not None else (None, f"{key} #{which.lower()} was never created in this run")
+
     def fill(self, text: str, *, escape=None, quote: bool = False):
         """``text`` with ``{NAME}`` / ``{SECRET:NAME}`` filled in (``variables.Substituted``: ``missing`` names stay as written).  ``escape``: how
         a value is written into a body (JSON string / XML text); ``quote``: URL-encode the values (a path or query part)."""
@@ -409,7 +419,8 @@ class ApiRuntime:
         def secret(name: str) -> str | None:
             return secret_value(name, self.environment)
 
-        out = substitute(text or "", lambda n: (self.value_of(n), False), secret)
+        out = substitute(text or "", lambda n: (self.value_of(n), False), secret, copies=self.copy_of)
+        out.missing.extend(m.group(1) + "#" + m.group(2).lower() for m in COPY_RE.finditer(text or "") if self.copy_of(m.group(1), m.group(2))[0] is None)
         self.secret_values.update(v for v in out.secrets if v)
         if (escape or quote) and out.used + out.secrets:
             # (filled again, value by value, so only the values are escaped - never the text around them)
@@ -417,7 +428,8 @@ class ApiRuntime:
                 value = escape(value) if escape else value
                 return url_quote(value, safe="/:?&=@+,;%~") if quote else value
             fresh = substitute(text or "", lambda n: ((lambda v: None if v is None else one(v))(self.value_of(n)), False),
-                               lambda n: (lambda v: None if v is None else one(v))(secret(n)))
+                               lambda n: (lambda v: None if v is None else one(v))(secret(n)),
+                               copies=lambda n, w: (lambda v: (None if v[0] is None else one(v[0]), v[1]))(self.copy_of(n, w)))
             out.text = fresh.text
         return out
 
@@ -428,9 +440,15 @@ class ApiRuntime:
         texts += [self.text(c) for c in self.io.add_header.values()]
         return {m.upper() for t in texts for m in INLINE_RE.findall(t or "")}
 
+    def copies_used(self) -> set[str]:
+        """Every unique copy (``{NAME#2}``, ``{NAME#last}``) the URL, headers, body and response paths read, as Needs: LASTNAME#2 / LASTNAME#*."""
+        texts = [self.text("WEBSERVICE_URL"), self.text("REQUEST_BODY"), *self.io.output_json.keys(), *self.io.output.keys()]
+        texts += [self.text(c) for c in self.io.add_header.values()]
+        return {f"{n.upper()}#{w}" if w.isdigit() else f"{n.upper()}#*" for t in texts for n, w in COPY_RE.findall(t or "")}
+
     def pool_reads(self) -> set[str]:
         """``{NAME}``s only the run's shared variables can give (not a column of the row, not the environment table): the test Needs them."""
-        out = set()
+        out = set(self.copies_used())
         for name in self.names_used():
             if name in self.values and cell_text(self.values[name]).strip():
                 continue
