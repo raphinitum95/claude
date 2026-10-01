@@ -34,9 +34,10 @@ from typing import TYPE_CHECKING, Any
 from ..config import load_env_file
 from ..engine import checks
 from ..engine.session import FrameStep
-from ..workbook.builder import SIDE_EFFECT_WORDS, BuildError, auto_name, describe_target, make_token, read_fingerprints
+from ..workbook.builder import (SIDE_EFFECT_WORDS, BuildError, auto_name, describe_target, make_token, read_environments, read_fingerprints,
+                                read_variable_labels)
 from ..workbook.sheet import cell_text
-from ..workbook.variables import secret_value
+from ..workbook.variables import INLINE_RE, secret_value
 from . import locators as L
 
 if TYPE_CHECKING:                                     # pragma: no cover
@@ -267,6 +268,7 @@ def check_step(kind: str, desc: dict, locator: dict, expected: str, *, token: st
     if kind not in ALL_KINDS:
         raise BuildError(f"{kind!r} is not a check this card knows.", "check", 400)
     expected = str(expected if expected is not None else "")
+    from_variable = bool(INLINE_RE.search(expected))          # ``{PRICE}``: only known when the test runs, so its shape cannot be checked here
     fields: dict[str, Any] = {"findBy": locator.get("findBy") or "", "locator": locator.get("value") or "",
                               "index": locator.get("index") or None, "backups": locator.get("backups") or []}
     prop = "VALUE" if desc.get("kind") in ("field", "textbox") else "INNERTEXT"
@@ -284,30 +286,31 @@ def check_step(kind: str, desc: dict, locator: dict, expected: str, *, token: st
     elif kind == "value":
         fields.update(method="CHECK_VALUE", expected=expected, match="exact")
     elif kind == "ticked":
-        fields.update(method="CHECK_CHECKED", expected="Y" if checks.yes_no(expected) is not False else "N")
+        fields.update(method="CHECK_CHECKED", expected=expected if from_variable else "Y" if checks.yes_no(expected) is not False else "N")
     elif kind == "selected":
         need("option")
         fields.update(method="CHECK_SELECTED", expected=expected)
     elif kind == "enabled":
-        fields.update(method="CHECK_ENABLED", expected="N" if checks.yes_no(expected) is False else "Y")
+        fields.update(method="CHECK_ENABLED", expected=expected if from_variable else "N" if checks.yes_no(expected) is False else "Y")
     elif kind in ("gt", "lt", "between"):
         need("number")
         op = {"gt": "GT", "lt": "LT", "between": "BETWEEN"}[kind]
         try:
-            checks.expected_numbers(op, expected)
+            if not from_variable:
+                checks.expected_numbers(op, expected)
         except ValueError as err:
             raise BuildError(str(err), "expected", 400) from None
         fields.update(method="CHECK_COMPARE", outputProperty=op, expected=expected)
     elif kind == "regex":
         need("pattern")
         try:
-            re.compile(expected)
+            re.compile(INLINE_RE.sub("x", expected))
         except re.error as err:
             raise BuildError(f"That pattern is not a regular expression: {err}", "expected", 400) from None
         fields.update(method="CHECK_REGEX", expected=expected)
     elif kind == "date_format":
         need("date format")
-        error = checks.date_format_error(expected)
+        error = "" if from_variable else checks.date_format_error(expected)
         if error:
             raise BuildError(error, "expected", 400)
         fields.update(method="CHECK_DATE_FORMAT", expected=expected)
@@ -1278,14 +1281,44 @@ class Recorder:
                       next((k["id"] for k in kinds if k["enabled"]), ""))
         now = self._variables_now()
         text = _shown_text(desc)
-        variables = [{"token": h, "value": v} for h, v in now.items() if v and v in {k["expected"] for k in kinds}]
-        taken = {h.upper() for h in now}
         n = self._next_n()
+        variables = self.variable_choices(n, {k["expected"] for k in kinds if k["expected"]})
+        taken = {h.upper() for h in now}
         title = {"check": "Check this", "save": "Save this", "wait": "Wait until"}[purpose]
         return {"id": uuid.uuid4().hex[:8], "title": f"{title}: {pick.get('text', '')}", "ok": bool(pick.get("ok")),
                 "lines": [] if pick.get("ok") else ["No locator finds only this element. Pick the element around it."],
                 "form": {"purpose": purpose, "kinds": kinds, "chosen": chosen, "variables": variables,
                          "token": save_token_for(desc, taken) if purpose == "save" else "", "text": text[:200], "n": n}}
+
+    def variable_choices(self, n: int, live: set[str]) -> list[dict]:
+        """Every variable a check's Expected value can read, for the card's "From a variable" list: ``[{token, value, group, n, match}]``.
+        ``group`` = ``data`` (a Params column; ``value`` is the "Building with" row's), ``saved`` (set by a step before step ``n``; its
+        value only exists while the test runs, so ``value`` is empty and ``n`` says which step) or ``environment`` (the environment table;
+        ``value`` is this window's environment's).  ``match`` = ``value`` is one of ``live``, the values read from the page just now.
+        Never a secret: its value must not show in a card."""
+        with self.s.doc.lock:
+            editor = self.s.doc.editor
+            secret = {k for k, v in read_variable_labels(editor).items() if v["secret"]}
+            environments = read_environments(editor)
+        out: list[dict] = []
+        seen: set[str] = set()
+
+        def add(token: str, value: str, group: str, step: int | None = None) -> None:
+            if not token or token.upper() in seen or token.upper() in secret:
+                return
+            seen.add(token.upper())
+            out.append({"token": token, "value": value, "group": group, "n": step, "match": bool(value) and value in live})
+        for token, value in self._variables_now().items():
+            add(token, value, "data")
+        for step in self._steps():
+            if step["n"] is not None and step["n"] < n:
+                for token in step.get("sets") or []:
+                    add(token, "", "saved", step["n"])
+        env = (self.s.environment or "").upper()
+        for row in environments["rows"]:
+            if not row["secret"]:
+                add(row["variable"], next((str(v or "") for k, v in row["values"].items() if k.upper() == env), ""), "environment")
+        return out
 
     def _next_n(self) -> int:
         row = self._after()
