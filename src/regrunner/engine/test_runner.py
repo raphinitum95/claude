@@ -397,6 +397,9 @@ class TestRunner:
                     if self.session.load_status in self.cfg.runner.block_statuses:
                         result.blocked = blocked                 # the WAF, not the application: the runner cools down and tries again
                     break
+                if self.session.captcha_refusal:
+                    stop_reason = self.session.captcha_refusal               # the captcha was not accepted: a failure (never result.blocked, so no pause and no re-run)
+                    break
                 if self.session.block_error:
                     result.blocked = blocked = self.session.block_error      # a step's own call was refused: nothing after it can be trusted
                     stop_reason = "blocked by the site"

@@ -51,6 +51,24 @@ def behind_cloudfront(headers: dict | None) -> bool:
             or "x-amz-cf-id" in h)
 
 
+# The page the site itself (Apache Sling) answers a servlet call with when its captcha check fails - always the same:
+#   <h1>Forbidden</h1><p>Cannot serve request to /bin/policy/detail/cs on this server</p> ... <address>Apache Sling</address>
+# A firewall / CDN block (CloudFront with a Request ID, any other 403 or 429) never looks like this.
+_SLING_REFUSAL = re.compile(r"Cannot serve request to\s+\S+\s+on this server", re.I)
+
+
+def is_captcha_refusal(body: str) -> bool:
+    """A 403 whose body is the site's own "Cannot serve request to ... on this server" page from Apache Sling: the captcha check failed.  That is a
+    test failure that waiting cannot fix.  Anything else that answers 403 / 429 is the WAF (a pause, then the test is run again)."""
+    return bool(body) and bool(_SLING_REFUSAL.search(body)) and "apache sling" in body.lower()
+
+
+def captcha_refusal_message(what: str) -> str:
+    return (f"The site refused the request: HTTP 403 to the {what}, with its own \"Cannot serve request ... on this server\" page (Apache Sling). That is how it "
+            "answers when the captcha check is not accepted (the recaptchaBypassToken for this environment is missing, wrong or expired). It is not a firewall "
+            "block, so the test fails instead of waiting and trying again.")
+
+
 def http_block_message(url: str, status: int, headers: dict | None = None) -> str:
     """An error page instead of the site: say so, because otherwise every later step just reports 'Object was not found'."""
     host = urlparse(url).netloc or url
@@ -156,6 +174,7 @@ class BrowserSession:
         self.throttle, self.cancel = throttle, cancel     # shared by every test of the run (engine/throttle.py)
         self.headed = False                            # a person can see this window (the test runner sets it): it fills the screen, and screenshots leave animations alone
         self.block_error = ""                          # set when a step's own server call was blocked (HTTP 403 / 429)
+        self.captcha_refusal = ""                      # set when the site answered 403 with its own "Cannot serve request" page: the captcha was not accepted (a failure, never a wait)
         self.stuck_request = ""                        # set when one of the page's own calls went unanswered for patience.request_stall_s (a hard stop)
         self.load_status: int | None = None             # HTTP status of the first page that failed to load
         self.network: list[dict[str, Any]] = []         # the site's own XHR/fetch calls: what was asked, what came back (network.jsonl)
@@ -249,6 +268,11 @@ class BrowserSession:
             self._load_failed(message)
             raise ActionError(message) from err
         status = response.status if response is not None else None
+        if status == 403 and await self._refused_as_captcha(response):
+            message = captcha_refusal_message("page load")
+            self.captcha_refusal = message
+            self._load_failed(message)                    # (load_status stays empty: this is not a block the run waits out)
+            raise ActionError(message)
         if status is not None and status >= 400:
             message = http_block_message(url, status, response.headers)
             if not self.loaded_once:
@@ -285,6 +309,14 @@ class BrowserSession:
             return (float(width), float(height)) if width and height else None
         except Exception:
             return None
+
+    @staticmethod
+    async def _refused_as_captcha(response) -> bool:
+        """Is this 403 the site's own captcha refusal (its body says so)?  A body that cannot be read counts as "no": the WAF path, as before."""
+        try:
+            return is_captcha_refusal(await asyncio.wait_for(response.text(), 3))
+        except Exception:
+            return False
 
     def _load_failed(self, message: str) -> None:
         if not self.loaded_once:
@@ -787,8 +819,17 @@ class BrowserSession:
                 # a different thing from the application saying "invalid zip" (that one is a 500 here).
                 navigation = is_main_navigation(request)
                 if (tracked and is_servlet_call(request)) or navigation:
-                    st["blocks"].append({"status": response.status, "method": request.method, "path": mask_url(request.url).split("?")[0],
-                                         "navigation": navigation, "step": self.review.step})
+                    block = {"status": response.status, "method": request.method, "path": mask_url(request.url).split("?")[0],
+                             "navigation": navigation, "step": self.review.step, "kind": "waf", "reading": None}
+                    st["blocks"].append(block)
+                    if response.status == 403:                  # what the 403 says decides what it is (see is_captcha_refusal); read beside the run
+                        async def classify(block=block, response=response) -> None:
+                            if await self._refused_as_captcha(response):
+                                block["kind"] = "captcha"
+                        try:
+                            block["reading"] = asyncio.get_running_loop().create_task(classify())
+                        except RuntimeError:
+                            pass
 
         def failed(request) -> None:
             st["inflight"].discard(request)
@@ -1005,17 +1046,26 @@ class BrowserSession:
         while any(r not in inflight_before for r in st["inflight"]) and time.monotonic() < deadline:
             await asyncio.sleep(0.03)
 
-    def raise_if_blocked(self, blocks_before: int) -> None:
-        """The action's own server call (or the page load it caused) was refused by the WAF: fail the step with the reason instead of
-        letting a click that did nothing pass."""
+    async def raise_if_blocked(self, blocks_before: int) -> None:
+        """The action's own server call (or the page load it caused) was refused with 403 / 429: fail the step with the reason instead of letting a click
+        that did nothing pass.  The site's own captcha refusal is a plain failure (``captcha_refusal``: the run never waits for it); anything else is the WAF
+        (``block_error``: the run pauses page loads and tries the test again)."""
         st = self._calls.get(self._current)
         new = st["blocks"][blocks_before:] if st else []
-        if new:
-            b = new[0]
-            what = "page load" if b["navigation"] else f"{b['method']} {b['path']}"
-            self.block_error = (f"Blocked by the site: HTTP {b['status']} to the {what} (a WAF / rate limit, not the application). "
-                                "The run pauses page loads and tries this test again; lower runner.workers if it keeps happening.")
-            raise ActionError(self.block_error)
+        reading = [b["reading"] for b in new if b.get("reading") is not None and not b["reading"].done()]
+        if reading:
+            await asyncio.wait(reading, timeout=3.5)           # (the body of a 403 says which kind it is)
+        if not new:
+            return
+        refused = next((b for b in new if b.get("kind") == "captcha"), None)
+        if refused is not None:
+            self.captcha_refusal = captcha_refusal_message("page load" if refused["navigation"] else f"{refused['method']} {refused['path']}")
+            raise ActionError(self.captcha_refusal)
+        b = new[0]
+        what = "page load" if b["navigation"] else f"{b['method']} {b['path']}"
+        self.block_error = (f"Blocked by the site: HTTP {b['status']} to the {what} (a WAF / rate limit, not the application). "
+                            "The run pauses page loads and tries this test again; lower runner.workers if it keeps happening.")
+        raise ActionError(self.block_error)
 
     async def settle_after_input(self, before: tuple[int, frozenset] | None = None) -> None:
         with self.timing.span("runner", "input_settle"):
@@ -1044,7 +1094,7 @@ class BrowserSession:
         while st["started"] == started_before and time.monotonic() < grace_end:
             await asyncio.sleep(0.02)
         if st["started"] == started_before:
-            self.raise_if_blocked(blocks_before)
+            await self.raise_if_blocked(blocks_before)
             return                                              # no new servlet call: nothing to wait for
         started, told = time.monotonic(), None
         pat = self.cfg.patience
@@ -1067,7 +1117,7 @@ class BrowserSession:
             self.review.flag("page_busy", f"A server call started by the input had not returned after {plain_seconds(time.monotonic() - started)}; "
                              "carried on anyway", "warning")
             return
-        self.raise_if_blocked(blocks_before)                    # answered 403 / 429: the site is blocking us
+        await self.raise_if_blocked(blocks_before)              # answered 403 / 429: the captcha was refused (a failure) or the site is blocking us (a wait)
         await settle(page, 1.0, 200)                            # the answer has arrived: let the page apply it
 
     @staticmethod

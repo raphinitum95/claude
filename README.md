@@ -273,7 +273,10 @@ Behaviour worth knowing:
   **"Paused: the site blocked this machine" banner with a countdown** while it waits, so it never looks hung. If **nothing has loaded from
   this machine yet in the run** (the first page of the run is refused), the block is more likely a standing rule than rate limiting, so there is
   only **one** retry, and the error says so ("looks like a standing access rule (allow-list, VPN, country) ... retrying will not help"). An AWS
-  **CloudFront** error page is named as such (from its response headers). To avoid
+  **CloudFront** error page is named as such (from its response headers). **One 403 is never waited for:** when the site's own servlet answers 403 with its fixed Apache Sling page ("Cannot serve request to /bin/... on this
+  server", read from the response body, not the headers) the captcha check was not accepted (the `recaptchaBypassToken` for the environment is missing,
+  wrong or expired). The step and the test **fail at once** with that reason, with no pause, no worker taken out of service and no re-run. Every other 403
+  / 429 (a firewall or CDN page, a bare "Forbidden") stays a WAF block as described here. To avoid
   triggering it: workers start `runner.stagger_s` (4 s) apart, and page loads (and clicks that may load one) are spaced
   `runner.min_page_load_gap_s` (1 s) apart across all tests. If it still happens, use fewer `--workers`.
 * **A server call started by an input is waited for.** Leaving a field usually asks the server (a zip code, an e-mail, a

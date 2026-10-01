@@ -1,0 +1,7 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>A click that calls a servlet</title></head>
+<body>
+<h1>Get started</h1>
+<button id="go" onclick="fetch('/bin/policy/detail/cs').then(r => { document.getElementById('answer').textContent = r.status; })">Get Started</button>
+<p id="answer"></p>
+</body></html>

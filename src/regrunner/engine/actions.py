@@ -800,13 +800,13 @@ async def click_and_verify(ctx: StepContext, res: Resolved, do_click: Callable[[
     if navigates:
         started_navigation = await ctx.session.watch_for_navigation()
         await ctx.session.await_call_results(mark, 3.0)   # what the click asked of the server: did it answer, and was it refused?
-        ctx.session.raise_if_blocked(mark[2])
+        await ctx.session.raise_if_blocked(mark[2])
         if started_navigation:
             await ctx.session.ensure_ready()              # the click loaded a page: end the step on the new page, like a driver would
             ctx.out.notes.append("the click loaded a page; waited for it")
             return
     elif before is None:
-        ctx.session.raise_if_blocked(mark[2])             # e.g. a div that loads content: refused calls are still worth failing on
+        await ctx.session.raise_if_blocked(mark[2])       # e.g. a div that loads content: refused calls are still worth failing on
     if before is None:
         return
     radio = before["type"] == "radio"

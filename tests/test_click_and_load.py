@@ -35,7 +35,7 @@ async def click_on(html: str, target: str = "#l"):
             await page.set_content(html)
             res = SimpleNamespace(locator=page.locator(target))
             ctx = SimpleNamespace(act_timeout_s=6.0, out=SimpleNamespace(notes=[]), session=SimpleNamespace(ensure_ready=_ready, watch_for_navigation=_no_navigation, pace=_ready,
-                                                                    calls_snapshot=lambda: (0, frozenset(), 0), await_call_results=_ready, raise_if_blocked=lambda *a: None))
+                                                                    calls_snapshot=lambda: (0, frozenset(), 0), await_call_results=_ready, raise_if_blocked=_ready))
             started = time.monotonic()
             await click_and_verify(ctx, res, lambda: res.locator.evaluate("e => e.click()"))
             return await page.evaluate(STATE) if await page.locator("input").count() else None, ctx.out.notes, time.monotonic() - started
@@ -60,7 +60,7 @@ async def test_a_page_that_ignores_the_click_fails_the_step_and_is_not_clicked_a
             await page.set_content(html)
             res = SimpleNamespace(locator=page.locator("#l"))
             ctx = SimpleNamespace(act_timeout_s=6.0, out=SimpleNamespace(notes=[]), session=SimpleNamespace(ensure_ready=_ready, watch_for_navigation=_no_navigation, pace=_ready,
-                                                                    calls_snapshot=lambda: (0, frozenset(), 0), await_call_results=_ready, raise_if_blocked=lambda *a: None))
+                                                                    calls_snapshot=lambda: (0, frozenset(), 0), await_call_results=_ready, raise_if_blocked=_ready))
             with pytest.raises(ActionError, match="did not become selected"):
                 await click_and_verify(ctx, res, lambda: res.locator.evaluate("e => e.click()"))
             assert await page.evaluate("window.clicks") == 1                       # one click, never repeated

@@ -11,9 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 
 
-# A stand-in for the site's WAF.  WAF["until"]: until then every /bin/ call (and, with WAF["pages"], every page) is answered 403.
+# A stand-in for the site's WAF.  WAF["sling"]: the 403 is the site's own captcha refusal (Apache Sling's "Cannot serve request" page) instead of a bare "Forbidden".  WAF["until"]: until then every /bin/ call (and, with WAF["pages"], every page) is answered 403.
 # FLAKY: the first FLAKY["block"] loads of /flaky/... are answered 403 (a WAF that lets you in once it has cooled down).
-WAF = {"until": 0.0, "pages": False}
+WAF = {"until": 0.0, "pages": False, "sling": False}
 FLAKY = {"block": 0, "seen": 0}
 
 
@@ -116,6 +116,16 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(405)
 
     def _forbidden(self) -> None:
+        if WAF["sling"]:                                        # what the real site answers when the captcha check fails (copied from a run)
+            body = ('<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">\n<html>\n    <head><title>403 Forbidden</title></head>\n    <body>\n'
+                    f'        <h1>Forbidden</h1>\n        <p>Cannot serve request to {self.path.split("?")[0]} on this server</p>\n        \n        \n        \n'
+                    '        <hr>\n        <address>Apache Sling</address>\n    </body>\n</html>\n').encode()
+            self.send_response(403)
+            self.send_header("Content-Type", "text/html;charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         body = b"Forbidden"
         self.send_response(403)
         self.send_header("Content-Type", "text/plain")
