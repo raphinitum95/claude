@@ -13,6 +13,13 @@ failed() {
   exit 1
 }
 
+# A .venv only works with the Python that made it (copied from another computer, or that Python uninstalled/upgraded):
+# throw it away and set up again with the Python here.
+if [ -d .venv ] && ! "$VENV_PY" -c "import sys" >/dev/null 2>&1; then
+  echo "The setup in this folder was made with a Python that is not on this computer (any more). Setting it up again."
+  rm -rf .venv || failed
+fi
+
 if [ ! -x "$VENV_PY" ]; then
   echo "Setting up QA Regression in this folder. This happens once and takes a few minutes."
   BASE_PY=""
