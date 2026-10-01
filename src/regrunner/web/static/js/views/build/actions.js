@@ -400,7 +400,7 @@ export function openEnvironments() {
 export function openFingerprint(name) {
   const m = bm();
   const existing = name ? m.fingerprints.find((f) => f.name === name) : null;
-  S.modal = { kind: 'build-fingerprint', rename: existing ? existing.name : '', name: existing ? existing.name : '',
+  S.modal = { kind: 'build-fingerprint', rename: existing ? existing.name : '', name: existing ? existing.name : name || '',
     urlContains: existing ? existing.urlContains : '', landmark: existing ? existing.landmark : '',
     landmarkText: existing ? existing.landmarkText : '', notes: existing ? existing.notes : '', busy: false, error: '' };
   rerender();

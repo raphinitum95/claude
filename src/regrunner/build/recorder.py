@@ -14,7 +14,7 @@ The overlay (``overlay.js``) tells the build session what a person does on the p
   workbook, the log, an event or the Build tab.
 * **Widgets collapse** (Q51): the clicks through a calendar become one ``PICK_DATE`` step, typing plus a click on a suggestion one
   ``CHOOSE_SUGGESTION`` step; "Keep raw clicks" puts the raw steps back.
-* **Page fingerprints** (Q53): when a recorded action loads another URL, the recorder proposes a fingerprint (URL part + the page's main heading)
+* **Page fingerprints** (Q53): when a recorded action loads another URL, the recorder proposes a fingerprint (URL part + the page's <title>, never visible content)
   and an ``ASSERT_PAGE`` gate after that action.
 * **Check / Save / Wait until** (Q8, Q41): an element picked in those modes gets a card with every check the engine has (``check_kinds``),
   prefilled from the live page; adding one writes the step.
@@ -343,8 +343,18 @@ def check_step(kind: str, desc: dict, locator: dict, expected: str, *, token: st
     return fields
 
 
-def fingerprint_name(heading: str, path: str, taken: set[str]) -> str:
-    base = L.short_text(heading)[:40].strip() or (path.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").strip() or "Home")
+TITLE_LANDMARK = "css=title"
+
+
+def page_title(title: str) -> str:
+    """The text a fingerprint checks in the page's ``<title>`` (whitespace folded; '' when the page has none)."""
+    return re.sub(r"\s+", " ", title or "").strip()[:200]
+
+
+def fingerprint_name(title: str, path: str, taken: set[str]) -> str:
+    """A fingerprint's name: the title's own part ("Review" of "Review | Qantas Insurance"), else the URL's last part."""
+    first = re.split(r"\s+[|\u2013\u2014-]\s+", page_title(title))[0]
+    base = L.short_text(first)[:40].strip() or (path.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").strip() or "Home")
     base = base if base.lower().endswith("page") else f"{base} page"
     name, n = base, 2
     while name.upper() in taken:
@@ -1041,26 +1051,19 @@ class Recorder:
         if prev is None:
             return                          # a window's first page (the one recording started on, or a new window): no page check here - a new
                                             # window's check would land before its SWITCHTOWINDOW step and look at the wrong window
-        await self._propose_fingerprint(frame, page, url, p.get("heading") if isinstance(p.get("heading"), dict) else None)
+        await self._propose_fingerprint(page, url, str(p.get("title") or ""))
 
-    async def _propose_fingerprint(self, frame, page, url: str, heading: dict | None) -> None:
+    async def _propose_fingerprint(self, page, url: str, title: str) -> None:
         """A recorded action loaded another page: the test gets a check that it arrived there (ASSERT_PAGE with the page's fingerprint: URL
-        part + main heading, saved in ``_rr_fingerprints``, or the one already known for that URL) and the steps from here on go on a new page
-        (block) named after it.  Added straight away, as an ordinary edit (Undo, or "Remove the check" on the card beside it, takes it back);
+        part + the page's ``<title>``, metadata rather than a heading or a price on the page, which change with the data; saved in
+        ``_rr_fingerprints``, or the one already known for that URL) and the steps from here on go on a new page (block) named after it.  Added straight away, as an ordinary edit (Undo, or "Remove the check" on the card beside it, takes it back);
         a redirect straight after it (no action recorded in between) moves that same check to the page it ended on instead of adding another."""
         with self.s.doc.lock:
             existing = read_fingerprints(self.s.doc.editor)
         path = url_path(url)
         known = next((f for f in existing if f.get("urlContains") and re.sub(r"\{[^}]*\}", "", f["urlContains"]) in url), None)
-        landmark, text = "", ""
-        if heading and heading.get("element"):
-            desc = L.to_desc(heading["element"])
-            text = L.short_text(desc.get("text") or "")
-            try:
-                loc = await self._locate(frame, desc, heading)
-                landmark = self._landmark(loc)
-            except BuildError:
-                landmark = ""
+        text = page_title(title)
+        landmark = TITLE_LANDMARK if text else ""
         if known is not None:
             prompt = {"kind": "gate_added", "exists": True, "name": known["name"], "urlContains": known.get("urlContains") or "",
                       "landmark": known.get("landmark") or "", "landmarkText": known.get("landmarkText") or ""}
@@ -1083,7 +1086,8 @@ class Recorder:
     def _gate_prompt(self, prompt: dict, row: int) -> None:
         name = prompt["name"]
         n = self.s._n_of(row)
-        detail = (f"URL contains {prompt['urlContains']}" + (f" AND heading “{prompt['landmarkText']}” shows." if prompt.get("landmark") else ".")
+        detail = (f"URL contains {prompt['urlContains']}" + (f" AND the page title contains “{prompt['landmarkText']}”." if prompt.get("landmark") == TITLE_LANDMARK
+                                                   else f" AND “{prompt['landmarkText']}” shows." if prompt.get("landmark") else ".")
                   if not prompt.get("exists") else "The page's fingerprint was already saved.")
         prompt.update(row=row, n=n, choices=["dismiss", "edit", "ungate"], detail=detail,
                       text=f"New page: step {n} checks the test arrived at “{name}”, and the steps after it are on the page “{name}”.")

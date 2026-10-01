@@ -1015,16 +1015,6 @@ button.vopt.on { background: #5cc8ff; color: #06121c; }
     send('key', elm, { key: 'ENTER' });
   }
 
-  function heading() {
-    const all = document.querySelectorAll('h1, [role=heading][aria-level="1"], h2');
-    for (const h of all) {
-      let vis = true;
-      try { vis = typeof h.checkVisibility === 'function' ? h.checkVisibility() : true; } catch (e) { /* old browser */ }
-      if (vis && short(h.innerText)) return recElement(h);
-    }
-    return null;
-  }
-
   function navType() {
     try { const n = performance.getEntriesByType('navigation')[0]; return n ? n.type : ''; } catch (e) { return ''; }
   }
@@ -1216,7 +1206,7 @@ button.vopt.on { background: #5cc8ff; color: #06121c; }
 
   function hello(nav) {
     const body = { kind: 'hello', top: TOP, url: location.href, nav: nav || navType() };
-    if (TOP) { const h = heading(); if (h) body.heading = h; }
+    if (TOP) body.title = document.title || '';                // the page fingerprint's landmark: metadata, never the page's visible content
     return call(body).then((state) => { if (state) apply(state); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { redraw(); hello(); }, { once: true });

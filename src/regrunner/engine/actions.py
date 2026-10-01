@@ -1461,10 +1461,15 @@ async def side_effect_gate(ctx: StepContext) -> None:
 
 
 # -- ASSERT_PAGE (Q53): the page-arrival gate ---------------------------------------------------------------------------------------------
+# A landmark in the page's <head> (``css=title``, ``css=meta[name="template"]``) is metadata, never drawn: it counts as there when present, and
+# its text is the title's text or the meta's ``content``.  The recorder proposes ``css=title`` so a gate does not hang on content that changes.
 _LANDMARK_JS = """els => els.slice(0, 50).map(e => {
-  const shown = (typeof e.checkVisibility === 'function' ? e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) : true)
-      && e.getClientRects().length > 0;
-  return {shown, text: shown ? (e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 300) : ''};
+  const meta = !!(e.closest && e.closest('head')) || ['TITLE', 'META', 'LINK'].includes(e.tagName);
+  const shown = meta || ((typeof e.checkVisibility === 'function' ? e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) : true)
+      && e.getClientRects().length > 0);
+  const raw = !shown ? '' : e.tagName === 'META' ? (e.getAttribute('content') || '') : e.tagName === 'LINK' ? (e.getAttribute('href') || '')
+      : meta ? (e.textContent || '') : (e.innerText || e.textContent || '');
+  return {shown, text: raw.replace(/\\s+/g, ' ').trim().slice(0, 300)};
 })"""
 
 
