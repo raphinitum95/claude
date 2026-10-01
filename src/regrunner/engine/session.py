@@ -154,6 +154,7 @@ class BrowserSession:
         self.nav_timeout_s = cfg.timeouts.navigation_s
         self.notes: list[str] = []
         self.throttle, self.cancel = throttle, cancel     # shared by every test of the run (engine/throttle.py)
+        self.headed = False                            # a person can see this window (the test runner sets it): it fills the screen, and screenshots leave animations alone
         self.block_error = ""                          # set when a step's own server call was blocked (HTTP 403 / 429)
         self.stuck_request = ""                        # set when one of the page's own calls went unanswered for patience.request_stall_s (a hard stop)
         self.load_status: int | None = None             # HTTP status of the first page that failed to load
@@ -200,6 +201,10 @@ class BrowserSession:
             "locale": b.locale, "ignore_https_errors": b.ignore_https_errors,
             "accept_downloads": False,
         }
+        fit = self.headed and self.cfg.runner.headed_fit_window and not device and not (width or height)
+        if fit:                                         # the page uses the whole real window, not a 1920x1080 sheet that a smaller screen crops or squeezes
+            options.pop("viewport")
+            options["no_viewport"] = True
         if b.timezone:
             options["timezone_id"] = b.timezone
         if b.user_agent:
@@ -230,6 +235,8 @@ class BrowserSession:
         await self._add_bypass_cookie(url)
         page = await self.context.new_page()          # fires "page" -> registered
         self._current = page
+        if fit:
+            await self._fill_the_screen(page)
         self.frame_path, self._frame = [], None
         await self.pace()
         try:
@@ -251,6 +258,33 @@ class BrowserSession:
         self.loaded_once, self.load_error = True, ""
         if self.throttle is not None:
             self.throttle.loaded_ok = True                 # this machine can reach the site: a later block is a rate limit, not a rule
+
+    async def _fill_the_screen(self, page) -> None:
+        """Maximise the window of a shown browser (Chromium: the DevTools window API, which also works on macOS where --start-maximized does nothing).
+        Best effort: a browser that cannot do it just keeps the window size it opened with."""
+        if self.cfg.browser.kind.engine != "chromium":
+            return
+        try:
+            cdp = await self.context.new_cdp_session(page)
+            target = await cdp.send("Browser.getWindowForTarget")
+            await cdp.send("Browser.setWindowBounds", {"windowId": target["windowId"], "bounds": {"windowState": "maximized"}})
+            await cdp.detach()
+        except Exception:
+            pass
+
+    async def view_size(self, page=None) -> tuple[float, float] | None:
+        """(width, height) of what the window shows: the emulated viewport, or - in a shown browser that fills the screen - the window's own size."""
+        page = page or self._current
+        if page is None:
+            return None
+        size = page.viewport_size
+        if size and size.get("width") and size.get("height"):
+            return float(size["width"]), float(size["height"])
+        try:
+            width, height = await asyncio.wait_for(page.evaluate("[window.innerWidth, window.innerHeight]"), timeout=0.5)
+            return (float(width), float(height)) if width and height else None
+        except Exception:
+            return None
 
     def _load_failed(self, message: str) -> None:
         if not self.loaded_once:

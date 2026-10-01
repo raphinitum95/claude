@@ -682,9 +682,9 @@ async def mouse_scroll(ctx: StepContext) -> None:
     notches = max(int(float(parts[0])) - 1, 0)          # legacy loop was range(1, n)
     up = parts[1].upper() in ("Y", "YES", "TRUE", "1")
     page = ctx.session.page
-    size = page.viewport_size or {"width": 1920, "height": 1080}
-    x = int(float(parts[2])) if len(parts) > 2 and parts[2] else size["width"] // 2
-    y = int(float(parts[3])) if len(parts) > 3 and parts[3] else size["height"] // 2
+    width, height = await ctx.session.view_size(page) or (1920, 1080)
+    x = int(float(parts[2])) if len(parts) > 2 and parts[2] else int(width) // 2
+    y = int(float(parts[3])) if len(parts) > 3 and parts[3] else int(height) // 2
     await page.mouse.move(x, y)
     remaining = notches * 100
     while remaining > 0:
@@ -706,9 +706,9 @@ async def mouse_click(ctx: StepContext) -> None:
     coords = [p for p in ctx.value_text.split(",") if p.strip()]
     button = "right" if "RIGHT" in method else "left"
     count = 2 if "DOUBLE" in method else 1
-    pos = page.viewport_size or {"width": 1920, "height": 1080}
-    x = int(float(coords[0])) if len(coords) >= 2 else pos["width"] // 2
-    y = int(float(coords[1])) if len(coords) >= 2 else pos["height"] // 2
+    width, height = await ctx.session.view_size(page) or (1920, 1080)
+    x = int(float(coords[0])) if len(coords) >= 2 else int(width) // 2
+    y = int(float(coords[1])) if len(coords) >= 2 else int(height) // 2
     await page.mouse.click(x, y, button=button, click_count=count)
 
 
@@ -1376,7 +1376,8 @@ async def _backup_screenshot(ctx: StepContext, locator) -> str | None:
             clip = {"x": x, "y": y, "width": box["width"] + 2 * BACKUP_SHOT_PAD, "height": box["height"] + 2 * BACKUP_SHOT_PAD}
     except Exception:
         clip = None
-    shot = {"type": "jpeg", "quality": ctx.cfg.screenshots.quality, "timeout": 5000, "animations": "disabled", "caret": "hide"}
+    shot = {"type": "jpeg", "quality": ctx.cfg.screenshots.quality, "timeout": 5000,
+            "animations": "allow" if ctx.session.headed else "disabled", "caret": "hide"}
     try:
         data = await page.screenshot(full_page=clip is not None, clip=clip, **shot) if clip else await page.screenshot(**shot)
     except Exception:

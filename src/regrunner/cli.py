@@ -94,7 +94,9 @@ def cmd_run(args, cfg: Config) -> int:
     every = [args, *getattr(args, "also", [])]
     if args.workers:
         cfg.runner.workers = args.workers
-    nice = cfg.runner.low_priority if args.nice is None else args.nice
+    shown = bool(any(getattr(a, "headed", False) for a in every)) or cfg.runner.headless is False
+    # A browser somebody is watching must not run at low priority: it would lag and stutter on screen.  --nice / --no-nice still decide when given.
+    nice = (cfg.runner.low_priority and not shown) if args.nice is None else args.nice
     note = lower_priority() if nice else "not lowered"
     ask = args.ask or ("terminal" if sys.stdin.isatty() else "off")    # who answers ASK_USER steps: a terminal run answers at the terminal
     optionses = [_run_options(a, cfg, nice, ask) for a in every]

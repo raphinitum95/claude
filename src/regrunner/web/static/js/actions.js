@@ -8,6 +8,21 @@ import { toast, copyText, debounce } from './util.js';
 import { filterWorkbooks, PAGE, MORE } from './wbfilter.js';
 
 const enc = encodeURIComponent;
+
+let watchTimer = null;
+/** While a test is being watched live the engine only writes pictures when it was told lately: say so every few seconds, and stop when the test ended (409). */
+function keepWatching() {
+  if (watchTimer) return;
+  watchTimer = setInterval(async () => {
+    const all = Object.values(S.watching || {});
+    if (!all.length) { clearInterval(watchTimer); watchTimer = null; return; }
+    for (const w of all) {
+      try { await api(`/api/runs/${enc(w.run)}/tests/${enc(w.test)}/watch`, { method: 'POST' }); }
+      catch (e) { delete S.watching[`${w.run}|${w.test}`]; }
+    }
+    rerender();
+  }, 5000);
+}
 const MB = 1024 * 1024;
 
 // ---- loading ------------------------------------------------------------------------------------------------------
@@ -643,6 +658,18 @@ export const acts = {
       await api(`/api/runs/${enc(id)}/tests/${enc(test)}/cancel`, { method: 'POST' });
       toast(`Cancelling ${test}. The rest of the run goes on.`);
     } catch (e) { toast(e.message, 5000); }
+  },
+  async 'watch-test'(el) {                                  // a live picture of a headless test: the engine writes one every second while a ping says somebody is looking
+    const { id, test } = el.dataset;
+    const key = `${id}|${test}`;
+    S.watching = S.watching || {};
+    if (S.watching[key]) { delete S.watching[key]; rerender(); return; }
+    try {
+      const r = await api(`/api/runs/${enc(id)}/tests/${enc(test)}/watch`, { method: 'POST' });
+      S.watching[key] = { run: id, test, frame: r.frame, since: Date.now() };
+      keepWatching();
+    } catch (e) { toast(e.message, 5000); }
+    rerender();
   },
   async 'ask-send'(el) {                                    // the answer to a question an ASK_USER step put to the person
     const v = S.view;

@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .. import __version__, browsers, insight
 from ..config import Config, load_config, load_env_file, workbook_secrets
-from ..engine import inbox as inbox_mod
+from ..engine import inbox as inbox_mod, live
 from ..engine.ask import write_answer
 from ..engine.cancel import marker_path
 from ..engine.order import chains_file, clean_chains, load_chains, plan_order, save_chains
@@ -606,6 +606,21 @@ class RunManager:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("cancel", encoding="utf-8")
 
+    async def watch_test(self, run_id: str, test_id: str) -> dict[str, str]:
+        """"Watch live" on a running test: touch its marker (the engine, in another process, writes a picture of the test's page every second while the marker is fresh;
+        the screen touches it again every few seconds).  Returns where the picture will be, relative to the run's files."""
+        run_dir = self.run_dir(run_id)
+        if not run_dir.is_dir():
+            raise ApiError(404, "run not found", "not_found")
+        if not self.is_active(run_id):
+            raise ApiError(409, "That run is not running any more, so there is nothing to watch.", "not_running", run_id=run_id)
+        if test_id not in await asyncio.to_thread(self.running_tests, run_dir):
+            raise ApiError(409, f"{test_id} is not running right now (it has not started, or it already finished).", "test_not_running", run_id=run_id)
+        marker = live.watch_marker(run_dir, test_id)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("watch", encoding="utf-8")                 # (writing again is what refreshes its time)
+        return {"frame": f"{live.LIVE_DIR}/{live.frame_name(test_id)}"}
+
     async def cancel(self, run_id: str) -> None:
         run_dir = self.run_dir(run_id)
         if not run_dir.is_dir():
@@ -1125,6 +1140,10 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
     async def cancel_test(run_id: str, test_id: str):
         await mgr.cancel_test(run_id, test_id)
         return {"ok": True}
+
+    @app.post("/api/runs/{run_id}/tests/{test_id}/watch")
+    async def watch_test(run_id: str, test_id: str):
+        return await mgr.watch_test(run_id, test_id)
 
     @app.post("/api/runs/{run_id}/answer")
     async def answer_run(run_id: str, body: Answer):

@@ -116,7 +116,18 @@ ${active ? html`<button class="btn btn-dng" data-act="cancel-run" data-id="${run
   : meta ? html`<button class="btn" style="color: var(--fail)" data-act="ask-delete-run" data-id="${run.id}" data-batch="${meta.batch_id || ''}">${icon('trash', 16)} Delete run</button>` : ''}</div>`;
 }
 
-function shotBox(run, t, big) {
+/** The test's own browser, live: a picture the engine writes every second while this is open (only a headless run needs it; a shown browser is its own window). */
+function liveBox(run, t, S) {
+  const w = (S.watching || {})[`${run.id}|${t.id}`];
+  if (!w) return null;
+  if (S.now - w.since < 2500) return html`<div class="shot"><div class="wait">Starting the live view…</div></div>`;
+  return html`<div class="shot"><img src="${runFileUrl(run.id, w.frame)}?t=${Math.floor(S.now / 1000)}" alt="${t.id} live">
+<div class="cap">watching live · ${t.step ? t.step.name : 'starting'}</div></div>`;
+}
+
+function shotBox(run, t, big, S) {
+  const watching = S ? liveBox(run, t, S) : null;
+  if (watching) return watching;
   if (!t.shot) return html`<div class="shot"><div class="wait">Waiting for the first screenshot…</div></div>`;
   const bad = t.fails.some((f) => f.seq === t.shotStep);
   const b = t.box;
@@ -124,6 +135,13 @@ function shotBox(run, t, big) {
 <img src="${runFileUrl(run.id, t.shot)}" alt="Latest screenshot of ${t.id}">
 ${b ? html`<div class="hl ${bad ? 'bad' : ''}" style="left: ${b.x}%; top: ${b.y}%; width: ${b.w}%; height: ${b.h}%"></div>` : ''}
 <div class="cap">live · after step ${t.shotStep}</div></div>`;
+}
+
+/** Watch this test's page live (a headless run only). Pressing it again stops watching. */
+function watchTestButton(S, run, t) {
+  if (run.headless === false || t.lane) return '';
+  const on = !!(S.watching || {})[`${run.id}|${t.id}`];
+  return html`<button class="btn btn-sm" data-act="watch-test" data-id="${run.id}" data-test="${t.id}" title="${on ? 'Go back to the screenshot after each step.' : 'See this test\'s browser live, a picture every second. A headless browser cannot open a window, so this is a view, not a second browser.'}">${icon(on ? 'eyeoff' : 'eye', 14)} ${on ? 'Stop watching' : 'Watch live'}</button>`;
 }
 
 /** Cancel just this test: the run and the other tests go on (POST /api/runs/<id>/tests/<test>/cancel). */
@@ -144,7 +162,7 @@ function laneCard(S, run, t) {
 <div class="mono" style="font-size: 11px; color: var(--tx3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.scenario} · ${t.description}</div></div>${wait ? html`<span class="pill p-warn">${icon('clock', 12)}Waiting</span>` : pill('RUNNING')}</div>
 ${wait ? html`<div class="waitline" data-key="lane-wait-${wait.id}"><span style="color: var(--wait); display: inline-flex; margin-top: 1px">${icon('clock', 16)}</span>
 <span style="overflow-wrap: anywhere">${wait.message} <b class="mono" style="white-space: nowrap">${waitClock(S, wait)}</b></span></div>` : ''}
-${shotBox(run, t)}
+${shotBox(run, t, false, S)}
 <div style="display: flex; align-items: baseline; gap: 9px; min-width: 0">
 <span class="mono" style="font-size: 11px; color: var(--acc); font-weight: 600; letter-spacing: .06em">${t.step ? t.step.action : ''}</span>
 <span style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.step ? t.step.name : 'Starting…'}</span></div>
@@ -155,7 +173,7 @@ ${last ? html`<div style="display: flex; gap: 9px; align-items: flex-start; padd
 <span style="color: var(--tx); overflow-wrap: anywhere">Step ${last.seq} failed: ${last.name || last.action}${last.error ? ' · ' + last.error.split('\n')[0] : ''}</span></div>` : ''}
 <div class="mono" style="display: flex; gap: 14px; font-size: 11.5px; color: var(--tx3); padding-top: 12px; border-top: 1px solid var(--line)">
 <span>${dur(elapsed)} elapsed</span><span style="color: ${c ? 'var(--fail)' : 'var(--tx3)'}">${plural(c, 'failed step')}</span>
-<span style="margin-left: auto">${cancelTestButton(run, t)}</span></div></article>`;
+<span style="margin-left: auto; display: flex; gap: 8px">${watchTestButton(S, run, t)}${cancelTestButton(run, t)}</span></div></article>`;
 }
 
 function statCard(iconHtml, tint, label, big, sub, subColor, border) {
@@ -310,7 +328,7 @@ function batchLaneCard(S, entry, t) {
 <div class="mono" style="font-size: 11px; color: var(--tx3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${baseName(entry.workbook)} · ${t.scenario}</div></div>${wait ? html`<span class="pill p-warn">${icon('clock', 12)}Waiting</span>` : pill('RUNNING')}</div>
 ${wait ? html`<div class="waitline" data-key="lane-wait-${wait.id}"><span style="color: var(--wait); display: inline-flex; margin-top: 1px">${icon('clock', 16)}</span>
 <span style="overflow-wrap: anywhere">${wait.message} <b class="mono" style="white-space: nowrap">${waitClock(S, wait)}</b></span></div>` : ''}
-${shotBox(entry.run, t)}
+${shotBox(entry.run, t, false, S)}
 <div style="display: flex; align-items: baseline; gap: 9px; min-width: 0">
 <span class="mono" style="font-size: 11px; color: var(--acc); font-weight: 600; letter-spacing: .06em">${t.step ? t.step.action : ''}</span>
 <span style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${t.step ? t.step.name : 'Starting…'}</span></div>
@@ -321,7 +339,7 @@ ${last ? html`<div style="display: flex; gap: 9px; align-items: flex-start; padd
 <span style="color: var(--tx); overflow-wrap: anywhere">Step ${last.seq} failed: ${last.name || last.action}${last.error ? ' · ' + last.error.split('\n')[0] : ''}</span></div>` : ''}
 <div class="mono" style="display: flex; gap: 14px; font-size: 11.5px; color: var(--tx3); padding-top: 12px; border-top: 1px solid var(--line)">
 <span>${dur(elapsed)} elapsed</span><span style="color: ${c ? 'var(--fail)' : 'var(--tx3)'}">${plural(c, 'failed step')}</span>
-<span style="margin-left: auto">${cancelTestButton(entry.run, t)}</span></div></article>`;
+<span style="margin-left: auto; display: flex; gap: 8px">${watchTestButton(S, entry.run, t)}${cancelTestButton(entry.run, t)}</span></div></article>`;
 }
 
 /** One row per workbook: its own progress bar and counts, coloured to match its worker cards below - click filters everything to it. */

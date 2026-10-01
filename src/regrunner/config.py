@@ -41,6 +41,12 @@ class RunnerCfg:
     infra_retries: int = 2           # a test the machine could not run (the browser crashed / ran out of memory / disconnected, the browser driver died) is
                                      # "not run", never passed or failed, and is run again from the start this many times
     infra_pause_s: float = 10        # ...after this long (lets the machine recover)
+    headed_hold_on_block: bool = True   # a shown browser (--headed) that is blocked (HTTP 403 / 429) stays on the blocked page while the cool-down runs, instead of
+                                        # closing and opening a blank window that waits; close the window or press Cancel to move on sooner.  False = close at once
+    headed_fit_window: bool = True      # a shown browser fills your screen and the page uses all of it, instead of a fixed browser.viewport_* size that is cropped or
+                                        # scaled by a smaller screen.  The page may lay out differently from a headless run (which keeps browser.viewport_*): False = same size
+    live_view: bool = True              # the run screen's "Watch live" on a test that runs headless: a picture of its page every live_view_frame_s while somebody watches
+    live_view_frame_s: float = 1.0
 
 
 @dataclass

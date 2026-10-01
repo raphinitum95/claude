@@ -25,6 +25,7 @@ from ..workbook.variables import INLINE_RE, MARKERS, VariablePool, evaluate_cond
 from .actions import ASK_METHODS, NO_PAGE_METHODS, ActionError, StepContext, run_action
 from .ask import AskCancelled, AskTimeout, AskUnavailable
 from .cancel import cancel_reason
+from . import live
 from .failure_capture import capture_failure
 from .gates import SIDE_EFFECT_MODES
 from ..capture.state import StateTracker
@@ -150,7 +151,8 @@ class TestRunner:
                  cfg: Config, bus: EventBus, run_dir: Path, selector_map: SelectorMap,
                  cancel: asyncio.Event, planned_rows: list[int], worker: int = 0, harvest=None,
                  devices: dict | None = None, attempt: int = 1, throttle=None, asker=None, visible: bool = False, shared: dict | None = None,
-                 pool: VariablePool | None = None, pw=None, call_stack: tuple = (), base_id: str = "", side_effects: str = "run", lane=None):
+                 pool: VariablePool | None = None, pw=None, call_stack: tuple = (), base_id: str = "", side_effects: str = "run", lane=None,
+                 block_hold: Callable[[TestResult], float] | None = None):
         self.workbook, self.case, self.cfg, self.bus = workbook, case, cfg, bus
         self.run_dir, self.selector_map, self.cancel = run_dir, selector_map, cancel
         self.planned_rows = planned_rows
@@ -174,6 +176,8 @@ class TestRunner:
         self._throttle = throttle
         self._asker = asker
         self._visible = visible                                   # a person can see this test's browser (run --headed, or the window opened for a captcha)
+        self._block_hold = block_hold                             # a shown browser that was blocked: how long (s) to stay on the blocked page; the run decides (it owns the cool-down)
+        self._live: asyncio.Future | None = None                  # writes the pictures "Watch live" shows while somebody watches (engine/live.py)
         self._shared = shared if shared is not None else {}       # parameter cells other tests of the run wrote / a person supplied
         self._captcha_stop = ""                                   # why a captcha ended this test ("" while none has)
         self._no_window = False                                   # a step found no open browser window: nothing after it can run
@@ -218,6 +222,7 @@ class TestRunner:
         """The test's browser session (its window opens with the first Open step)."""
         self.session = BrowserSession(self._browser_getter, self.cfg, self.review, self.case.id, runtime.environment,
                                       devices=self._devices, throttle=self._throttle, cancel=self.cancel)
+        self.session.headed = self._visible
         self.session.notice = self.notice
         self.session.timing = self.timing
         self.session.trace_dir = self.test_dir                    # capture.trace: kept when the test goes wrong (or always)
@@ -241,18 +246,23 @@ class TestRunner:
             return None
         try:
             box = await asyncio.wait_for(handle.bounding_box(), timeout=0.5)
-            view = session.page.viewport_size
+            view = await session.view_size()
         except Exception:
             return None
-        if not box or not view or not view.get("width") or not view.get("height"):
+        if not box or not view:
             return None
-        vw, vh = view["width"], view["height"]
+        vw, vh = view
         x0, y0 = max(box["x"], 0.0), max(box["y"], 0.0)
         x1, y1 = min(box["x"] + box["width"], vw), min(box["y"] + box["height"], vh)
         if x1 - x0 < 2 or y1 - y0 < 2:                          # off-screen or invisible
             return None
         pct = lambda v, total: round(100.0 * v / total, 2)
         return {"x": pct(x0, vw), "y": pct(y0, vh), "w": pct(x1 - x0, vw), "h": pct(y1 - y0, vh)}
+
+    def _shot_animations(self) -> str:
+        """"disabled" freezes the page's animations for a clean evidence picture - but it fast-forwards and restores them on every step, which a person
+        watching the window sees as the page flickering or reloading.  A shown browser leaves the page alone."""
+        return "allow" if self._visible else "disabled"
 
     async def _screenshot(self, seq: int, row: int, name: str, failed: bool,
                           box: dict[str, float] | None = None) -> str | None:
@@ -265,7 +275,7 @@ class TestRunner:
         try:
             data = await session.page.screenshot(
                 type="jpeg", quality=self.cfg.screenshots.quality, full_page=self.cfg.screenshots.full_page,
-                timeout=5000, animations="disabled", caret="hide")
+                timeout=5000, animations=self._shot_animations(), caret="hide")
         except Exception as err:
             reason = (str(err).strip().splitlines() or [type(err).__name__])[0][:200]
             self._emit("log", level="warning", message=f"{self.case.id} step {seq}: screenshot not taken ({reason})")
@@ -283,7 +293,7 @@ class TestRunner:
                 or self._full_shots >= cfg.failure_capture.full_page_max_per_test):
             return None
         try:
-            data = await session.page.screenshot(type="jpeg", quality=cfg.screenshots.quality, full_page=True, timeout=8000, animations="disabled", caret="hide")
+            data = await session.page.screenshot(type="jpeg", quality=cfg.screenshots.quality, full_page=True, timeout=8000, animations=self._shot_animations(), caret="hide")
         except Exception:
             return None
         path = self.shots_dir / f"{seq:04d}_r{row}_{slug(name)[:40]}_full.jpg"
@@ -303,6 +313,8 @@ class TestRunner:
                    attempt=self.attempt)
         runtime = self.prepare_runtime()
         self.open_session(runtime)
+        if self.cfg.runner.live_view and not self._visible and self.lane is None and self.side_effects == "run":
+            self._live = asyncio.ensure_future(live.stream(self.session, self.run_dir, self.case.id, self.cfg.runner.live_view_frame_s, self.cancel))
         method_col = runtime.columns.get("METHOD")
         later = {row: self.planned_rows[i + 1:] for i, row in enumerate(self.planned_rows)}
 
@@ -575,8 +587,31 @@ class TestRunner:
         except Exception:
             return []
 
+    async def _hold_blocked_page(self, reason: str) -> None:
+        """A shown browser that the site blocked stays on the page it blocked while the run waits out the cool-down (or for as long as the run says), so a
+        person can look at it, instead of the window closing and a blank one opening to wait.  Ends early when the window is closed or the test is cancelled."""
+        try:
+            seconds = float(self._block_hold(self.result))
+        except Exception:
+            return
+        if seconds <= 0:
+            return
+        wait_id = self.notice.begin("site_block_hold", f"The site blocked this test ({reason[:120]}). Its browser stays on the page it blocked for {seconds:g}s so you "
+                                                      "can look at it. Close the window (or Cancel the test) to move on sooner.", seconds=seconds)
+        try:
+            deadline = time.monotonic() + seconds
+            while time.monotonic() < deadline and not self.cancel.is_set() and self.session is not None and self.session.is_open:
+                await asyncio.sleep(0.25)
+        finally:
+            self.notice.end(wait_id)
+
     async def _finish(self, started: float) -> None:
         result = self.result
+        if self._live is not None:
+            self._live.cancel()
+            live.forget(self.run_dir, self.case.id)
+        if self.session is not None and result.blocked and self._block_hold is not None and self.session.is_open and not self.cancel.is_set():
+            await self._hold_blocked_page(result.blocked)
         self.notice.end_all()
         if self.session is not None:
             await self.session.drain_captures()

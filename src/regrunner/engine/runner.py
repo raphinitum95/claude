@@ -555,8 +555,40 @@ class Engine:
         infra_tries = 0
         throttle = self.throttle_for(ctx)
         cancel = ctx.switch_of(case.id)                         # the run's cancel, or this one test's own Cancel button (engine/cancel.py)
+        cooled = False                                          # this attempt's cool-down already started (a shown browser spends it on the page the site blocked)
+
+        def block_retry_due(res: TestResult) -> bool:
+            return bool(res.blocked) and block_tries < throttle.retry_budget(cfg.runner.block_retries) and not cancel.is_set()
+
+        def start_cool_down(res: TestResult) -> None:
+            """The WAF refused us (HTTP 403 / 429).  Not a verdict on the application: pause every page load, take a worker out of service so the load stays
+            lower, and run this test again from the start.  Once per attempt, whether the browser is shown (it waits on the blocked page) or not."""
+            nonlocal block_tries, cooled
+            if cooled:
+                return
+            cooled = True
+            block_tries += 1
+            budget = throttle.retry_budget(cfg.runner.block_retries)
+            reduced = throttle.cool_down(cfg.runner.block_cooldown_s, reduce=True, running=self.running_on(throttle), reason=res.blocked)
+            ctx.note(f"{case.id}: the site blocked this attempt ({res.blocked[:120]}). Pausing page loads for "
+                     f"{cfg.runner.block_cooldown_s:g}s{' and running with one worker fewer' if reduced else ''}; trying again "
+                     f"({block_tries}/{budget}).")
+            bus.emit("run_paused", test=case.id, seconds=cfg.runner.block_cooldown_s, attempt=block_tries, of=budget, reason=res.blocked[:240])
+
+        def hold_blocked_page(res: TestResult) -> float:
+            """A shown browser that was blocked: for how long it stays on the blocked page.  A retry is coming: the cool-down itself is spent there (so no blank
+            window waits for it).  No retry: it still stays for as long as a cool-down, to be looked at."""
+            if not cfg.runner.headed_hold_on_block or not res.blocked or cancel.is_set():
+                return 0.0
+            if lane is None and block_retry_due(res):
+                start_cool_down(res)
+                return max(throttle.cooling, 0.0)
+            return float(cfg.runner.block_cooldown_s)
+
         while True:
             attempt += 1
+            cooled = False
+            shown = at_window or not ctx.plan.headless
             generation = self.driver_generation
             async with contextlib.AsyncExitStack() as stack:
                 if at_window:
@@ -581,7 +613,7 @@ class Engine:
                                         run_dir=ctx.run_dir, selector_map=ctx.selector_map, cancel=cancel,
                                         planned_rows=ctx.plans[case.id], worker=n, harvest=ctx.harvest, devices=self.devices,
                                         attempt=attempt, throttle=throttle, asker=ctx.asker, visible=at_window or not ctx.plan.headless, shared=ctx.shared,
-                                        pool=ctx.pool, pw=self.pw, lane=lane)
+                                        pool=ctx.pool, pw=self.pw, lane=lane, block_hold=hold_blocked_page if shown else None)
                 ctx.partial[case.id] = runner.result
                 try:
                     res = await asyncio.wait_for(runner.run(), timeout=cfg.runner.test_timeout_s)
@@ -635,19 +667,10 @@ class Engine:
                              "computer now (too little memory? too many workers?). This says nothing about the application.")
                 res.attempts = attempts[:-1]
                 return res
-            budget = throttle.retry_budget(cfg.runner.block_retries)
-            if res.blocked and block_tries < budget and not cancel.is_set():
-                # The WAF refused us (HTTP 403 / 429).  Not a verdict on the application: pause every page load, take a worker out of
-                # service so the load stays lower, and run this test again from the start.
-                block_tries += 1
-                reduced = throttle.cool_down(cfg.runner.block_cooldown_s, reduce=True, running=self.running_on(throttle), reason=res.blocked)
+            if (cooled or block_retry_due(res)) and not cancel.is_set():
+                start_cool_down(res)                              # (already started when the browser was shown and waited on the blocked page)
                 attempts.append({"attempt": attempt, "status": res.status, "failed": res.failed, "error": res.error,
                                  "duration_s": res.duration_s, "blocked": True})
-                ctx.note(f"{case.id}: the site blocked this attempt ({res.blocked[:120]}). Pausing page loads for "
-                         f"{cfg.runner.block_cooldown_s:g}s{' and running with one worker fewer' if reduced else ''}; trying again "
-                         f"({block_tries}/{budget}).")
-                bus.emit("run_paused", test=case.id, seconds=cfg.runner.block_cooldown_s, attempt=block_tries, of=budget,
-                         reason=res.blocked[:240])
                 continue
             if res.blocked and not throttle.loaded_ok and block_tries and not cancel.is_set():
                 res.error = (f"{res.error} Blocked again after waiting, and nothing has loaded from this machine in this run: this looks like a "

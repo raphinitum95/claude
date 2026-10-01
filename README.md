@@ -430,9 +430,18 @@ request the button sends**, so they cannot disagree:
 | Seed | `--seed N` |
 | PDF report / Harvest selectors | `--pdf` / `--harvest` (and `--no-pdf` / `--no-harvest` to override `config.yaml`) |
 | Browser (Chrome / Edge / Safari / Chromium) | `--browser chrome\|msedge\|safari\|chromium` |
-| Show browsers | `--headed` |
+| Show browsers | `--headed` (the windows fill your screen, stay on the page the site blocked while a cool-down runs, and are not run at low priority: see *Watching a run*) |
 | Low OS priority | `--nice` / `--no-nice` |
 | More options → Skip the HTML report | `--no-report` |
+
+**Watching a run.** *Show browsers* (`--headed`) opens a real window per test. It **fills your screen** and the page uses all of it
+(`runner.headed_fit_window`; a headless run keeps the fixed `browser.viewport_*` size, so a responsive site can lay out differently when shown:
+set it to `false` to keep the same size), per-step screenshots **leave the page's animations alone** (headless freezes them for a clean picture,
+which a person watching sees as flicker), and the browser is **not run at low priority** (that made it lag; `--nice` still forces it). If the site
+**blocks** the test (HTTP 403 / 429) the window **stays on the blocked page** while the cool-down runs, instead of closing and a blank window
+waiting (`runner.headed_hold_on_block`); the run screen shows the countdown, and closing the window or *Cancel test* moves on. A test that is
+**already running headless** cannot grow a window, so each running card has **Watch live**: a picture of its page every second
+(`runner.live_view`, `runner.live_view_frame_s`) while the card is open, nothing is taken otherwise. It is a view, not a second browser.
 
 Only flags that differ from `config.yaml` are listed. *Check the workbook first* offers **Lint**, a **Dry-run plan** of every
 step, and a **Locator health** audit; none of them opens a browser. *Preflight* shows the chosen browser (started once to prove it works), the token for the chosen

@@ -10,6 +10,12 @@ runner:
   stop_after_failed_steps: 5  # a test stops after this many steps in a row that could not find/use their element on a finished page (0 = never); Wait/Switch/keys do not count
   infra_retries: 2            # a test whose browser crashed / ran out of memory / disconnected is "not run" (never pass or fail) and is run again this many times
   infra_pause_s: 10           # ...after this pause
+  # A browser you chose to watch (--headed / "Show browsers"). Defaults shown:
+  # headed_hold_on_block: true   # blocked by the site (HTTP 403 / 429): the window stays on the blocked page while the cool-down runs, instead of closing and a blank one waiting; close it or Cancel to move on
+  # headed_fit_window: true      # the window fills your screen and the page uses all of it (not a fixed browser.viewport_* size cropped by a smaller screen); the page may lay out
+  #                              # differently from a headless run. false = the same size as headless
+  # live_view: true              # the run screen's "Watch live" on a headless test: a picture of its page while somebody watches
+  # live_view_frame_s: 1.0       # ...every this many seconds (nothing is taken while nobody watches)
   # Being polite to a site behind a WAF (HTTP 403 / 429 = "the WAF is blocking us", not "the app said no"). Defaults shown:
   # stagger_s: 4              # workers start this far apart
   # min_page_load_gap_s: 1    # at least this long between the start of two page loads, across all tests
