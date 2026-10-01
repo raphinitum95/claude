@@ -10,6 +10,14 @@ set "PYTHONPATH=%HERE%src"
 set "VENV_PY=%HERE%.venv\Scripts\python.exe"
 
 if not exist "%VENV_PY%" goto setup
+rem A .venv only works with the Python that made it. One copied from another computer, or left behind when that Python was
+rem uninstalled or upgraded, says "did not find executable at ...": throw it away and set up again with the Python here.
+"%VENV_PY%" -c "import sys" >nul 2>&1 && goto venvok
+echo The setup in this folder was made with a Python that is not on this computer (any more). Setting it up again.
+rmdir /s /q ".venv" >nul 2>&1
+if exist ".venv" goto venvlocked
+goto setup
+:venvok
 rem A new version of the folder may need new packages: reinstall when pyproject.toml differs from the one last installed.
 fc /b "pyproject.toml" ".venv\installed-pyproject.toml" >nul 2>&1 || goto install
 goto start
@@ -39,6 +47,11 @@ echo QA Regression is running and opens in its own window.
 echo Closing the QA Regression window stops it and closes this one. Closing this one stops it straight away.
 "%VENV_PY%" -m regrunner serve --app --exit-when-closed || goto failed
 goto :eof
+
+:venvlocked
+echo Could not delete the .venv folder in "%HERE%". Close every QA Regression window, delete that folder by hand,
+echo then double-click "Start QA Regression" again.
+goto failed
 
 :nopython
 echo Python 3.9 or newer is needed and was not found on this computer.
