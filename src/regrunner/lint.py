@@ -92,6 +92,10 @@ def lint(workbook: Workbook) -> list[Finding]:
                 if isinstance(cell, ErrorText) and cell.code == "#NAME?" and column not in RESULT_COLUMNS:
                     here("error", f"the {column.replace('_', ' ').title()} cell evaluates to #NAME? ({cell.detail or 'unknown name'}): "
                                   "regrunner cannot calculate that Excel formula")
+            for column, cell in step.values.items():
+                if isinstance(cell, ErrorText) and cell.code == "#REF!" and column not in RESULT_COLUMNS:
+                    here("warning", f"the {column.replace('_', ' ').title()} cell is #REF! in the workbook itself (its formula points at a "
+                                    "deleted cell): Excel shows the same error; fix or clear the cell")
             if step.page in UNSUPPORTED_PAGES:
                 here("error", f"Page type {step.page} is not supported (web UI steps only)")
             elif method in UNSUPPORTED:

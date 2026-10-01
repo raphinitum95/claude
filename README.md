@@ -148,9 +148,9 @@ mode currently requires a setuptools-based build"* because it cannot install a `
   `TODAY()`, `RANDBETWEEN()` and `IFS(Global!B2=…)` are always current. It is verified against Excel's own
   saved results for every deterministic formula in the real workbook (`tests/test_formula.py`).
   Volatile values are frozen per test (Excel re-rolled them on every recalculation); `--seed` makes them reproducible.
-  Functions understood: string/logic/date basics (`IF IFS AND OR NOT IFERROR TEXT DATE TODAY NOW LEFT/MID/RIGHT SUBSTITUTE …`), `SUM/MIN/MAX/ROUND/COUNTA`,
+  Functions understood: string/logic/date basics (`IF IFS AND OR NOT IFERROR TEXT DATE TODAY NOW LEFT/MID/RIGHT SUBSTITUTE …`), `SUM/MIN/MAX/ROUND/COUNTA`, `ROW(A28)`/`COLUMN(A28)` (the position of the reference, used for unique names such as `="QAFN"&TEXT(ROW(A28),"000")&TEXT(TODAY(),"ddmmyy")`; `ROW()` with no cell is not supported),
   `VLOOKUP` (URLs picked from an environment table) and `NUMBERVALUE` (price text → number for the points calculations); `TEXT` pads (`"000"`).
-  A function it does not know (`OFFSET`, external-workbook links `[3]Sheet!A1`, …) gives `#NAME?`; `lint` reports it as an error, and a step
+  An error typed into a formula (`=SUBSTITUTE(#REF!,...)`, left by a deleted column) evaluates to that same error and `lint` warns about the cell. A function it does not know (`OFFSET`, external-workbook links `[3]Sheet!A1`, …) gives `#NAME?`; `lint` reports it as an error, and a step
   whose *Value* or *FindBy_Value* is `#NAME?` fails with the reason instead of acting on the text "#NAME?". (`OFFSET` in `Step_Number` is harmless:
   step numbers are not evaluated.)
 * **A step whose `blnExecute` cell is empty does not run** (only Y / 1 / Yes / True does; the legacy runner did the same), and nothing says so: it simply

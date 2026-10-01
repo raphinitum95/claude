@@ -115,6 +115,38 @@ def test_textjoin_skips_empties_when_asked():
     assert ev('=TEXTJOIN("-",FALSE,"a","","b")') == "a--b"
 
 
+def test_row_and_column_read_the_position_of_the_reference_not_its_value():
+    assert ev('=ROW(A28)') == 28
+    assert ev('=ROW(EB28)') == 28
+    assert ev('=ROW($B$5:C9)') == 5
+    assert ev('=COLUMN(EB28)') == 132
+    assert ev('=COLUMN(C9:D12)') == 3
+
+
+def test_row_builds_the_unique_test_data_names_the_claims_workbook_uses():
+    # The first/last names of the claims workbooks: this used to come out as #NAME?
+    assert ev('="QAFN"&TEXT(ROW(A28),"000")&TEXT(TODAY(),"ddmmyy")') == "QAFN028010926"
+    assert ev('="TRAV2FN"&TEXT(ROW(D28),"000")&TEXT(TODAY(),"ddmmyy")') == "TRAV2FN028010926"
+
+
+def test_row_without_a_cell_says_why_instead_of_guessing():
+    with pytest.raises(ExcelError) as err:
+        ev('=ROW()')
+    assert str(err.value).startswith("#NAME?")
+
+
+def test_an_error_written_in_the_formula_evaluates_to_that_error_not_a_parse_failure():
+    # =SUBSTITUTE(#REF!,CHAR(10),",") is what Excel leaves after a referenced column is deleted
+    with pytest.raises(ExcelError) as err:
+        ev('=SUBSTITUTE(#REF!,CHAR(10),",")')
+    assert err.value.code == "#REF!"
+    assert ev('=IFERROR(#N/A,"fallback")') == "fallback"
+    with pytest.raises(ExcelError) as err:
+        ev('="QAFN"&TEXT(ROW(#REF!),"000")')
+    assert err.value.code == "#REF!"
+    assert ev('=IF(TRUE,"ok",#REF!)') == "ok"
+
+
 def test_formula_parse_cache_is_shared():
     assert parse_formula('=IF(A1="x",1,2)') is parse_formula('=IF(A1="x",1,2)')
 

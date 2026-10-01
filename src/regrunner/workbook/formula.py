@@ -64,6 +64,7 @@ _TOKEN_RE = re.compile(
       | (?P<func>[A-Za-z_][A-Za-z0-9_\.]*)(?=\()
       | (?P<ref>""" + _REF + r""")(?![A-Za-z0-9_\(])
       | (?P<bool>TRUE|FALSE)(?![A-Za-z0-9_\(])
+      | (?P<error>\#(?:REF!|N/A|VALUE!|DIV/0!|NAME\?|NULL!|NUM!))
       | (?P<op><>|<=|>=|[=<>&+\-*/^%(),:;])
     )""",
     re.VERBOSE | re.IGNORECASE,
@@ -172,6 +173,11 @@ class _Parser:
         if tok.kind == "bool":
             self.take()
             return ("bool", tok.text.upper() == "TRUE")
+        if tok.kind == "error":
+            # An error written into the formula itself, e.g. =SUBSTITUTE(#REF!,CHAR(10),",") after a
+            # referenced column was deleted in Excel. It evaluates to that same error (IFERROR can catch it).
+            self.take()
+            return ("error", tok.text.upper())
         if tok.kind == "ref":
             self.take()
             return _parse_ref(tok.text)
@@ -411,6 +417,37 @@ def _iferror(ev, args):
         return ev(args[0])
     except ExcelError:
         return ev(args[1])
+
+
+def _reference_of(ev, args, name: str):
+    """The (row, column) of the first cell a ROW/COLUMN argument points at.
+
+    These two read *where* the reference is, never what is in it, so they take the
+    unevaluated argument (a lazy function). Without an argument Excel uses the cell
+    the formula sits in, which the evaluator does not know: that is a #NAME? with a
+    reason rather than a silent wrong number.
+    """
+    if not args:
+        raise ExcelError("#NAME?", f"{name}() without a cell is not supported; write {name}(A1)")
+    node = args[0]
+    if node[0] == "error":                      # ROW(#REF!) is #REF!, as in Excel
+        ev(node)
+    if node[0] == "cell":
+        return node[2], node[3]
+    if node[0] == "range":
+        return node[2], node[3]
+    raise ExcelError("#VALUE!", f"{name} needs a cell reference")
+
+
+@function("ROW", lazy=True)
+def _row(ev, args):
+    # Used by the workbooks to make unique test data: ="QAFN"&TEXT(ROW(A28),"000")&TEXT(TODAY(),"ddmmyy")
+    return _reference_of(ev, args, "ROW")[0]
+
+
+@function("COLUMN", lazy=True)
+def _column(ev, args):
+    return _reference_of(ev, args, "COLUMN")[1]
 
 
 @function("AND")
@@ -756,6 +793,8 @@ class Evaluator:
             return a ** b
         if kind == "call":
             return self._call(node[1], node[2])
+        if kind == "error":
+            raise ExcelError(node[1], f"the formula contains {node[1]}")
         raise ExcelError("#NAME?", f"bad node {kind}")
 
     def _call(self, name: str, args: list) -> Any:
