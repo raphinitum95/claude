@@ -227,7 +227,7 @@ export function liveView(S) {
 <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0">
 <div class="eyebrow" style="display: flex; align-items: center; gap: 10px"><span>Run</span><span class="mono" style="color: var(--tx2); letter-spacing: .04em">${run.id}</span></div>
 <h1 class="disp" style="font-size: 38px; line-height: 1.05; font-weight: 700; margin: 0; overflow-wrap: anywhere">${baseName(run.workbook) || run.id}</h1>
-<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">${paramChips(run, meta)}${batchStrip(meta)}</div>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">${paramChips(run, meta)}${batchStrip(meta, S.route.name === 'results')}</div>
 ${sharesStrip(run.shares.length ? run.shares : (meta && meta.shares))}</div>
 ${runHeaderActions(S, run, meta, active)}</div>
 ${runBanners(S, run, meta)}
@@ -289,9 +289,12 @@ ${leftEmpty ? html`${variablesCard(varsOfRun(run))}${reviewCard(S, run)}${logCar
 // ---- batches: several runs (one per workbook), tracked and shown together ----------------------------------------------
 /** A one-line link back to the batch this run is part of, so a person who opened one run of a batch can still get to the
  *  whole picture without the sidebar grouping them (dev/plan/CONTRACT.md: a batch is only a label). */
-export function batchStrip(meta) {
+export function batchStrip(meta, inResults = false) {
   if (!meta || !meta.batch_id) return '';
-  return html`<button class="chip" data-act="open-batch" data-id="${meta.batch_id}" style="cursor: pointer">${icon('grid', 14)} part of batch ${meta.batch_id}${meta.batch_label ? ` · ${meta.batch_label}` : ''}</button>`;
+  const label = html`${icon('grid', 14)} ← back to batch ${meta.batch_id}${meta.batch_label ? ` · ${meta.batch_label}` : ''}`;
+  // In the Results tab the batch page is the Results tab's own (#/results/batch/...), so the person stays in that tab.
+  if (inResults) return html`<a class="chip" href="#/results/batch/${meta.batch_id}" style="cursor: pointer; text-decoration: none">${label}</a>`;
+  return html`<button class="chip" data-act="open-batch" data-id="${meta.batch_id}" style="cursor: pointer">${label}</button>`;
 }
 
 function batchLaneCard(S, entry, t) {

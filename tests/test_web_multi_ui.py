@@ -111,12 +111,20 @@ async def test_several_workbooks_run_together_as_one_batch_and_each_run_says_whi
             run_ids = c.get(f"/api/batches/{batch_id}").json()["run_ids"]
         assert len(run_ids) == 2
         await page.evaluate(f"location.hash = '#/run/{run_ids[0]}'")                                          # a run opened on its own still says which batch it is part of
-        await js_until(page, f"document.body.innerText.includes('part of batch {batch_id}')")
+        await js_until(page, f"document.body.innerText.includes('back to batch {batch_id}')")
         await page.locator(f'[data-act=\"open-batch\"][data-id=\"{batch_id}\"]').click()
         await js_until(page, f"location.hash === '#/batch/{batch_id}'")
 
         done = {rid: web.wait_finished(rid, 240) for rid in run_ids}
         assert {d["meta"]["status"] for d in done.values()} == {"PASSED", "FAILED"}                          # mock passes, bad fails: each run has its own verdict
+
+        await page.evaluate(f"location.hash = '#/run/{run_ids[1]}'")                                          # a FINISHED run (the results page) has the way back too
+        await js_until(page, "!!document.querySelector('[data-act=\"open-batch\"]') && document.body.innerText.includes('Open HTML report')")
+        await page.locator(f'[data-act="open-batch"][data-id="{batch_id}"]').click()
+        await js_until(page, f"location.hash === '#/batch/{batch_id}'")
+        await page.evaluate(f"location.hash = '#/results/run/{run_ids[1]}'")                                  # ...and in the Results tab it stays in that tab
+        await page.locator(f'a[href="#/results/batch/{batch_id}"]').first.click()
+        await js_until(page, f"location.hash === '#/results/batch/{batch_id}'")
         assert not page.errors, page.errors
 
 

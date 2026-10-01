@@ -5,7 +5,7 @@ import { num, dur, timeOf, plural } from '../fmt.js';
 import { runFileUrl } from '../api.js';
 import { strip, groupReview, reviewTotal, finalVars } from '../runstate.js';
 import { banner, btn } from './shell.js';
-import { baseName, envChip, runBanners, SHOTS, variablesCard, sharesStrip } from './live.js';
+import { baseName, envChip, runBanners, SHOTS, variablesCard, sharesStrip, batchStrip } from './live.js';
 import { browserOf, browserChip } from '../browsers.js';
 import { scenarioFinished } from './scenario_lanes.js';
 
@@ -149,7 +149,7 @@ export function resultsView(S) {
   return html`<div class="page">
 <div style="display: flex; align-items: flex-start; gap: 24px; flex-wrap: wrap">
 <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0">
-<div class="eyebrow" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap"><span>Run</span><span class="mono" style="color: var(--tx2); letter-spacing: .04em">${id}</span>${pill(r.status, r.status === 'FAILED' ? 'Failed' : undefined)}</div>
+<div class="eyebrow" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap"><span>Run</span><span class="mono" style="color: var(--tx2); letter-spacing: .04em">${id}</span>${pill(r.status, r.status === 'FAILED' ? 'Failed' : undefined)}${batchStrip(meta, S.route.name === 'results')}</div>
 <h1 class="disp" style="font-size: 46px; line-height: 1.04; font-weight: 700; margin: 0">${headline}</h1>
 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--tx2); font-size: 13.5px">
 <span>${baseName(r.workbook)}.xlsx</span><span style="color: var(--tx3)">·</span>${envChip(r.environment)}${browserChip(browserOf(r, meta))}
