@@ -84,7 +84,7 @@ export function fingerprintDialog(m) {
 <input class="fld mono" style="font-size: 12.5px" value="${m.urlContains}" placeholder="/purchase/payment" data-input="build-fp-url"><span style="font-size: 11.5px; color: var(--tx3)">Text the URL must contain. {DOMAIN} etc. allowed.</span></div>
 <div style="text-align: center; font: 700 12px var(--f-mono); color: var(--tx3)">AND</div>
 <div class="card" style="padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: none"><b style="font-size: 12.5px">2 · A landmark on the page</b>
-<input class="fld mono" style="font-size: 12.5px" value="${m.landmark}" placeholder="css=h1 or text=Payment details" data-input="build-fp-landmark">
+<input class="fld mono" style="font-size: 12.5px" value="${m.landmark}" placeholder="css=title (the page's title: metadata, not content)" data-input="build-fp-landmark">
 <input class="fld" style="font-size: 12.5px" value="${m.landmarkText}" placeholder="Text the landmark must contain (optional)" data-input="build-fp-landmark-text"></div>
 <div style="display: flex; flex-direction: column; gap: 6px"><span class="lbl">Notes</span><textarea class="fld" style="height: 50px; padding: 8px 10px" data-input="build-fp-notes">${m.notes}</textarea></div>
 <div class="bn bn-fail">${icon('gate', 15, 'color: var(--fail)')}<span><b>A failed gate always stops the test</b>, even with Ignore_not_existing_object = Y.</span></div>
