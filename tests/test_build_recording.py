@@ -790,3 +790,28 @@ async def test_a_page_shaped_like_the_real_quote_page_records_specific_locators_
         assert [st for _, st in results(state)] == ["PASSED"] * 7, [(r["n"], r["status"], r.get("error")) for r in state["replay"]["results"]]
     finally:
         await s.close()
+
+
+async def test_save_this_finds_the_element_by_where_it_is_not_by_the_value_it_shows_now(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_save_live.html")
+    try:
+        page = s._page()
+        shown = (await page.locator(".quote-number").inner_text()).strip()
+        await pick_for(s, "save", page.locator(".quote-number"))
+        await s.recorder.add_check("save", token="QUOTE_NUMBER")
+        pick = await pick_for(s, "check", page.locator(".plan >> nth=1 >> .amount"))
+        await s.recorder.add_check("text_is", pick["card"]["form"]["kinds"][0]["expected"], token="ANNUAL_SHOWN")
+        saves, text_is = s._steps()[1], s._steps()[2]
+        for step in (saves, text_is):
+            assert step["method"] == "OUTPUT"
+            assert shown not in step["locator"] and "826.00" not in step["locator"], step["locator"]        # (never `//span[.='87302884']`)
+            assert "BACKUP" not in step["locator"] and not any(shown in b or "826.00" in b for b in step.get("backups") or [])
+        assert not saves.get("expected") and not saves.get("match")                                          # a save compares nothing
+        assert shown not in (saves["name"] or saves["autoName"])
+        s.run("to", row=s._steps()[-1]["row"])
+        state = await settled(s)
+        assert [st for _, st in results(state)] == ["PASSED"] * 3, state["replay"]
+        read = state["replay"]["results"][1]["actual"]                                                       # (the replay opened the page again: a new number)
+        assert read.isdigit() and read != shown
+    finally:
+        await s.close()

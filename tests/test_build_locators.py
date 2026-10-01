@@ -33,6 +33,14 @@ def test_candidates_go_from_the_most_stable_to_the_most_fragile():
     assert (tid.findby, tid.value, tid.how) == ("BY_CSSSELECTOR", '[data-testid="pay-now"]', "testid")
 
 
+def test_an_element_that_is_read_is_never_found_by_the_text_it_shows_now():
+    desc = L.to_desc({"tag": "span", "text": "87302884", "classes": ["quote-number"], "context": {"heading": "Your quote", "tag": "div", "headingTag": "h2"}})
+    assert any("87302884" in c.value for c in L.candidates(desc))
+    read = L.candidates(desc, own_text=False)
+    assert read and not any("87302884" in c.value for c in read)
+    assert any(c.how == "context" and "quote-number" in c.value for c in read)           # (still found through its container, by its class)
+
+
 def test_a_button_that_is_not_unique_by_its_text_is_found_through_its_cards_heading():
     cands = L.candidates(button())
     forms = {c.how: c.value for c in cands}

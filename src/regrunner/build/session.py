@@ -596,8 +596,16 @@ class BuildSession:
         cands = L.candidates(desc)
         await self._check(frame, cands)
         choice = L.choose(cands)
+        read = None
+        if purpose in ("check", "save", "wait"):                      # a step that READS the element must not find it by what it shows now
+            read_cands = L.candidates(desc, own_text=False)
+            await self._check(frame, read_cands)
+            read = L.choose(read_cands)
+            if purpose == "save" and read.ok:
+                choice = read
         words = L.plain_words(desc)
         pick = {"desc": desc, "words": words, "text": L.describe(words), "locator": choice.to_json(), "ok": choice.ok, "variables": {},
+                "locatorRead": read.to_json() if read is not None and read.ok else None,
                 "rows": [], "frame": desc.get("frame") or "", "url": _path_of(getattr(frame, "url", "")), "for": self.pick_for,
                 "forN": self._n_of(self.pick_for), "current": desc.get("current") or {}, "purpose": purpose}
         if purpose != "pick":

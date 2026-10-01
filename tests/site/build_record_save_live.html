@@ -1,0 +1,12 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Quote | Save live</title></head>
+<body>
+<!-- no ids on the amounts: a recorder can only find them by their text (the value shown now) or by where they are -->
+<div class="plan"><h3>Basic plan</h3><p>Premium <span class="amount">40.00</span></p></div>
+<div class="plan"><h3>Annual plan</h3><p>Premium <span class="amount">826.00</span></p></div>
+<p>Quote number <b><span class="quote-number"></span></b></p>
+<script>
+  // a different number on every load, like a real quote number
+  document.querySelector('.quote-number').textContent = String(10000000 + Math.floor(Math.random() * 89999999));
+</script>
+</body></html>

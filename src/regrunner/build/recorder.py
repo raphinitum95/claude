@@ -197,6 +197,7 @@ CHECK_KINDS = (
     ("list_item", "List", "List shows item N"),
 )
 WAIT_KINDS = (("wait_shown", "Wait until", "It shows"), ("wait_gone", "Wait until", "It is gone"), ("wait_text", "Wait until", "Its text is"))
+READS_ELEMENT_TEXT = {"save", "text_is", "text_contains", "gt", "lt", "between", "regex", "date_format", "wait_text"}
 SAVE_KINDS = (("save", "Save", "Save as a variable"),)
 ALL_KINDS = {k for k, _, _ in CHECK_KINDS + WAIT_KINDS + SAVE_KINDS}
 
@@ -1350,6 +1351,8 @@ class Recorder:
         if kind == "count" and not similar:
             raise BuildError("Nothing like this element could be counted on the page.", "check", 422)
         desc, locator = pick["desc"], pick["locator"]
+        if kind in READS_ELEMENT_TEXT and pick.get("locatorRead"):
+            locator = pick["locatorRead"]                        # found by where it is, never by the text it shows now (that is what the step reads)
         if kind == "list_item":                                   # the check is on the LIST (visible, then item N), not on the item that was clicked
             frame = self.s._picked_frame
             info = None

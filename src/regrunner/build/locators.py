@@ -256,8 +256,9 @@ def _owner_forms(desc: dict, name: str, owner: dict) -> list[Candidate]:
     return [Candidate("BY_XPATH", f"{control}/{scope}//{inner}", "owner")]
 
 
-def _inner(desc: dict, name: str) -> str:
-    """What finds the element once inside its container: its name, else a stable attribute, else only its tag."""
+def _inner(desc: dict, name: str, classed: bool = False) -> str:
+    """What finds the element once inside its container: its name, else a stable attribute, else only its tag (``classed``: else its tag
+    with its first stable class, so a value read from a container is not "any span in it")."""
     tag = str(desc.get("tag") or "*").lower()
     if name and not _is_field(desc):
         return f"{tag}{_text_pred(desc, name)}"
@@ -265,6 +266,10 @@ def _inner(desc: dict, name: str) -> str:
         value = desc.get(key)
         if value and (attr != "name" or stable_id(value)):
             return f"{tag}[@{attr}={lit(str(value))}]"
+    if classed:
+        classes = stable_classes(desc.get("classes") or [])
+        if classes:
+            return f"{tag}[contains(concat(' ', normalize-space(@class), ' '), {lit(' ' + classes[0] + ' ')})]"
     return tag
 
 
@@ -272,11 +277,11 @@ def _is_field(desc: dict) -> bool:
     return desc.get("kind") in ("field", "textbox", "dropdown", "checkbox", "radio") or str(desc.get("tag") or "").lower() in ("input", "textarea", "select")
 
 
-def _context_forms(desc: dict, name: str, heading: str) -> list[Candidate]:
+def _context_forms(desc: dict, name: str, heading: str, classed: bool = False) -> list[Candidate]:
     ctx = desc.get("context") or {}
     htag = str(ctx.get("headingTag") or "*").lower()
     ctag = str(ctx.get("tag") or "*").lower()
-    inner = _inner(desc, name)
+    inner = _inner(desc, name, classed)
     anchor = f"//{htag}[normalize-space(.)={lit(heading)}]/ancestor::{ctag}"
     out = []
     classes = stable_classes(ctx.get("classes") or [])
@@ -286,11 +291,13 @@ def _context_forms(desc: dict, name: str, heading: str) -> list[Candidate]:
     return out
 
 
-def candidates(desc: dict, *, name_as: str = "", context_as: str = "") -> list[Candidate]:
+def candidates(desc: dict, *, name_as: str = "", context_as: str = "", own_text: bool = True) -> list[Candidate]:
     """Every locator worth checking for the element, most stable first.  ``name_as`` / ``context_as``: a ``{TOKEN}`` that replaces the
-    element's name / its container's heading - then only the forms that carry the word are offered (the locator must follow the variable)."""
+    element's name / its container's heading - then only the forms that carry the word are offered (the locator must follow the variable).
+    ``own_text=False``: no form carries the element's own text, for a step that READS the element (Save, Text is...): what it shows now is
+    what the page held while recording, so a locator made of it would find nothing on the next run (``//span[.='40.00']``)."""
     tag = str(desc.get("tag") or "*").lower()
-    name = element_name(desc)
+    name = element_name(desc) if own_text else ""
     heading = short_text((desc.get("context") or {}).get("heading") or "")
     if heading == name:
         heading = ""
@@ -338,7 +345,7 @@ def candidates(desc: dict, *, name_as: str = "", context_as: str = "") -> list[C
     if label and _is_field(desc):
         out.append(Candidate("BY_XPATH", f"//label[normalize-space(.)={lit(label)}]/following::{tag}[1]", "text"))
     if heading:
-        out.extend(_context_forms(desc, name, heading))
+        out.extend(_context_forms(desc, name, heading, classed=not own_text))
     classes = stable_classes(desc.get("classes") or [])
     if classes:
         out.append(Candidate("BY_CSSSELECTOR", tag + "".join("." + _css_ident(c) for c in classes), "position", index_needed=True))
