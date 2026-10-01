@@ -634,6 +634,42 @@ async def test_parts_of_a_custom_multi_select_are_found_and_named_through_the_se
         await s.close()
 
 
+async def test_a_click_into_a_field_that_opens_its_list_is_recorded_when_an_item_of_that_list_is_picked_next(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_multiselect_open.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#cmp-Input")                              # nothing typed: the list just appears
+        await page.click("#valueList a:nth-child(1)")
+        await quiet(s, 2)
+        opened, picked = step_at(s, 2), step_at(s, 3)
+        assert opened["method"] == "CLICK" and picked["method"] == "CLICK"
+        assert "myMulti" in opened["locator"]["value"] and "input" in opened["locator"]["value"].lower() and "<a" not in opened["locator"]["value"], opened["locator"]
+        assert "australia" in picked["locator"]["value"].lower()
+        await s.recorder.stop()
+        await s._page().reload()                                    # a replay starts with the list closed: the opening click is what shows it
+        s.run("to", row=4)
+        state = await settled(s)
+        assert [r for r in results(state)][-2:] == [(2, "PASSED"), (3, "PASSED")], state["replay"]["results"]
+        assert (await s._page().inner_text("#chosen")) == "AUSTRALIA;"
+    finally:
+        await s.close()
+
+
+async def test_a_click_into_a_field_is_not_a_step_when_the_next_click_is_somewhere_else(site, tmp_path):
+    s = await open_session(site, tmp_path, "build_record_multiselect_open.html")
+    try:
+        page = s._page()
+        await s.recorder.start(after=2)
+        await page.click("#cmp-Input")
+        await page.click("#elsewhere")
+        await quiet(s, 1)
+        assert [m for m, _ in steps(s)] == ["CLICK"], steps(s)
+        await s.recorder.stop()
+    finally:
+        await s.close()
+
+
 async def test_the_second_input_of_a_repeatable_set_is_recorded_with_its_own_duplication_id(site, tmp_path):
     s = await open_session(site, tmp_path, "build_record_repeat.html")
     try:

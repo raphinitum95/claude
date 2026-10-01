@@ -820,10 +820,33 @@ input.fld:focus { border-color: #5cc8ff; }
   // inside a calendar's own box (an input that merely carries a "hasDatepicker" class is not the calendar)
   const inCalendar = (e) => { const c = e.closest(CALENDAR); return !!c && !(c instanceof HTMLInputElement || c instanceof HTMLTextAreaElement || c instanceof HTMLSelectElement); };
 
+  // Is `elm` inside the widget the text field belongs to, where clicking into the field is what makes the widget's list appear (a custom
+  // multi-select, a combobox, an autocomplete)? The element the field says it controls, or any ancestor that names itself so and also holds `elm`.
+  const LIST_OWNER = '[role="combobox"], [role="listbox"], [class*="drop" i], [class*="combo" i], [class*="select" i], [class*="suggest" i], [class*="auto" i]';
+  function inListOf(field, elm) {
+    try {
+      const owns = field.getAttribute('aria-controls') || field.getAttribute('aria-owns');
+      const named = owns && document.getElementById(owns);
+      if (named && named.contains(elm)) return true;
+      for (let box = field.parentElement; box && box !== document.body && box !== document.documentElement; box = box.parentElement) {
+        if (box.matches(LIST_OWNER) && box.contains(elm)) return true;
+      }
+    } catch (e) { /* not a list */ }
+    return false;
+  }
+  // a click into a text field, until the next click: nothing was typed (that would be the step), so if the next click is on something inside
+  // the field's own list, the click into the field is what opened that list and a replay needs it
+  let fieldClick = null;
+
   function onRecClick(ev) {
     if (!recording(ev)) return;
     const elm = target(ev.target);
     if (!elm || elm === host) return;
+    const earlier = fieldClick;
+    fieldClick = null;
+    if (earlier && earlier.el !== elm && earlier.el.isConnected && !isText(elm) && earlier.el.value === earlier.before) {
+      if (inListOf(earlier.el, elm)) send('click', earlier.el);
+    }
     // a calendar that has just set its field (it sets the value without any event): say so before this next action is recorded, so the date
     // is not lost when the person moves on faster than the watch's own look
     if (dateWatch && dateWatch.el !== elm && !inCalendar(elm) && dateWatch.el.value && dateWatch.el.value !== dateWatch.before) {
@@ -841,6 +864,8 @@ input.fld:focus { border-color: #5cc8ff; }
       if (elm instanceof HTMLInputElement && isDateInput(elm) && !(dateWatch && dateWatch.el === elm)) {
         dateWatch = { el: elm, before: elm.value };
         send('date-open', elm);
+      } else if (elm instanceof HTMLInputElement || elm instanceof HTMLTextAreaElement) {
+        fieldClick = { el: elm, before: elm.value };
       }
       return;                                                     // (a click into a field only focuses it: the typing is the step)
     }
