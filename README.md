@@ -537,7 +537,12 @@ time. One window per workbook (three at most); it closes itself after `build.idl
 typed text becomes `{VARIABLE}` (a password becomes `{SECRET:NAME}`, kept in `secrets.env`, never in the workbook), a
 click in another window or frame gets its own SWITCHTOWINDOW/SWITCHTOFRAME step first, and a calendar or a suggestions
 list is recognised as PICK_DATE / CHOOSE_SUGGESTION. **Check / Save / Wait until** turn a picked element straight into
-an OUTPUT/EXIST/CHECK_*/WAIT_UNTIL step, prefilled from what is actually on the page. **Done** on the pill stops picking
+an OUTPUT/EXIST/CHECK_*/WAIT_UNTIL step, prefilled from what is actually on the page. A check's **Expected** value has three
+sources: *From the page* (read just now, kept as fixed text), *From a variable* (a searchable list of every variable the test can
+read: its test data, values saved by earlier steps, the environment's; the step keeps `{NAME}`, read when the test runs, and the
+card says what it is worth now and warns when the page shows something else) and *Type my own* (starts from what was read;
+*Insert a variable* adds `{NAME}` anywhere, e.g. `{LOW};{HIGH}`). The same card shows in the page and in the Build tab.
+**Done** on the pill stops picking
 and recording; the Build tab then says what was recorded (*Recorded 8 steps (steps 4-11)*), jumps to the first one, and
 offers **Remove them** (Undo brings them back). Recording a test that has no steps yet starts it with `OPEN {DOMAIN}`, since
 an address typed in the browser's own address bar is not recorded. When a recorded click lands on another page, the

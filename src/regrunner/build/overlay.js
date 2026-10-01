@@ -418,6 +418,18 @@ button.sm.on { background: #5cc8ff; color: #06121c; font-weight: 600; }
 input.fld { all: unset; box-sizing: border-box; width: 100%; height: 30px; padding: 0 10px; border-radius: 8px; background: #151b23; border: 1px solid #3a4452;
   font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #e8edf3; }
 input.fld:focus { border-color: #5cc8ff; }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: #151b23; border: 1px solid #3a4452; }
+.seg button.sm { flex: 1; justify-content: center; height: 26px; padding: 0 4px; background: transparent; }
+.seg button.sm:hover { background: #2c3541; }
+.seg button.sm.on { background: #5cc8ff; }
+.read { padding: 7px 10px; border-radius: 8px; background: #19212b; border: 1px solid #333d4a; font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #e8edf3; word-break: break-word; }
+.vlist { display: flex; flex-direction: column; gap: 2px; max-height: 148px; overflow-y: auto; overflow-x: hidden; padding: 4px; border-radius: 8px; background: #151b23; border: 1px solid #3a4452; }
+.vg { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #8a96a6; padding: 4px 6px 2px; }
+button.vopt { box-sizing: border-box; height: 26px; width: 100%; flex: none; padding: 0 8px; gap: 10px; justify-content: space-between; font-weight: 500; font-size: 12px; }
+button.vopt.on { background: #5cc8ff; color: #06121c; }
+.vopt .tk { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vopt .vv { font-size: 11px; color: #9aa6b5; white-space: nowrap; flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.vopt.on .vv { color: #1c3a4d; }
 .toasts { position: fixed; z-index: 2147483647; left: 16px; bottom: 16px; width: 380px; display: flex; flex-direction: column; gap: 8px; }
 .toast { position: static; width: auto; }
 `;
@@ -517,7 +529,7 @@ input.fld:focus { border-color: #5cc8ff; }
     if (c.form && c.ok !== false) {
       const f = st.form;
       const add = btn(`Add ${c.form.purpose === 'save' ? 'save' : c.form.purpose === 'wait' ? 'wait' : 'check'} · step ${c.form.n}`, 'add', 'pri');
-      if (!f.kind) add.setAttribute('disabled', '');
+      if (!formReady(f)) add.setAttribute('disabled', '');
       ft.appendChild(add);
     } else ft.appendChild(btn('Pick again', st.mode === 'browse' ? 'pick' : st.mode, ''));
     ft.appendChild(btn(c.form ? 'Cancel' : 'Close', 'close-card', ''));
@@ -528,6 +540,119 @@ input.fld:focus { border-color: #5cc8ff; }
       const input = root.querySelector(`[data-rr-field="${focused}"]`);
       if (input) { input.focus(); try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* not text */ } }
     }
+  }
+
+  // ---- the Expected value: from the page, from a variable, or typed (mirrors the Build tab's card, views/build/record.js) ----------------
+  const SOURCES = [['page', 'From the page'], ['variable', 'From a variable'], ['own', 'Type my own']];
+  const VAR_GROUPS = { data: 'Test data', saved: 'Saved by earlier steps', environment: 'Environment' };
+  const COMPARES_TEXT = ['text_is', 'text_contains', 'value', 'selected', 'ticked', 'enabled', 'wait_text'];
+  const clip = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+  const liveOf = (form, kind) => ((form.kinds.find((x) => x.id === kind) || {}).expected || '');
+  // (a check that reads a variable needs one chosen; anything else the builder validates with a plain message)
+  const formReady = (f) => !!f.kind && !(NEEDS_EXPECTED.has(f.kind) && f.source === 'variable' && !f.variable);
+
+  function setSource(form, f, source) {
+    f.source = source;
+    f.listOpen = false;
+    f.search = '';
+    if (source === 'page') f.expected = liveOf(form, f.kind);
+    else if (source === 'variable') {
+      if (!f.variable) { const m = (form.variables || []).find((v) => v.match); f.variable = m ? m.token : ''; }
+      f.expected = f.variable ? `{${f.variable}}` : '';
+    }
+  }
+
+  function variableOption(v, chosen) {
+    const b = btn('', 'var', `vopt${chosen ? ' on' : ''}`, { token: v.token });
+    b.appendChild(el('span', 'tk', v.token));
+    const note = v.value ? clip(v.value, 28) : v.group === 'saved' ? `step ${v.n}` : '';
+    if (note || v.match) b.appendChild(el('span', 'vv', `${note}${v.match ? `${note ? ' · ' : ''}same as page` : ''}`));
+    return b;
+  }
+
+  // The variables a search finds: its name or value contains every word typed ("first na" finds FIRST_NAME); names that start with it come first.
+  function findVariables(vars, query) {
+    const words = String(query || '').toLowerCase().split(/[\s_]+/).filter(Boolean);
+    if (!words.length) return vars;
+    const rank = (v) => {
+      const name = v.token.toLowerCase().replace(/_/g, ' ');
+      if (!words.every((w) => `${name} ${String(v.value || '').toLowerCase()}`.includes(w))) return -1;
+      return name.startsWith(words.join(' ')) ? 0 : words.every((w) => name.includes(w)) ? 1 : 2;
+    };
+    return vars.map((v, i) => [rank(v), i, v]).filter(([r]) => r >= 0).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , v]) => v);
+  }
+
+  function variableList(vars, f, act) {
+    const wrap = el('div', 'grp');
+    const search = el('input', 'fld');
+    search.setAttribute('data-rr-field', 'vsearch');
+    search.setAttribute('placeholder', `Search ${vars.length} variable${vars.length === 1 ? '' : 's'}…`);
+    search.setAttribute('aria-label', 'Search variables');
+    search.value = f.search || '';
+    wrap.appendChild(search);
+    const hits = findVariables(vars, f.search);
+    const list = el('div', 'vlist');
+    const searching = !!(f.search || '').trim();
+    for (const [g, label] of searching ? [['', 'Best matches']] : Object.entries(VAR_GROUPS)) {
+      const inGroup = hits.filter((v) => !g || v.group === g);
+      if (!inGroup.length) continue;
+      list.appendChild(el('span', 'vg', label));
+      for (const v of inGroup) {
+        const o = variableOption(v, act === 'var' && v.token === f.variable);
+        if (act === 'insert') o.setAttribute('data-rr-act', 'insert');
+        list.appendChild(o);
+      }
+    }
+    if (!hits.length) list.appendChild(el('span', 'vg', `No variable matches “${f.search}”.`));
+    wrap.appendChild(list);
+    if (searching && hits.length) wrap.appendChild(el('span', 'd', `${hits.length} of ${vars.length} · Enter takes the first`));
+    return wrap;
+  }
+
+  function expectedBox(form, f) {
+    const box = el('div', 'grp');
+    box.appendChild(el('span', 'lbl', 'Expected'));
+    const live = liveOf(form, f.kind);
+    const vars = form.variables || [];
+    const seg = el('div', 'seg');
+    for (const [id, label] of SOURCES) {
+      const b = btn(label, 'source', `sm${f.source === id ? ' on' : ''}`, { source: id });
+      const why = id === 'page' && !live ? 'Nothing could be read from the page for this check' : id === 'variable' && !vars.length ? 'This workbook has no variables yet' : '';
+      if (why) { b.setAttribute('disabled', ''); b.title = why; }
+      seg.appendChild(b);
+    }
+    box.appendChild(seg);
+    if (f.source === 'page') {
+      box.appendChild(el('div', 'read', live));
+      box.appendChild(el('span', 'd', 'Read from the page just now and kept as fixed text. To change it, use “Type my own”.'));
+      const same = vars.filter((v) => v.match);
+      if (same.length) {
+        const row = el('div', 'row');
+        row.appendChild(el('span', 'd', 'Same as now:'));
+        for (const v of same) row.appendChild(btn(`{${v.token}}`, 'use-var', 'sm', { token: v.token }));
+        box.appendChild(row);
+      }
+    } else if (f.source === 'variable') {
+      box.appendChild(variableList(vars, f, 'var'));
+      const v = vars.find((x) => x.token === f.variable);
+      if (!v) box.appendChild(el('span', 'd', 'The step will read the variable when the test runs.'));
+      else {
+        const where = v.group === 'environment' ? 'this environment' : 'the data row you are building with';
+        box.appendChild(el('span', 'd', v.group === 'saved' ? `Set by step ${v.n}: its value only exists while the test runs.`
+          : v.value ? `In ${where} it is “${clip(v.value, 60)}”.` : `It is empty in ${where}.`));
+        if (v.value && live && v.value !== live && COMPARES_TEXT.includes(f.kind)) box.appendChild(el('span', 'd bad', `The page shows “${clip(live, 40)}” right now, so this check fails until they agree.`));
+      }
+    } else {
+      const input = el('input', 'fld');
+      input.setAttribute('data-rr-field', 'expected');
+      input.value = f.expected;
+      box.appendChild(input);
+      if (vars.length) {
+        box.appendChild(btn(f.listOpen ? 'Hide variables' : '+ Insert a variable', 'insert-list', 'sm'));
+        if (f.listOpen) box.appendChild(variableList(vars, f, 'insert'));
+      }
+    }
+    return box;
   }
 
   function formBody(card, form) {
@@ -549,22 +674,7 @@ input.fld:focus { border-color: #5cc8ff; }
         body.appendChild(box);
       }
     }
-    if (NEEDS_EXPECTED.has(f.kind)) {
-      const box = el('div', 'grp');
-      box.appendChild(el('span', 'lbl', 'Expected · from the live page'));
-      const input = el('input', 'fld');
-      input.setAttribute('data-rr-field', 'expected');
-      input.value = f.expected;
-      box.appendChild(input);
-      const vars = (form.variables || []).filter((v) => v.value === (form.kinds.find((k) => k.id === f.kind) || {}).expected);
-      if (vars.length) {
-        const row = el('div', 'row');
-        row.appendChild(el('span', 'd', 'Swap for a variable:'));
-        for (const v of vars) row.appendChild(btn(`{${v.token}}`, 'var', 'sm', { token: v.token }));
-        box.appendChild(row);
-      }
-      body.appendChild(box);
-    }
+    if (NEEDS_EXPECTED.has(f.kind)) body.appendChild(expectedBox(form, f));
     if (form.purpose === 'save') {
       const box = el('div', 'grp');
       box.appendChild(el('span', 'lbl', 'Save it as the variable'));
@@ -651,7 +761,7 @@ input.fld:focus { border-color: #5cc8ff; }
       if (!form) st.form = null;
       else if (!st.form || st.form.id !== st.card.id) {
         const k = form.kinds.find((x) => x.id === form.chosen) || {};
-        st.form = { id: st.card.id, kind: form.chosen || '', expected: k.expected || '', token: form.token || '' };
+        st.form = { id: st.card.id, kind: form.chosen || '', expected: k.expected || '', token: form.token || '', source: k.expected ? 'page' : 'own', variable: '', listOpen: false, search: '' };
       }
     }
     if (st.mode !== 'which') whichEls = [];
@@ -923,7 +1033,8 @@ input.fld:focus { border-color: #5cc8ff; }
   function onFormInput() {
     const t = root && root.activeElement;
     const field = t && t.getAttribute && t.getAttribute('data-rr-field');
-    if (field === 'expected' && st.form) st.form.expected = t.value;
+    if (field === 'vsearch' && st.form) { st.form.search = t.value; drawCard(); }
+    else if (field === 'expected' && st.form) st.form.expected = t.value;
     else if (field === 'token' && st.form) st.form.token = t.value;
     else if (field === 'rename') st.renameTo = t.value;
   }
@@ -933,12 +1044,20 @@ input.fld:focus { border-color: #5cc8ff; }
     const t = root && root.activeElement;
     const field = t && t.getAttribute && t.getAttribute('data-rr-field');
     if (field === 'rename' && st.renaming) { call({ kind: 'prompt', id: st.renaming, choice: 'rename', token: st.renameTo }); st.renaming = null; }
-    else if ((field === 'expected' || field === 'token') && st.form && st.form.kind) addCheck();
+    else if (field === 'vsearch' && st.form) {                                              // (Enter in the variable search takes the best match)
+      const first = findVariables(st.card.form.variables || [], st.form.search)[0];
+      if (!first) return;
+      if (st.form.source === 'variable') { st.form.variable = first.token; st.form.expected = `{${first.token}}`; }
+      else { st.form.expected = `${st.form.expected}{${first.token}}`; st.form.listOpen = false; }
+      st.form.search = '';
+      drawCard();
+    }
+    else if ((field === 'expected' || field === 'token') && st.form && formReady(st.form)) addCheck();
   }
 
   function addCheck() {
     const f = st.form;
-    if (!f || !f.kind) return;
+    if (!f || !formReady(f)) return;
     st.card = { ...st.card, lines: ['adding the step…'] };
     call({ kind: 'check-add', check: f.kind, expected: f.expected, token: f.token });
   }
@@ -971,8 +1090,17 @@ input.fld:focus { border-color: #5cc8ff; }
     else if (act === 'kind' && st.form) {
       const form = st.card.form;
       const k = form.kinds.find((x) => x.id === b.getAttribute('data-kind'));
-      if (k && k.enabled) { st.form.kind = k.id; st.form.expected = k.expected || ''; drawCard(); }
-    } else if (act === 'var' && st.form) { st.form.expected = `{${b.getAttribute('data-token')}}`; drawCard(); }
+      if (!k || !k.enabled) return;
+      st.form.kind = k.id;
+      if (st.form.source === 'variable') setSource(form, st.form, 'variable');           // (the variable still applies to the new kind)
+      else { st.form.expected = k.expected || ''; st.form.source = st.form.expected ? 'page' : 'own'; }
+      drawCard();
+    }
+    else if (act === 'source' && st.form) { setSource(st.card.form, st.form, b.getAttribute('data-source')); drawCard(); }
+    else if (act === 'var' && st.form) { st.form.variable = b.getAttribute('data-token'); st.form.expected = `{${st.form.variable}}`; drawCard(); }
+    else if (act === 'use-var' && st.form) { st.form.variable = b.getAttribute('data-token'); setSource(st.card.form, st.form, 'variable'); drawCard(); }
+    else if (act === 'insert-list' && st.form) { st.form.listOpen = !st.form.listOpen; st.form.search = ''; drawCard(); }
+    else if (act === 'insert' && st.form) { st.form.expected = `${st.form.expected}{${b.getAttribute('data-token')}}`; st.form.listOpen = false; st.form.search = ''; drawCard(); }
     else if (act === 'add') addCheck();
     else if (act === 'rename') { st.renaming = b.getAttribute('data-id'); st.renameTo = b.getAttribute('data-token') || ''; drawPrompts(); }
     else if (act === 'rename-cancel') { st.renaming = null; drawPrompts(); }
@@ -995,7 +1123,7 @@ input.fld:focus { border-color: #5cc8ff; }
         if (grip && pill) { const r = pill.getBoundingClientRect(); st.drag = { dx: ev.clientX - r.left, dy: ev.clientY - r.top }; ev.preventDefault(); }
       }
       if (ev.type === 'pointerup') st.drag = null;
-      if (ev.type === 'mousedown') ev.preventDefault();                 // (pressing the pill must not take the focus from the page's field: its list would close)
+      if (ev.type === 'mousedown' && !closestAt(ev, 'input')) ev.preventDefault();   // (pressing the pill must not take the focus from the page's field: its list would close; a text box of the card does take it)
       if (ev.type === 'click') { ev.preventDefault(); overlayAction(ev); }
       return;
     }
