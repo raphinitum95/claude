@@ -17,7 +17,9 @@ pytestmark = pytest.mark.browser
 FINGERPRINTS = [["Name", "UrlContains", "Landmark", "LandmarkText", "Notes"],
                 ["Payment page", "/widgets.html", "css=h1", "Payment details", ""],
                 ["Confirmation page", "/confirmation", "css=h1", "", ""],
-                ["Payment page, wrong words", "{PAGE_PART}", "css=h1", "Your receipt", ""]]
+                ["Payment page, wrong words", "{PAGE_PART}", "css=h1", "Your receipt", ""],
+                ["Payment page by title", "/widgets.html", "css=title", "widgets", ""],
+                ["Payment page, wrong title", "/widgets.html", "css=title", "Checkout", ""]]
 
 
 def envs(site: str) -> list[list]:
@@ -75,6 +77,17 @@ async def test_a_failed_page_gate_is_a_hard_stop_even_when_errors_are_ignored_an
     if fingerprint != "No such page":
         (event,) = [e for e in events if e["type"] == "page_gate"]
         assert event["passed"] is False
+
+
+async def test_a_page_gate_on_the_pages_title_counts_it_as_there_although_a_title_is_never_shown(site, make_cfg, tmp_path):
+    wb = book(tmp_path / "a.xlsx", {"T": [open_page(), ("ASSERT_PAGE", "by title", {"Value": "Payment page by title"})],
+                                    "U": [open_page(), ("ASSERT_PAGE", "wrong title", {"Value": "Payment page, wrong title", "Timeout": 1})]},
+              environments=envs(site), sheets={"_rr_fingerprints": FINGERPRINTS})
+    result, _, _ = await run(make_cfg, wb, ["T", "U"])
+    tests = {t.sheet: t for t in result.tests}
+    assert tests["T"].status == "PASSED", tests["T"].error
+    wrong = by_name(tests["U"])["wrong title"]
+    assert tests["U"].status == "FAILED" and "does not say 'Checkout' (it says 'widgets')" in wrong.error
 
 
 async def test_wait_until_waits_for_an_element_to_show_to_go_and_for_its_text(site, make_cfg, tmp_path):

@@ -203,7 +203,7 @@ async def test_a_new_page_gets_its_check_and_its_own_page_straight_away_and_the_
     await quiet(s, 1)
     prompt = await until(lambda: asyncio.sleep(0, next((p for p in s.recorder.prompts if p["kind"] == "gate_added"), None)))
     assert prompt["name"] == "Payment details page" and prompt["urlContains"] == "/build_record2.html"
-    assert prompt["landmark"] == "id=pay-heading" and prompt["landmarkText"] == "Payment details"
+    assert prompt["landmark"] == "css=title" and prompt["landmarkText"] == "Payment details | Mock Insurance"   # metadata, not the h1
     assert steps(s) == [("CLICK", ""), ("ASSERT_PAGE", "Payment details page")]              # added without asking
     with s.doc.lock:
         assert [f["name"] for f in read_fingerprints(s.doc.editor)] == ["Payment details page"]

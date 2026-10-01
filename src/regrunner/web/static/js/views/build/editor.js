@@ -291,6 +291,17 @@ ${FIND_BY.map(([k, label]) => html`<option value="${k}" ${k === findBy ? raw('se
 ${(loc.backups || []).length ? html`<span style="font-size: 12px; color: var(--tx3)">${loc.backups.length} backup locator${loc.backups.length === 1 ? '' : 's'} stored.</span>` : ''}</div>`;
 }
 
+// An ASSERT_PAGE step only names its page fingerprint: show what that fingerprint checks, with a way to edit it (or create it when missing).
+function fingerprintSection(S, s) {
+  const name = String(s.value || '').trim();
+  const fp = name ? (S.build.model.fingerprints || []).find((f) => f.name.toUpperCase() === name.toUpperCase()) : null;
+  const line = (label, v) => html`<div style="display: flex; gap: 8px; font-size: 12px"><span style="color: var(--tx3); width: 92px; flex: none">${label}</span><span class="mono" style="min-width: 0; overflow-wrap: anywhere">${v || '(none)'}</span></div>`;
+  return html`<div style="display: flex; flex-direction: column; gap: 8px"><div style="display: flex; align-items: center; gap: 8px"><span class="lbl">Page fingerprint</span><span style="flex: 1"></span>
+<button class="btn btn-ghost btn-sm" style="height: 22px; font-size: 11px; padding: 0 6px" data-act="build-fp-edit" data-name="${fp ? fp.name : name}" ${name ? '' : raw('disabled')}>${icon(fp ? 'gate' : 'plus', 11)} ${fp ? 'View / edit fingerprint' : 'Create this fingerprint'}</button></div>
+${fp ? html`<div class="field" style="flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 10px">${line('URL contains', fp.urlContains)}${line('Landmark', fp.landmark)}${line('Landmark text', fp.landmarkText)}</div>`
+    : html`<div class="bn">${icon('warn', 14, 'color: var(--warn)')}<span>${name ? html`There is no page fingerprint called <b>${name}</b> in this workbook.` : 'Put the name of a page fingerprint in Value.'}</span></div>`}</div>`;
+}
+
 function inspector(S, t, s) {
   if (!s) return html`<div style="padding: 20px; color: var(--tx3); font-size: 13px">No step selected.</div>`;
   return html`<div style="padding: 14px 16px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 7px">
@@ -311,6 +322,7 @@ ${s.legacy ? html`<div class="bn">${icon('lock', 14, 'color: var(--tx3)')}<span>
 ${s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><span class="lbl">Runs this test, then carries on</span>
 <div class="field" style="min-height: 40px">${icon('api', 15, 'color: var(--k-api)')}<b>${s.call}</b><span style="flex: 1"></span><a href="${buildUrl(S.build.name, 'test', s.call)}">Open</a></div></div>` : ''}
 ${s.element || (s.locator && (s.locator.value || s.locator.findBy)) ? elementSection(s) : ''}
+${s.method === 'ASSERT_PAGE' ? fingerprintSection(S, s) : ''}
 ${!s.call ? html`<div style="display: flex; flex-direction: column; gap: 8px"><div style="display: flex; align-items: center; gap: 8px"><span class="lbl">Value</span><span style="flex: 1"></span>
 <button class="btn btn-ghost btn-sm" style="height: 22px; font-size: 11px; padding: 0 6px" data-act="build-open-value-builder" data-row="${s.row}" title="Value builder: writes a formula">ƒ Value builder</button></div>
 <div class="field">${s.value ? html`<span style="flex-wrap: wrap; display: flex; gap: 3px">${tokenHtml(s.value)}</span>` : html`<span class="mono" style="font-size: 12px; color: var(--tx3)">(empty)</span>`}</div>

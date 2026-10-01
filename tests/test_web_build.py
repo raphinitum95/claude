@@ -199,6 +199,31 @@ async def test_a_step_that_acts_on_an_element_always_offers_on_which_element_and
         await pw.stop()
 
 
+async def test_a_page_check_step_shows_what_its_fingerprint_checks_and_opens_it_for_editing(web, build_copy):
+    async with web.aclient() as c:
+        r = await c.post(f"/api/build/workbooks/{build_copy}/edit", headers=HEADERS, json={"ops": [
+            {"op": "set_fingerprint", "name": "Review page", "urlContains": "/buy/review.html", "landmark": "css=title", "landmarkText": "Review"},
+            {"op": "insert_step", "test": "FlowA", "step": {"method": "ASSERT_PAGE", "value": "Review page"}}]})
+        assert r.status_code == 200, r.text
+        row = next(a["row"] for a in r.json()["applied"] if a.get("op") == "insert_step")
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await js_until(page, "document.querySelectorAll('.scard').length > 0")
+        await page.locator('[data-act="build-pick-block"]').last.click()
+        await page.locator(f'.scard [data-act="build-pick-step"][data-row="{row}"]').click()
+        button = page.locator('button[data-act="build-fp-edit"][data-name="Review page"]')
+        await js_until(page, "!!document.querySelector('button[data-act=\"build-fp-edit\"][data-name=\"Review page\"]')")
+        section = button.locator("xpath=ancestor::div[2]")
+        assert "/buy/review.html" in await section.inner_text() and "css=title" in await section.inner_text()
+        await button.click()
+        await js_until(page, "!!document.querySelector('[data-input=\"build-fp-url\"]')")
+        assert await page.locator('[data-input="build-fp-url"]').input_value() == "/buy/review.html"
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
 async def test_the_new_workbook_dialog_says_production_or_not_production_on_each_environment(web):
     pw, browser, page = await open_ui(web, "/#/build/all")
     try:

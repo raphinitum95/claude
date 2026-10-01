@@ -123,9 +123,11 @@ def test_secrets_env_gets_the_line_once_and_another_value_is_never_overwritten(t
         os.environ.pop("RR_VAR_X", None)
 
 
-def test_a_new_pages_fingerprint_is_named_from_its_heading_and_its_path():
+def test_a_new_pages_fingerprint_is_named_from_its_title_and_its_path():
     assert R.fingerprint_name("Payment details", "/purchase/payment", set()) == "Payment details page"
     assert R.fingerprint_name("Payment details", "/p", {"PAYMENT DETAILS PAGE"}) == "Payment details page 2"
+    assert R.fingerprint_name("Review | Qantas  Insurance", "/buy/review.html", set()) == "Review page"      # the title's own part
+    assert R.fingerprint_name("", "/buy/review", set()) == "review page"
     assert R.fingerprint_name("", "/purchase/traveler-info/", set()) == "traveler info page"
     assert R.url_path("https://uat.example.test/purchase/payment?step=2#top") == "/purchase/payment" and R.url_path("http://x.test") == "/"
     assert R.pattern_of("REF-12345") == r"^REF\-\d+$" and R.guess_date_format("2027-03-15") == "yyyy-mm-dd" and R.guess_date_format("soon") == ""
