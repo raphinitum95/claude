@@ -483,6 +483,8 @@ Done: Phase 0 (measure: `timing` per step/test/run, `queue_s`, `resources.jsonl`
 and Phase 1 (`regrunner history`). **Next: the user reviews Phase 0 numbers from a real run on the work computer before Phase 2+ is built.**
 Unverified: the Windows paths of `engine/resources.py` (ctypes; no Windows here), numbers from real sites.
 
+**Planned (2026-10-01, not built): unique variables with numbered copies** (`{lastName#2}`, generated once per run, first/last/#N in checks). Design agreed with the user: `dev/claude/CONTEXT_unique_variables.md`.
+
 **Done 2026-09-29: cancel one test** (`engine/cancel.py`). The UI writes `runs/<id>/cancel_test/<quoted test id>`; `Engine.watch_markers` (every 0.5 s) turns it into
 `Engine.cancel_test`: the test's `OneTestCancel` is set (every `cancel.is_set()` check - step loop, `Patience.give_up`, throttle, ASK_USER, scenario sync - sees it, no change to
 `patience.py`), event `test_cancel_requested`, and if the test is still in the same step after `TEST_CANCEL_GRACE_S` (5 s) its task is ended (`run_one` then returns
