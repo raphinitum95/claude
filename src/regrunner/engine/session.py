@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from ..capture.review import ReviewCollector
+from ..capture.state import STATE_JS, flatten
 from ..config import Config
 from ..events import now_iso
 from . import captcha
@@ -84,6 +85,19 @@ _DIGITS = re.compile(r"(?<!\w)\d{6,8}(?!\w)")                        # a one-tim
 _SECRET_JSON = re.compile(r'("(?:[^"]*(?:pass(?:word|code)?|pwd|token|secret|answer|otp|credential)[^"]*|code)"\s*:\s*)"[^"]*"', re.I)
 
 
+_SECRET_FIELD = r"pass(?:word|code)?|pwd|secret|token|otp|cvv|cvc|card.?n(?:um|o)|ssn|credential|csrf|authori[sz]"
+_PAYLOAD_JSON = re.compile(r'("[^"]*(?:' + _SECRET_FIELD + r')[^"]*"\s*:\s*)(?:"[^"]*"|[^,}\]\s]+)', re.I)
+_PAYLOAD_FORM = re.compile(r"((?:^|[&?])[^=&]*(?:" + _SECRET_FIELD + r")[^=&]*=)[^&]*", re.I)
+
+
+def mask_payload(text: str, limit: int = 8192) -> str:
+    """A first-party call's request or response body as kept in network.jsonl (``capture.bodies``): the values of secret-looking JSON fields and
+    form parameters hidden, the rest as it is (dates of birth and postcodes are exactly what an investigation needs), cut at ``limit`` characters.
+    The run's own secrets are masked over the whole line when it is written."""
+    text = _PAYLOAD_FORM.sub(r"\1***", _PAYLOAD_JSON.sub(r'\1"***"', str(text or "")))
+    return text if len(text) <= limit else text[:limit] + "... (cut)"
+
+
 def mask_body(text: str, limit: int = 2000) -> str:
     """A sign-in service's answer as kept in network.jsonl: values of secret-looking fields and anything that looks like a one-time code hidden."""
     text = _SECRET_JSON.sub(r'\1"***"', str(text or ""))
@@ -144,6 +158,12 @@ class BrowserSession:
         self.stuck_request = ""                        # set when one of the page's own calls went unanswered for patience.request_stall_s (a hard stop)
         self.load_status: int | None = None             # HTTP status of the first page that failed to load
         self.network: list[dict[str, Any]] = []         # the site's own XHR/fetch calls: what was asked, what came back (network.jsonl)
+        self.console: list[dict[str, Any]] = []         # everything the pages wrote to their console, and their uncaught errors with the stack (console.jsonl)
+        self._capture_tasks: set[Any] = set()           # reading call bodies (capture.bodies) happens beside the run: finished before the test ends
+        self.trace_dir: Path | None = None              # where capture.trace saves (the test's folder); None = no tracing (a build window never traces)
+        self.trace_keep = lambda: False                 # capture.trace "on_failure": did the test go wrong (the test runner sets it)
+        self.trace_files: list[str] = []                # the trace files this test saved (a new window = a new context = a new file)
+        self._tracing = False
         self._calls: dict[Any, dict[str, Any]] = {}      # per page: first-party XHR/fetch calls ("servlet calls") started / in flight
         self._nav: dict[Any, dict[str, Any]] = {}       # per page: documents loaded, a navigation in flight, the document already waited for
         self.typed: list[Any] = []                      # fields typed in the current run of typing steps (see actions.type_into)
@@ -205,6 +225,7 @@ class BrowserSession:
         self.context.set_default_timeout(self.cfg.timeouts.element_s * 1000)
         self.context.set_default_navigation_timeout(self.nav_timeout_s * 1000)
         await self.context.add_init_script(SETTLE_INIT_JS)
+        await self._start_trace()
         self.context.on("page", self._register_page)
         await self._add_bypass_cookie(url)
         page = await self.context.new_page()          # fires "page" -> registered
@@ -303,6 +324,7 @@ class BrowserSession:
         self._watch_calls(page)
         self._watch_activity(page)
         self._watch_hosts(page)
+        self._watch_console(page)
         page.on("crash", lambda *_: self.mark_infra("The browser tab crashed (the computer may have run out of memory)", "browser"))
         self.review.attach(page)
         page.on("dialog", self._on_dialog)
@@ -633,14 +655,45 @@ class BrowserSession:
                 return False
             return not include or any(p.search(url) for p in include)
 
-        def log(request, status, error: str = "") -> None:
+        def log(request, status, error: str = "") -> dict[str, Any] | None:
             t0 = st["t0"].pop(request, None)
             if len(self.network) >= 5000:
+                return None
+            entry = {"at": now_iso(), "step": self.review.step, "step_name": self.review.step_name,
+                     "method": request.method, "url": mask_url(request.url), "type": request.resource_type,
+                     "status": status, "ms": int((time.monotonic() - t0) * 1000) if t0 else None,
+                     "servlet": is_servlet_call(request), "error": error}
+            self.network.append(entry)
+            return entry
+
+        def body_wanted(request, status) -> bool:
+            mode = self.cfg.capture.bodies
+            if mode == "off":
+                return False
+            failed = status is None or status >= 400
+            return mode == "all" or failed or (mode == "servlets" and is_servlet_call(request))
+
+        async def keep_bodies(request, response, entry: dict[str, Any]) -> None:
+            # What the page sent and what the site answered, so "the server said 200 but refused the form" can be read (capture.bodies).  Beside the
+            # run, never in front of it: a body that cannot be read (the page moved on) is simply not kept.
+            limit = max(1, int(self.cfg.capture.body_max_kb)) * 1024
+            try:
+                sent = request.post_data or ""
+            except Exception:
+                sent = ""
+            if sent:
+                entry["request_body"] = mask_payload(sent, limit)
+            if response is None:
                 return
-            self.network.append({"at": now_iso(), "step": self.review.step, "step_name": self.review.step_name,
-                                 "method": request.method, "url": mask_url(request.url), "type": request.resource_type,
-                                 "status": status, "ms": int((time.monotonic() - t0) * 1000) if t0 else None,
-                                 "servlet": is_servlet_call(request), "error": error})
+            kind = (response.headers.get("content-type") or "").lower()
+            if kind and not re.search(r"json|xml|text|javascript|urlencoded|html", kind):
+                return
+            try:
+                body = await asyncio.wait_for(response.text(), 5)
+            except Exception:
+                return
+            if body:
+                entry["response_body"] = mask_payload(body, limit)
 
         def started(request) -> None:
             if not first_party(request):
@@ -686,7 +739,9 @@ class BrowserSession:
             request = response.request
             tracked = request in st["t0"]
             if tracked:
-                log(request, response.status)
+                entry = log(request, response.status)
+                if entry is not None and body_wanted(request, response.status):
+                    self._spawn_capture(keep_bodies(request, response, entry))
             t_auth = auth_t0.pop(request, None)
             if t_auth is not None and 400 <= response.status < 500:
                 try:
@@ -704,12 +759,112 @@ class BrowserSession:
         def failed(request) -> None:
             st["inflight"].discard(request)
             if request in st["t0"]:
-                log(request, None, str(request.failure or "failed"))
+                entry = log(request, None, str(request.failure or "failed"))
+                if entry is not None and body_wanted(request, None):
+                    self._spawn_capture(keep_bodies(request, None, entry))
 
         page.on("request", started)
         page.on("response", responded)
         page.on("requestfinished", finished)
         page.on("requestfailed", failed)
+
+    def _spawn_capture(self, coro) -> None:
+        try:
+            task = asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:
+            coro.close()
+            return
+        self._capture_tasks.add(task)
+        task.add_done_callback(self._capture_tasks.discard)
+
+    async def drain_captures(self, timeout: float = 3.0) -> None:
+        """Let the bodies still being read finish (they need the page open), without ever holding the end of a test up for long."""
+        pending = [t for t in self._capture_tasks if not t.done()]
+        if pending:
+            await asyncio.wait(pending, timeout=timeout)
+
+    def _watch_console(self, page) -> None:
+        """Everything the page writes to its console (``capture.console``), tagged with the step that was running: the log and warning lines that
+        say what a script was doing are as useful as its errors, and the uncaught error comes with its stack (which script, which line)."""
+        mode = self.cfg.capture.console
+        if mode == "off":
+            return
+
+        def on_console(msg) -> None:
+            if (mode == "errors" and msg.type != "error") or len(self.console) >= 5000:
+                return
+            loc = msg.location or {}
+            where = mask_url(loc.get("url", "")) + (f":{loc.get('lineNumber')}" if loc.get("url") and loc.get("lineNumber") is not None else "") if isinstance(loc, dict) else ""
+            self.console.append({"at": now_iso(), "step": self.review.step, "step_name": self.review.step_name, "level": msg.type,
+                                 "text": str(msg.text)[:1000], "where": where})
+
+        def on_pageerror(err) -> None:
+            if len(self.console) < 5000:
+                self.console.append({"at": now_iso(), "step": self.review.step, "step_name": self.review.step_name, "level": "pageerror",
+                                     "text": str(err)[:1000], "stack": str(getattr(err, "stack", "") or "")[:2000]})
+
+        page.on("console", on_console)
+        page.on("pageerror", on_pageerror)
+
+    # -- what the page holds (capture.state) ------------------------------------------------------------------
+    async def capture_state(self) -> dict[str, Any] | None:
+        """The form fields, storage and cookie names of the current window and its first-party frames right now, or None when the page cannot be
+        asked (no window, a dialog is open, it is mid-navigation, or it took longer than ``capture.state_budget_s``).  Looks only, changes nothing."""
+        cap = self.cfg.capture
+        page = self._current
+        if page is None or page.is_closed() or self.pending_dialog is not None:
+            return None
+
+        def registrable(url: str) -> str:
+            host = (urlparse(url).hostname or "").lower()
+            return (cookie_domains("http://" + host + "/")[0] if host else "").lstrip(".")
+
+        async def ask(frame):
+            return await asyncio.wait_for(frame.evaluate(STATE_JS, int(cap.state_max_fields)), 2.5)
+
+        async def gather() -> list[tuple[str, dict[str, Any]]]:
+            got = [("", await ask(page.main_frame))]
+            mine = registrable(page.url)
+            for i, frame in enumerate(page.frames):
+                if frame is page.main_frame or len(got) > 5 or not mine or registrable(frame.url) != mine:
+                    continue              # (another company's frame - a card form - is never read)
+                try:
+                    got.append((frame.name or f"frame{i}", await ask(frame)))
+                except Exception:
+                    continue
+            return got
+
+        try:
+            return flatten(await asyncio.wait_for(gather(), cap.state_budget_s))
+        except Exception:
+            return None
+
+    # -- trace (capture.trace) -----------------------------------------------------------------------------------
+    async def _start_trace(self) -> None:
+        if self.cfg.capture.trace == "off" or self.trace_dir is None or self.context is None:
+            return
+        try:
+            await self.context.tracing.start(screenshots=True, snapshots=True, sources=False)
+            self._tracing = True
+        except Exception as err:
+            self.review.flag("trace", f"The browser trace could not be started: {str(err).splitlines()[0][:160]}", "warning")
+
+    async def _stop_trace(self, context) -> None:
+        """End the trace of this window: saved as ``trace.zip`` (``trace-2.zip``...) when ``capture.trace`` says so, else thrown away."""
+        if not self._tracing or self.trace_dir is None:
+            return
+        self._tracing = False
+        mode = self.cfg.capture.trace
+        try:
+            if mode == "always" or (mode == "on_failure" and self.trace_keep()):
+                self.trace_dir.mkdir(parents=True, exist_ok=True)
+                name = "trace.zip" if not self.trace_files else f"trace-{len(self.trace_files) + 1}.zip"
+                await asyncio.wait_for(context.tracing.stop(path=str(self.trace_dir / name)), 30)
+                self.trace_files.append(name)
+            else:
+                await asyncio.wait_for(context.tracing.stop(), 15)
+        except Exception:
+            pass
 
     def _watch_hosts(self, page) -> None:
         """For measuring (``measure``), never for deciding anything: which other companies' servers the pages load (analytics, tag managers,
@@ -899,6 +1054,7 @@ class BrowserSession:
         if context is None:
             return
         self._closing = True                                    # from here a disconnect is our own doing, not a crash
+        await self._stop_trace(context)
         if browser is not None and self._on_disconnect is not None:
             try:
                 browser.remove_listener("disconnected", self._on_disconnect)

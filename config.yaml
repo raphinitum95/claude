@@ -83,6 +83,19 @@ captcha_bypass:
 auth:
   storage_state: .auth/state.json   # created by: regrunner auth login --url <UAT url>
 
+# What a test records of the browser session while it runs, so a failure can be traced back to where it began (Results tab > a test > "Session, step by step").
+# None of this changes how a test runs or what passes. Passwords, one-time codes, card numbers and secret-looking fields / storage are never recorded as text.
+capture:
+  console: all          # off | errors | all   the page's console messages (log / warn / info too), tests/<test>/console.jsonl
+  bodies: servlets      # off | errors | servlets | all   what the site's own calls sent and answered, kept in network.jsonl (servlets = waits.call_url_patterns)
+  body_max_kb: 8
+  state: changes        # off | changes | every_step   form fields (value, disabled, placeholder), storage and cookie names after each step, tests/<test>/state.jsonl
+                        # (also the source of the "switched-off field with nothing in it" warning)
+  state_max_fields: 300
+  state_budget_s: 3.0   # looking at the page never holds a step up longer than this
+  trace: off            # off | on_failure | always   a Playwright trace (tests/<test>/trace.zip; open with: python -m playwright show-trace trace.zip).
+                        # It holds everything that was typed, is NOT in the run's Download zip unless asked for, and recording it can slow a slow computer down.
+
 review:
   ignore_url_patterns: []           # regexes for URLs to leave out of "things to review"
   ignore_message_patterns: []

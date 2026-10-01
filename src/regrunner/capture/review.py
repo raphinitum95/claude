@@ -39,7 +39,7 @@ class ReviewCollector:
         self._add("console_error", kind="console", message=msg.text, url=url)
 
     def _on_pageerror(self, err) -> None:
-        self._add("console_error", kind="pageerror", message=str(err), url="")
+        self._add("console_error", kind="pageerror", message=str(err), url="", stack=str(getattr(err, "stack", "") or "")[:2000])
 
     def _on_requestfailed(self, request) -> None:
         failure = request.failure or ""

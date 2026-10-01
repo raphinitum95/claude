@@ -82,6 +82,8 @@ Test file names are in `tests/`. **fast** = no browser, seconds. **browser** = r
 | Flow keywords (SET_VARIABLE, IF/ELSE/END_IF, ITERATION_START/END, CALL_TEST, JSON_READ), `{NAME}` / `{SECRET:NAME}` in cells, the run's variable pool, `_rr_environments` (required vars refuse the run) | `workbook/variables.py`, `workbook/model.py` (`prepare_row`, `value_of`, `record`, `plan`), `engine/test_runner.py` (`FlowControl`, row loop jumps, `run_called`, masking), `engine/actions.py` (handlers), `engine/order.py` (Needs/Provides), `preflight.py` (`environment_problem`) | `test_flow_variables.py` (fast), `test_flow_keywords.py` (mock site + one web API check) |
 | One test's step loop: stop rules, captcha stop, blank params, skipped rows hint | `engine/test_runner.py` | `test_stop_after_failures.py`, `test_skipped_rows_hint.py`, `test_blank_params.py`, `test_captcha.py` |
 | P07 keywords: ASSERT_PAGE (page gate = hard stop), WAIT_UNTIL, DISMISS_IF_SHOWN, PICK_DATE, CHOOSE_SUGGESTION, CHECK_* (CHECK_LIST_ITEM: list must be visible, then item N); SIDE_EFFECTS steps (blocked on production, `TestRunner(side_effects="ask")` for build replays); BACKUP_LOCATORS (reported, never used) | `engine/actions.py` (handlers after "Safety steps", `side_effect_gate`, `probe_backup_locators`), `engine/checks.py`, `engine/gates.py`, `engine/outcome.py` (`StepOut.check/check_failed/stop/backup`), `selectors/spec.py` (`parse_backup_locators`), `engine/test_runner.py` (`_hard_stop`) | `test_checks.py` (fast), `test_engine_gates.py` (mock site `widgets.html`), `test_outcome.py` |
+| What a test records of the browser session: console at every step (all levels + page-error stacks), what the site's own calls sent and answered (`network.jsonl` bodies), form fields / storage / cookie names after each step (`state.jsonl`), the "disabled field with nothing in it" warning, Playwright trace (`capture:` in config.yaml) | `capture/state.py` (`STATE_JS`, `StateTracker`, `locked_without_value`, `replay`), `engine/session.py` (`_watch_console`, `keep_bodies` in `_watch_calls`, `mask_payload`, `capture_state`, `_start_trace`/`_stop_trace`, `drain_captures`), `engine/test_runner.py` (`_capture_state`, `_write_network_log`), `config.py` (`CaptureCfg`), `capture/review.py` (page-error stack) | `test_session_capture.py` (pure logic fast; one run on mock page `session_capture.html`), `test_keys_events_config.py`, `test_failure_capture.py` |
+| Download a run (`download.zip`), import one from another computer, a test's recorded session for the Results test page, the "Session, step by step" card | `web/run_share.py` (`build_download`, `plan_import`/`import_run` = every zip rule, `build_session`), `web/app.py` (`run_file` sandboxes an imported run's HTML), `web/static/js/views/results/session.js` (new), `results/{actions,history,test,api}.js`, `views/results.js` (Download run, Evidence rows, imported banner), `history.py`/`run_batch.py`/`scenario_api.py`/`workbook/builder.py` (`_imported_run`: imported runs are skipped) | `test_run_share.py`, `test_web_session.py`, `test_history.py`. **Restart UI** (app.py / run_share.py); JS: reload |
 | Failed-step evidence (detail, diagnosis, full-page screenshot, saved HTML) | `engine/failure_capture.py` | `test_failure_capture.py`, `test_full_page_screenshot.py` |
 | Excel formula / function (`VLOOKUP`, `TEXT`, `NUMBERVALUE`...) | `workbook/formula.py` (`@function("NAME")`), `workbook/textfmt.py` | `test_formula.py`, `test_lookup_totp.py` (fast) |
 | Workbook reading, token substitution, blnExecute, write-back, Params rows | `workbook/model.py`, `workbook/sheet.py` | `test_model.py` (fast), `test_blank_params.py`, `test_variables_set.py`, `test_real_workbook.py` (fast, skips without the file) |
@@ -172,6 +174,7 @@ src/regrunner/
   history.py    378+  `regrunner history`: all run folders as one record, what-changed markers, compare, CSV (never values typed/read);
                   `last_n_statuses`/`trend_verdict` (P06): one test's recent pass/fail trend, for the Results tab
   capture/review.py 88  console errors / failed requests collected for review
+  capture/state.py     the page's fields / storage after a step (`capture.state`): STATE_JS, StateTracker (diff lines + the empty-switched-off-field warning), replay
   engine/
     runner.py      823  orchestration: RunOptions, plan_run/open_run/announce_run, Engine (workers, retries, run_case), execute(_many)
     test_runner.py 460  TestRunner: one test row by row; masking; captcha gate; blank params; stop rules
@@ -219,6 +222,8 @@ src/regrunner/
     build_apitest.py  /api/build/api/* (P10): API test view, Send now, cURL / Postman reading, template list + fields (registered from build_api.py)
     run_batch.py  /api/batches/* routes (register_batch_routes: one line in create_app): groups runs that share a run.json batch_id, and
                   last-run-per-test durations for the Run plan's Timeline view. A batch is only a label - it never changes how a run executes.
+    run_share.py  run `download.zip`, `POST /api/runs/import` (zip rules: no `..`/absolute/links, size caps, one run per zip, marked `imported` in run.json, batch id dropped),
+                  `/api/results/runs/{id}/tests/{test}/session` (console / calls / state grouped by step); register_share_routes: one line in create_app
     results_api.py  /api/results/* routes (register_results_routes: one line in create_app): batch page (causes, trend, what changed,
                   re-run-failed makes a new labelled batch), test page (block map read fresh from the workbook + backup locators + this
                   test's history), compare. The heavy lifting (build_batch_page, rerun_plan, build_test_page, build_compare) takes plain
@@ -241,7 +246,7 @@ src/regrunner/
                   variables (the Variables screen: add / edit / rename / delete), dragsort (drag a step card, drag the selected bar; document listeners),
                   scenario (P12: `#/build/<wb>/scenario/<name>` board: lanes x blocks grid split by sync-line columns, order-marker chips,
                   inspector, last runs; the map's Scenarios cards and the rail's Scenarios list)}.js
-    static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen),batch,test,compare,index (header+screen dispatcher)}.js;
+    static/js/views/results/  the Results tab: {api,actions,history (rail + landing screen + the Import a run card),batch,test,compare,session (the test page's "Session, step by step" card),index (header+screen dispatcher)}.js;
                   results.js stays the single finished-run page opened from Run (`#/run/:id`); `#/results...` is the separate browsable tab
 
 tests/
@@ -270,7 +275,7 @@ Cloud sessions (claude.ai/code): `.claude/hooks/session-start.sh` builds `.venv`
 | Full suite (**only if the user asks**) | `.venv/bin/pytest -q` | 1042 tests, 40+ min |
 
 - Marker `browser` = needs Playwright (module-level `pytestmark` or per test); `realworkbook` = needs `workbooks/UAT_AEM_Travelex Regression_v9.1.xlsx` (skips otherwise).
-- Pure-logic files (all fast): `test_workbook_roundtrip -k "not real"`, `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
+- Pure-logic files (all fast): `test_session_capture.py` (all but the last three tests), `test_run_share.py`, `test_workbook_roundtrip -k "not real"`, `test_formula`, `test_lookup_totp`, `test_model`, `test_outcome`, `test_keys_events_config`, `test_py39_compat`, `test_totp_reuse`, `test_real_workbook`.
 - `test_web_*.py`, `test_e2e.py`, `test_multi_run.py` are the slow ones: use `-k` to pick the test for the screen/feature you changed.
 - Writing a new test: build a workbook with `tests/workbook_factory.py`, point it at the `site` fixture, add a mock page in `tests/site/`
   (and a route in `server.py` if it needs server behaviour). Name tests as sentences describing the behaviour. Keep them on the mock site.
@@ -482,7 +487,15 @@ Unverified: the Windows paths of `engine/resources.py` (ctypes; no Windows here)
 CANCELLED "Cancelled by user"; a test cancelled before it got a worker never starts: `not_run(status="CANCELLED")`). A run with a cancelled test and no failure ends `INCOMPLETE`.
 Dependents: `producer_failed` says "X was cancelled by the user"; chain-only waits behave as for any ended test. Unverified on real sites/work computer.
 
+**Done 2026-10-01: session capture + sharing runs** (from a cancelled run where the 2nd traveller's DOB stayed `DD/MM/YYYY`; the page had thrown `datepickerInit before
+initialization` at the quote page: separate site bug). `capture:` in config.yaml (console all levels, call bodies, `state.jsonl` after each step, trace opt-in); the disabled/read-only-but-empty warning
+(step note `Warning: ...`, review category `disabled_field_empty`); Results test page card "Session, step by step"; Download run (`/api/runs/{id}/download.zip`) and Import a run (Results tab). Unverified on the real
+sites: how much the per-step page read costs on the work computer (`capture.state: off` is the switch), trace overhead on slow machines, real calendars that fill a field through a widget.
+
 Gotchas:
+- Imported runs (`run.json` `imported: true`) must never feed this computer's own data: `history.load_runs`, `run_batch._scan_last_durations`, `scenario_api` and `builder._last_results` skip them; a new scanner of `runs/` must too.
+- `capture` never records a password field, a card-number / cvv / otp-looking field name, or secret-looking storage keys (JS says `(hidden)`), and masks the run's secrets over every line it writes; keep that when adding fields.
+  `trace.zip` is the exception (it holds what was typed), which is why the download leaves it out unless `?trace=1`.
 - `data-key` is the DOM patcher's (`morph.js`) identity attribute: never use it for action parameters (use `data-field`).
 - In `newrun.js`, `acts` = click handlers, `changes` = change handlers. morph.js never rewrites a focused input's value.
 - State-changing API calls need header `X-Requested-With: regrunner` and a local Host/Origin.

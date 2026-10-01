@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Session capture</title></head>
+<body>
+<h1>Traveller details</h1>
+<div class="form-group"><label for="fname">First name</label><input id="fname" name="fname" type="text"></div>
+<div class="form-group"><label for="dob2">Date of Birth</label><input id="dob2" name="dob2" type="text" placeholder="DD/MM/YYYY" disabled></div>
+<div class="form-group"><label for="dob1">Policy holder DOB</label><input id="dob1" name="dob1" type="text" value="28/01/2006" readonly></div>
+<div class="form-group"><label for="pw">Password</label><input id="pw" name="pw" type="password"></div>
+<div class="form-group"><label for="kind">Gender</label><select id="kind" name="kind"><option value="" disabled selected>Please select</option><option value="F">Female</option></select></div>
+<button id="save" type="button">Save</button>
+<div id="msg" class="error-message" style="display:none"></div>
+<script>
+  console.log('page loaded');
+  console.warn('quote widget not ready');
+  sessionStorage.setItem('quote', JSON.stringify({dob: '28/01/2006'}));
+  sessionStorage.setItem('authToken', 'should-not-be-recorded');
+  setTimeout(function () { throw new Error("Cannot access 'datepickerInit' before initialization"); }, 50);
+  document.getElementById('save').addEventListener('click', function () {
+    fetch('/bin/capture/submit', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({dob: document.getElementById('dob1').value, password: document.getElementById('pw').value})})
+      .then(function (r) { return r.json(); })
+      .then(function (d) { var m = document.getElementById('msg'); m.style.display = 'block'; m.textContent = d.message; });
+  });
+</script>
+</body></html>

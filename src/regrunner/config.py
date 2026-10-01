@@ -206,6 +206,36 @@ class ReviewCfg:
 
 
 @dataclass
+class CaptureCfg:
+    """What a test records of the browser session while it runs, so a failure 40 steps later can be explained from the run folder: what the page
+    said in its console, what its own server calls sent and answered, and what the form fields and the page's storage held after each step.
+    Nothing here changes how a test runs or what passes; secrets and password fields are masked everywhere (see capture/state.py)."""
+    console: str = "all"             # off | errors | all: the page's console messages (log / warn / info too, not only errors) -> tests/<test>/console.jsonl
+    bodies: str = "servlets"         # off | errors | servlets | all: the body each first-party call sent and got back -> network.jsonl (servlets = the
+                                     # calls waits.call_url_patterns names, "/bin/..." on AEM; errors = only 4xx / 5xx / failed ones)
+    body_max_kb: int = 8             # a body longer than this is cut
+    state: str = "changes"           # off | changes | every_step: form fields (value, disabled, placeholder), storage and cookie names after each step ->
+                                     # tests/<test>/state.jsonl (changes = the first look at a page in full, then only what changed)
+    state_max_fields: int = 300      # fields looked at per page (a huge page is cut)
+    state_budget_s: float = 3.0      # looking never holds a step up longer than this
+    trace: str = "off"               # off | on_failure | always: a Playwright trace (tests/<test>/trace.zip: DOM snapshots, console and network per action;
+                                     # open it with `playwright show-trace`). It holds everything typed, so it is NOT in the shared download unless asked
+
+    CHOICES = {"console": ("off", "errors", "all"), "bodies": ("off", "errors", "servlets", "all"), "state": ("off", "changes", "every_step"),
+               "trace": ("off", "on_failure", "always")}
+
+    def normalise(self) -> None:
+        """YAML reads a bare ``off`` as false: take it as the word it was meant to be, and refuse a value that is none of the choices."""
+        for key, allowed in self.CHOICES.items():
+            value = getattr(self, key)
+            if value is False:
+                value = "off"
+            if value not in allowed:
+                raise ValueError(f"config.yaml, capture.{key}: {value!r} is not one of {', '.join(allowed)}")
+            setattr(self, key, value)
+
+
+@dataclass
 class ReportCfg:
     html: bool = True
     pdf: bool = False
@@ -290,6 +320,7 @@ class Config:
     captcha_bypass: CaptchaCfg = field(default_factory=CaptchaCfg)
     auth: AuthCfg = field(default_factory=AuthCfg)
     review: ReviewCfg = field(default_factory=ReviewCfg)
+    capture: CaptureCfg = field(default_factory=CaptureCfg)
     reports: ReportCfg = field(default_factory=ReportCfg)
     publish: PublishCfg = field(default_factory=PublishCfg)
     api: ApiCfg = field(default_factory=ApiCfg)
@@ -411,6 +442,7 @@ def load_config(path: str | Path | None = None, base_dir: str | Path | None = No
     if cfg_path.is_file():
         raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
         _merge(cfg, expand_env(raw))
+    cfg.capture.normalise()
     try:
         cfg.browser.kind
     except browsers.BrowserError as err:

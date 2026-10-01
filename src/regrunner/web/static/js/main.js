@@ -22,7 +22,7 @@ import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
 const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...BV.acts, ...AR.acts };
-const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes, ...BV.changes };
+const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes, ...BV.changes, ...AR.changes };
 const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...SC.inputs, ...BV.inputs, ...AR.inputs };
 const enters = { ...A.enters, ...BV.enters };
 

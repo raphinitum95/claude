@@ -66,7 +66,9 @@ ${cmp ? html`<span>Expected</span><span class="mono" style="justify-self: start;
 ${s.error ? html`<span>Error</span><span style="overflow-wrap: anywhere">${s.error}</span>` : ''}
 ${s.locator ? html`<span>Locator</span><span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><span class="mono" style="font-size: 12px; overflow-wrap: anywhere">${s.locator}</span>${origin}</span>` : ''}</div>
 ${why(s)}
-${(s.notes || []).slice(0, 3).map((n) => html`<div style="font-size: 12.5px; color: var(--tx2)">${n}</div>`)}</div>${shot}</div>`;
+${[...(s.notes || []).filter((n) => n.startsWith('Warning:')), ...(s.notes || []).filter((n) => !n.startsWith('Warning:'))].slice(0, 4).map((n) => (n.startsWith('Warning:')
+    ? html`<div style="font-size: 12.5px; color: var(--warn); display: flex; gap: 7px"><span style="display: inline-flex; margin-top: 1px">${icon('warn', 14)}</span><span>${n.slice(9)}</span></div>`
+    : html`<div style="font-size: 12.5px; color: var(--tx2)">${n}</div>`))}</div>${shot}</div>`;
 }
 
 // Why a step failed: what the engine read from the page when it did (results.json `diagnosis`), and the browser's whole error behind the one line above.
@@ -105,7 +107,8 @@ ${bad && open ? html`<div style="padding: 4px 22px 22px; background: var(--surfa
 <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0">
 <span class="lbl" style="color: var(--fail)">${failedSteps.length ? `Failed steps · ${failedSteps.length}` : t.status}</span>
 <span class="mono" style="font-size: 11.5px; color: var(--tx3)">attempt ${t.attempt || 1} of ${retries + 1}</span>
-${v.files && v.files.report_html ? html`<a class="lnk" style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px" href="${runFileUrl(runId, 'report.html')}#t-${encodeURIComponent(t.id)}" target="_blank" rel="noopener">Open in the report ${icon('external', 13)}</a>` : ''}</div>
+<a class="lnk" style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px" href="#/results/test/${encodeURIComponent(runId)}/${encodeURIComponent(t.id)}">Session, step by step ${icon('chevr', 13)}</a>
+${v.files && v.files.report_html ? html`<a class="lnk" style="display: inline-flex; align-items: center; gap: 6px" href="${runFileUrl(runId, 'report.html')}#t-${encodeURIComponent(t.id)}" target="_blank" rel="noopener">Open in the report ${icon('external', 13)}</a>` : ''}</div>
 ${t.error ? banner(t.status === 'ERROR' ? 'fail' : 'warn', 'warn', t.error) : ''}
 ${shownFails.map((s) => failedStepCard(S, runId, s))}
 ${failedSteps.length > 5 ? html`<div style="margin-top: 14px"><button class="lnk" data-act="toggle-fails" data-id="${t.id}">${v.showAllFails[t.id] ? 'Show fewer' : `Show all ${failedSteps.length} failed steps`}</button></div>` : ''}</div>` : ''}</div>`;
@@ -160,8 +163,10 @@ ${files.report_html ? html`<a class="btn btn-pri" href="${runFileUrl(id, 'report
 ${files.report_pdf ? html`<a class="btn" href="${runFileUrl(id, 'report.pdf', true)}">${icon('file', 16)} PDF</a>` : html`<button class="btn ${v.buildingPdf ? 'busy' : ''}" data-act="build-pdf" data-id="${id}">${icon('file', 16)} ${v.buildingPdf ? 'Building PDF…' : 'Build PDF'}</button>`}
 ${failedIds.length ? html`<button class="btn" data-act="rerun-failed">${icon('undo', 16)} Re-run ${failedIds.length} failed test${failedIds.length === 1 ? '' : 's'}</button>` : ''}
 ${meta.command ? html`<button class="btn" data-act="copy-run-cmd">${icon('term', 16)} Copy command</button>` : ''}
+<a class="btn" href="/api/runs/${encodeURIComponent(id)}/download.zip" download>${icon('download', 16)} Download run</a>
 <button class="btn" style="color: var(--fail)" data-act="ask-delete-run" data-id="${id}" data-batch="${meta.batch_id || ''}">${icon('trash', 16)} Delete run</button></div></div>
 ${runBanners(S, pseudo, meta)}
+${meta.imported ? banner('acc', 'upload', html`<b>Imported run.</b> This run came from another computer${meta.imported_from && meta.imported_from !== id ? ` (it was ${meta.imported_from} there)` : ''}. It does not count in this computer's history, and the workbook and environment are theirs, not yours.`) : ''}
 ${r.partial ? banner('warn', 'warn', html`<b>Rebuilt from the event log.</b> This run stopped early; tests that were mid-flight are marked INTERRUPTED and repeat counts of review items restart at 1.`) : ''}
 <div style="display: grid; grid-template-columns: 1.05fr 1.15fr 1fr; gap: 20px" class="stats3">
 <section class="card" style="padding: 22px; display: flex; align-items: center; gap: 24px">
@@ -203,6 +208,8 @@ ${files.report_html ? evidenceRow('filetext', 'report.html', 'Self-contained evi
 ${files.report_pdf ? evidenceRow('file', 'report.pdf', 'The same report, printable', html`<a class="icon-btn" href="${runFileUrl(id, 'report.pdf', true)}" aria-label="Download report.pdf">${icon('download', 16)}</a>`) : ''}
 ${files.results ? evidenceRow('list', 'results.json', 'Every step, machine readable', html`<a class="icon-btn" href="${runFileUrl(id, 'results.json', true)}" aria-label="Download results.json">${icon('download', 16)}</a>`) : ''}
 ${files.workbook ? evidenceRow('grid', files.workbook, 'Copy of the workbook that ran', html`<a class="icon-btn" href="${runFileUrl(id, files.workbook, true)}" aria-label="Download the workbook copy">${icon('download', 16)}</a>`) : ''}
+${evidenceRow('download', `${id}.zip`, 'The whole run in one file (report, screenshots, saved pages, logs, workbook copy) to send to whoever helps investigate', html`<a class="icon-btn" href="/api/runs/${encodeURIComponent(id)}/download.zip" download aria-label="Download the whole run">${icon('download', 16)}</a>`)}
+${files.traces ? evidenceRow('file', 'browser trace', `${files.traces} trace file${files.traces === 1 ? '' : 's'} (DOM snapshots and network per action). It holds everything that was typed, so it is not in the download above`, html`<a class="icon-btn" href="/api/runs/${encodeURIComponent(id)}/download.zip?trace=1" download aria-label="Download the whole run with the browser trace">${icon('download', 16)}</a>`) : ''}
 ${evidenceRow('download', 'logs.zip', 'All logs of this run, to send to whoever investigates (no screenshots)', html`<a class="icon-btn" href="/api/runs/${encodeURIComponent(id)}/logs.zip" aria-label="Download the logs of this run">${icon('download', 16)}</a>`)}
 ${shots ? evidenceRow('image', 'tests/', `${num(shots)} screenshots plus named captures`, html`<button class="icon-btn" data-act="reveal" aria-label="Show the screenshots folder">${icon('folder', 16)}</button>`) : ''}</section>
 ${variablesCard(tests.flatMap((t) => finalVars(t.variables).map((x) => ({ test: t.id, ...x }))))}

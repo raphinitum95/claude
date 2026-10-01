@@ -9,4 +9,5 @@ export const runs = () => api('/api/runs');
 export const batchPage = (id) => api(`/api/results/batches/${enc(id)}`);
 export const rerunFailed = (id) => api(`/api/results/batches/${enc(id)}/rerun-failed`, { method: 'POST' });
 export const testPage = (runId, testId) => api(`/api/results/runs/${enc(runId)}/tests/${enc(testId)}`);
+export const session = (runId, testId) => api(`/api/results/runs/${enc(runId)}/tests/${enc(testId)}/session`);
 export const compare = (workbooks, n) => api(`/api/results/compare?workbooks=${enc(workbooks.join(','))}&n=${enc(n)}`);

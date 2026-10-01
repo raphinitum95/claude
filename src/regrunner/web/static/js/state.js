@@ -18,9 +18,9 @@ export const S = {
 export function freshResults() {
   return {
     screen: 'history',
-    history: { batches: null, loading: false, error: null, q: '', workbook: '', environment: '', status: '' },
+    history: { batches: null, loading: false, error: null, q: '', workbook: '', environment: '', status: '', imp: { busy: false, pct: 0, error: '', name: '' } },
     batch: { id: null, data: null, loading: false, error: null },
-    test: { runId: null, testId: null, run: null, page: null, loading: false, error: null, showAllFails: false },
+    test: { runId: null, testId: null, run: null, page: null, loading: false, error: null, showAllFails: false, session: null, sessionStep: null, sessionAll: false, sessionQuiet: false },
     compare: { workbooks: [], n: 8, data: null, loading: false, error: null },
   };
 }
