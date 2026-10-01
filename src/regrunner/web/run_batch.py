@@ -71,7 +71,7 @@ def _scan_last_durations(runs_dir: Path, names: set[str]) -> dict[str, dict[str,
         if not d.is_dir():
             continue
         meta = read_meta(d)
-        if not meta or meta.get("status") == "RUNNING":
+        if not meta or meta.get("status") == "RUNNING" or meta.get("imported"):   # (an imported run's times are another computer's)
             continue
         if _workbook_name(meta) in names:
             candidates.append((meta.get("started_at") or "", d))

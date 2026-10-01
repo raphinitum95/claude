@@ -109,6 +109,9 @@ class Handler(SimpleHTTPRequestHandler):
         return True
 
     def do_POST(self):
+        if self.path.startswith("/bin/capture/"):               # a servlet the session-capture page posts to: answers what it was sent
+            sent = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode("utf-8", "replace")
+            return self._json(200, {"message": "Sorry, we've encountered a system error", "received": sent, "password": "server-side-secret"})
         if not self._api("POST"):
             self.send_error(405)
 

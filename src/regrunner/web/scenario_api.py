@@ -27,7 +27,7 @@ def scenario_runs(runs_dir: Path, workbook: str, scenario: str, limit: int = 5) 
     want = scenario.strip().upper()
     for run_dir in sorted((p for p in runs_dir.iterdir() if p.is_dir() and not p.name.startswith(".")), key=lambda p: p.name, reverse=True):
         meta = read_meta(run_dir) or {}
-        if Path(str(meta.get("workbook") or "")).name.upper() != workbook.upper():
+        if meta.get("imported") or Path(str(meta.get("workbook") or "")).name.upper() != workbook.upper():
             continue
         try:
             data = json.loads((run_dir / "results.json").read_text(encoding="utf-8"))

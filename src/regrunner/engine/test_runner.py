@@ -27,6 +27,7 @@ from .ask import AskCancelled, AskTimeout, AskUnavailable
 from .cancel import cancel_reason
 from .failure_capture import capture_failure
 from .gates import SIDE_EFFECT_MODES
+from ..capture.state import StateTracker
 from .outcome import FAILED, PASSED, Verdict, evaluate
 from .patience import WaitNotice
 from .session import BrowserSession
@@ -194,6 +195,7 @@ class TestRunner:
         self._branch_skipped = 0                                  # planned steps an IF (or a loop with nothing to repeat) left out
         self.side_effects = side_effects if side_effects in SIDE_EFFECT_MODES else "run"   # SIDE_EFFECTS=Y steps: "ask" in a build-mode replay (P08)
         self._hard_stop = ""                                      # a failed step that ends the test (a page gate, a blocked side effect): why
+        self._state = StateTracker(cfg.capture.state) if cfg.capture.state in ("changes", "every_step") else None   # what the page held after each step (capture.state)
         self.lane = lane                                          # a lane of a concurrency scenario (engine/scenario.py LaneHook): waits at its sync points
         self._lane_stop = ""                                      # why the scenario stopped this lane (it gave up waiting for the others)
 
@@ -218,6 +220,14 @@ class TestRunner:
                                       devices=self._devices, throttle=self._throttle, cancel=self.cancel)
         self.session.notice = self.notice
         self.session.timing = self.timing
+        self.session.trace_dir = self.test_dir                    # capture.trace: kept when the test goes wrong (or always)
+        self.session.trace_keep = lambda: bool(self.result.failed) or self.result.status in ("FAILED", "ERROR", "CANCELLED", NOT_RUN)
+        if self._state is not None:
+            self._state = StateTracker(self.cfg.capture.state)    # (a new attempt starts from nothing: its own state.jsonl)
+            try:
+                (self.test_dir / "state.jsonl").unlink()
+            except OSError:
+                pass
         return self.session
 
     # -- helpers ------------------------------------------------------------------------------------
@@ -532,22 +542,44 @@ class TestRunner:
         return res
 
     def _write_network_log(self) -> None:
-        """``tests/<id>/network.jsonl``: every first-party XHR/fetch call of the test (method, path, status, ms, step)."""
-        calls = self.session.network if self.session is not None else []
-        if not calls:
-            return
+        """``tests/<id>/network.jsonl``: every first-party XHR/fetch call of the test (method, path, status, ms, step, and with ``capture.bodies``
+        what was sent and answered); ``console.jsonl``: everything its pages wrote to their console (``capture.console``)."""
+        hidden = self.hidden()
+        for name, rows in (("network.jsonl", self.session.network if self.session is not None else []),
+                           ("console.jsonl", self.session.console if self.session is not None else [])):
+            if not rows:
+                continue
+            try:
+                with (self.test_dir / name).open("w", encoding="utf-8") as fh:
+                    for row in rows:
+                        fh.write(mask_text(json.dumps(row, ensure_ascii=False), hidden) + "\n")
+            except OSError:
+                pass
+
+    async def _capture_state(self, step: PreparedStep, seq: int, failed: bool) -> list[dict[str, str]]:
+        """After a step: what the page's fields, storage and cookies hold, appended to ``state.jsonl`` (``capture.state``).  Returns the warnings for
+        this step: a field that is switched off and still shows nothing (the site was meant to fill it).  Looks only; never raises, never fails a step."""
+        session = self.session
+        if self._state is None or session is None or not session.is_open or self.cancel.is_set():
+            return []
         try:
-            with (self.test_dir / "network.jsonl").open("w", encoding="utf-8") as fh:
-                hidden = self.hidden()
-                for call in calls:
-                    fh.write(mask_text(json.dumps(call, ensure_ascii=False), hidden) + "\n")
-        except OSError:
-            pass
+            with self.timing.span("runner", "state"):
+                snap = await session.capture_state()
+            if snap is None:
+                return []
+            hidden = self.hidden()
+            line, warnings = self._state.observe(snap, seq=seq, row=step.row, name=step.name or step.method, failed=failed)
+            with (self.test_dir / "state.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(mask_text(json.dumps(line, ensure_ascii=False), hidden) + "\n")
+            return [{**w, "text": mask_text(w["text"], hidden)} for w in warnings]
+        except Exception:
+            return []
 
     async def _finish(self, started: float) -> None:
         result = self.result
         self.notice.end_all()
         if self.session is not None:
+            await self.session.drain_captures()
             await self.session.close()
             self._write_network_log()
         result.review = list(self.review.items)
@@ -823,6 +855,10 @@ class TestRunner:
             await ctx.release_handle()
         if self.session.infra:                                         # (a crash event can arrive a moment after the error it caused)
             return self._not_run_step(step, seq, ctx, t0, started_at)
+        if on_page:
+            for warning in await self._capture_state(step, seq, failed):
+                ctx.out.notes.append(f"Warning: {warning['text']}.")
+                self.review.flag("disabled_field_empty", warning["text"], "warning", field=warning["key"])
         timing = None
         if cfg.measure.timing:
             with self.timing.span("runner", "measuring"):

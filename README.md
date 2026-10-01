@@ -572,6 +572,25 @@ per workbook with the same verdicts and change markers.
 the Run tab shows, kept inside the Results tab), to its **HTML report** and PDF (only when those files exist), and to delete.
 A test page has an **HTML report** button that opens the report at that test.
 
+**Session, step by step.** A test page also has a card that shows, for every step, what the page held at that moment: what it wrote to
+its **console** (log and warning lines as well as errors; an uncaught error comes with its stack), which of the site's own **server calls**
+ran with what was **sent and answered** (so "200 but the form was refused" can be read), the **form fields** that changed in that step
+(value, disabled / read-only, placeholder) with a button to show every field as it stood, what is in **storage**, and any message the page
+was showing. A field that is **disabled or read-only but empty** (or shows only its placeholder, such as the second traveller's
+`DD/MM/YYYY`) gets a **warning** on that step: the site fills such a field itself, so an empty one means that did not happen. The
+warning is on the step's notes, in *Things to review*, in the HTML report and on that card; it never changes pass or fail. It is said once
+when it first appears, and again on a step that failed. What is recorded is set by `capture:` in `config.yaml`
+(`tests/<test>/console.jsonl`, `network.jsonl`, `state.jsonl`; secrets, password fields and card-number fields are never recorded as
+text). `capture.trace` can also keep a Playwright trace (`trace.zip`, open it with `python -m playwright show-trace trace.zip`) for a
+deeper look; it holds everything that was typed, so it is left out of the Download unless asked for.
+
+**Sharing a run.** **Download run** (on a run's page and on a test page) saves the whole run folder as one zip: the report,
+`results.json`, every screenshot, the saved pages, the session logs above and the workbook copy. Send it to whoever helps. **Import a run**
+(Results tab, left side or the landing page) takes such a zip, or the smaller `logs.zip`, and opens it here as an *imported* run: it
+never counts in this computer's history, trends, "failed last run" marks or time estimates, and its HTML is shown sandboxed. Nothing in a
+zip from another person is trusted (paths are checked, sizes are capped, links are skipped). A run with the same name as one you already
+have is stored as `<name>-imported`.
+
 **Deleting.** A finished run has a **Delete run** button on its page, a batch page has **Delete batch**, and each run's chip
 on a batch page has its own trash button, so one run can be removed from inside a batch (the batch keeps the rest and goes
 when its last run does). Each asks first. The run folders are moved to `runs/.trash/` (not erased), so a mistake can be
@@ -597,11 +616,11 @@ Build tab: `GET|POST /api/build/workbooks` `GET /api/build/workbooks/{name}[/sta
 `GET /api/build/api/{name}/tests/{test}|templates[/fields]` `POST /api/build/api/send|curl|postman`
 Build window: `GET /api/build/session/{name}[?since=]` `POST /api/build/session/{name}/start|pick|which|choose|variable|use|run-to-here|run-step|run-next|stop|answer|close|record|check|save|prompt`
 Results tab: `GET /api/batches` `DELETE /api/batches/{id}` `DELETE /api/runs/{id}` `POST /api/batches/last-durations` `GET /api/results/batches/{id}` `POST /api/results/batches/{id}/rerun-failed`
-`GET /api/results/runs/{id}/tests/{test}` `GET /api/results/compare`
+`GET /api/results/runs/{id}/tests/{test}[/session]` `GET /api/results/compare` `GET /api/runs/{id}/download.zip[?trace=1]` `POST /api/runs/import`
 
 ## Evidence (`runs/<run-id>/`)
 
-`events.jsonl` (the live stream) · `results.json` (everything, machine readable) · `report.html` (single
+`events.jsonl` (the live stream) · `tests/<test>/console.jsonl`, `network.jsonl` (with what was sent and answered), `state.jsonl` (fields and storage after each step; see *Session, step by step*) · `results.json` (everything, machine readable) · `report.html` (single
 self-contained file: every step with result, timestamps, locator used, expected/actual, embedded screenshot, plus the
 *Things to review* section) · `report.pdf` (`--pdf`) · `tests/<test>/screenshots/*.jpg` and `named/*` (explicit
 `SCREENSHOT` steps) · `workbook.xlsx` (a copy of what ran) · `resources.jsonl` (what the computer went through, see *Where the time went*). Console errors, uncaught page exceptions, failed requests and

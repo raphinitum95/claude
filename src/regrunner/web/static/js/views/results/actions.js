@@ -1,7 +1,7 @@
 // Everything the Results tab can do: load the history list / batch page / test page / compare, and re-run a
 // batch's failures. Merged into the app's data-act / data-change / data-input tables by main.js.
 import { S, rerender } from '../../state.js';
-import { api as rawApi } from '../../api.js';
+import { api as rawApi, upload } from '../../api.js';
 import { loadRuns, openBatch } from '../../actions.js';
 import { toast } from '../../util.js';
 import { jumpToStep } from '../build/actions.js';
@@ -49,10 +49,11 @@ async function loadBatch(id) {
 async function loadTest(runId, testId) {
   const t = S.results.test;
   t.runId = runId; t.testId = testId; t.run = null; t.page = null; t.showAllFails = false;
+  t.session = null; t.sessionStep = null; t.sessionAll = false;
   t.loading = true; t.error = null; rerender();
   try {
-    const [run, page] = await Promise.all([rawApi(`/api/runs/${enc(runId)}`), api.testPage(runId, testId)]);
-    t.run = run; t.page = page;
+    const [run, page, session] = await Promise.all([rawApi(`/api/runs/${enc(runId)}`), api.testPage(runId, testId), api.session(runId, testId).catch(() => null)]);
+    t.run = run; t.page = page; t.session = session;
   } catch (e) { t.error = e; }
   t.loading = false; rerender();
 }
@@ -133,8 +134,34 @@ async function confirmDeleteRuns() {
   await afterDelete(m);
 }
 
+// ---- import a run another computer sent (a run's Download zip) -----------------------------------------------------------------------
+async function importRun(file) {
+  const imp = S.results.history.imp;
+  if (imp.busy) return;
+  Object.assign(imp, { busy: true, pct: 0, error: '', name: file.name });
+  rerender();
+  try {
+    const res = await upload('/api/runs/import', file, { onProgress: (p) => { imp.pct = p; rerender(); } });
+    imp.busy = false;
+    await loadRuns().catch(() => {});
+    toast(res.renamed ? `Imported as ${res.run_id} (you already have a run called ${res.original_run_id}).` : `Imported ${res.run_id}.`, 5000);
+    location.hash = resultsUrl('run', res.run_id);
+  } catch (e) {
+    imp.busy = false;
+    imp.error = e.message;
+    rerender();
+  }
+}
+
+export const changes = {
+  'results-import-file'(el) { const file = el.files && el.files[0]; el.value = ''; if (file) importRun(file); },
+  'results-session-quiet'(el) { S.results.test.sessionQuiet = el.checked; rerender(); },
+};
+
 export const acts = {
   'results-tab'() { location.hash = '#/results'; },
+  'results-session-step'(el) { const t = S.results.test; t.sessionStep = Number(el.dataset.seq); t.sessionAll = false; rerender(); },
+  'results-session-all'() { S.results.test.sessionAll = !S.results.test.sessionAll; rerender(); },
   'ask-delete-run'(el) { askDeleteRun(el.dataset.id, el.dataset.batch); },
   'ask-delete-batch'(el) { askDeleteBatch(el.dataset.id); },
   'confirm-delete-runs': confirmDeleteRuns,

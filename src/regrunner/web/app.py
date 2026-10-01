@@ -48,6 +48,7 @@ from ..workbook.model import Workbook
 from .build_api import register_build_routes
 from .presence import UiPresence
 from .results_api import register_results_routes
+from .run_share import register_share_routes
 from .run_batch import register_batch_routes
 from .templates_api import register_templates_routes
 from .refactor_api import register_refactor_routes
@@ -810,6 +811,7 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
     build_store = register_build_routes(app, mgr)           # /api/build/*: the Workbook Builder (web/build_api.py)
     register_batch_routes(app, mgr)                        # /api/batches/*: batch grouping and last-run estimates (web/run_batch.py)
     register_results_routes(app, mgr)                       # /api/results/*: causes, trend, block map, compare (web/results_api.py)
+    register_share_routes(app, mgr)                         # run download.zip, import, a test's recorded session (web/run_share.py)
     register_templates_routes(app, mgr, build_store)        # /api/build/templates*: the shared template library (web/templates_api.py)
     register_refactor_routes(app, mgr, build_store)         # duplicate/find-replace/merge (web/refactor_api.py)
     register_scenario_routes(app, mgr, build_store)         # /api/build/workbooks/{name}/scenarios*: concurrency scenarios (web/scenario_api.py)
@@ -1104,7 +1106,8 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
         files = {"report_html": (run_dir / "report.html").is_file(), "report_pdf": (run_dir / "report.pdf").is_file(),
                  "results": results.is_file(), "workbook": next((p.name for p in run_dir.glob("workbook.*")), None),
                  "suggestions": (run_dir / "selector_suggestions.json").is_file(),
-                 "screenshots": sum(1 for _ in (run_dir / "tests").rglob("*.jpg")) if (run_dir / "tests").is_dir() else 0}
+                 "screenshots": sum(1 for _ in (run_dir / "tests").rglob("*.jpg")) if (run_dir / "tests").is_dir() else 0,
+                 "traces": sum(1 for _ in (run_dir / "tests").rglob("trace*.zip")) if (run_dir / "tests").is_dir() else 0}
         return {"meta": meta, "active": meta["active"], "files": files,
                 "results": json.loads(results.read_text(encoding="utf-8")) if results.is_file() else None}
 
@@ -1239,7 +1242,11 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
         target = (base / path).resolve()
         if not target.is_relative_to(base) or not target.is_file():
             raise ApiError(404, "file not found", "not_found")
-        return FileResponse(target, filename=target.name if download else None)
+        response = FileResponse(target, filename=target.name if download else None)
+        if target.suffix.lower() in (".html", ".htm", ".svg") and (read_meta(base) or {}).get("imported"):
+            # A page that came in a zip from another computer is not ours: its scripts may run, but not as this interface (no way to call the API).
+            response.headers["Content-Security-Policy"] = "sandbox allow-scripts"
+        return response
 
     @app.websocket("/ws/runs/{run_id}")
     async def ws_run(ws: WebSocket, run_id: str):

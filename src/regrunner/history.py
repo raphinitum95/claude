@@ -115,6 +115,8 @@ def load_runs(runs_dir: Path, workbook: str | None = None) -> list[Run]:
             meta = json.loads((results.parent / "run.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             meta = {}
+        if meta.get("imported"):                       # a run brought in from another computer to look at: never part of this one's trends
+            continue
         run = Run(run_id=str(data.get("run_id") or results.parent.name), dir=results.parent, data=data, meta=meta)
         if workbook and workbook.lower() not in run.workbook.lower():
             continue

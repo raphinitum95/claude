@@ -413,6 +413,14 @@ def _data_rows(grid: _Grid | None, label_headers: Iterable[str] = ("NOTES", "SCE
     return out
 
 
+def _imported_run(folder: Path) -> bool:
+    """A run folder brought in from another computer (web/run_share.py): its failures are not this computer's, so the builder's "failed last run" ignores it."""
+    try:
+        return bool(json.loads((folder / "run.json").read_text(encoding="utf-8")).get("imported"))
+    except (OSError, ValueError):
+        return False
+
+
 def _last_results(runs_dir: Path | None, workbook_name: str) -> tuple[dict[tuple[str, int], dict], dict[str, dict]]:
     """Latest result of every step of this workbook, ``{(SHEET, row): {...}}``, plus the latest run of each test (Q32/33).
     Reads the newest 20 ``runs/*/results.json`` of this workbook; a later run that passes a step clears its failure."""
@@ -423,7 +431,7 @@ def _last_results(runs_dir: Path | None, workbook_name: str) -> tuple[dict[tuple
     files = []
     for folder in Path(runs_dir).iterdir():
         f = folder / "results.json"
-        if f.is_file():
+        if f.is_file() and not _imported_run(folder):
             files.append((f.stat().st_mtime_ns, f))
     files.sort(reverse=True)
     seen = 0

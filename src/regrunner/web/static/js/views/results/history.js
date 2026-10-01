@@ -3,6 +3,7 @@ import { html } from '../../util.js';
 import { icon } from '../../icons.js';
 import { dur, isToday, plural } from '../../fmt.js';
 import { S } from '../../state.js';
+import { banner } from '../shell.js';
 import { resultsUrl } from './actions.js';
 
 function testsLabelOf(r) {
@@ -25,7 +26,7 @@ function mergedItems() {
     kind: 'run', id: r.run_id, started_at: r.started_at, workbooks: [baseNameOf(r.workbook)], environment: r.environment, active: r.active,
     title: r.run_id, sub: `${baseNameOf(r.workbook)} · ${testsLabelOf(r)}`,
     verdict: r.active ? 'run' : r.status === 'PASSED' ? 'pass' : 'fail',
-    tag: r.active ? 'running' : r.status.toLowerCase() + (r.duration_s != null ? ` · ${dur(r.duration_s)}` : ''),
+    tag: r.active ? 'running' : r.status.toLowerCase() + (r.duration_s != null ? ` · ${dur(r.duration_s)}` : '') + (r.imported ? ' · imported' : ''),
   }));
   return [...batches, ...solo].sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
 }
@@ -74,6 +75,8 @@ ${envs.map((e) => html`<button class="tag ${h.environment === e ? 'tag-acc' : ''
 <button class="tag ${h.status === 'fail' ? 'tag-fail' : ''}" data-act="results-toggle-filter" data-field="status" data-val="fail">${icon('warn', 11)} Failed only</button>
 </div>
 <a class="btn btn-sm" href="${resultsUrl('compare')}" style="text-decoration: none">${icon('grid', 13)} Compare runs</a>
+<label class="btn btn-sm ${h.imp.busy ? 'busy' : ''}" for="results-import-input" style="cursor: pointer">${icon('upload', 13)} ${h.imp.busy ? `Importing… ${Math.round(h.imp.pct * 100)}%` : 'Import a run'}</label>
+<input id="results-import-input" class="sr" type="file" accept=".zip" data-change="results-import-file" aria-label="Choose a run zip to import">
 ${items.length ? html`${group('Today', today)}${group('Earlier', earlier)}` : html`<div style="border: 1.5px dashed var(--line2); border-radius: 13px; padding: 20px 14px; text-align: center">
 <div style="color: var(--tx3); display: inline-flex">${icon('clock', 24)}</div><div style="font-weight: 650; margin-top: 8px">Nothing here yet</div>
 <div style="font-size: 12.5px; color: var(--tx2); margin-top: 2px">${all.length ? 'No batch or run matches this filter.' : 'Finished runs and batches show up here.'}</div></div>`}
@@ -92,5 +95,13 @@ export function historyView(S) {
 <p style="color: var(--tx2)">Search or filter on the left, or jump into the most recent one below.</p>
 ${picked ? html`<a class="btn btn-pri" style="margin: 10px auto; text-decoration: none" href="${itemUrl(picked)}">${icon('external', 15)} Open ${picked.title}</a>` : ''}
 <a class="btn" style="margin: 6px auto; text-decoration: none" href="${resultsUrl('compare')}">${icon('grid', 15)} Compare runs across workbooks</a>
+<section class="card" style="text-align: left; padding: 16px 18px; margin-top: 26px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 14px">
+<span style="color: var(--acc); display: inline-flex">${icon('upload', 22)}</span>
+<div style="flex: 1; min-width: 0"><div class="ttl" style="font-size: 15px">Look at someone else's run</div>
+<div style="font-size: 12.5px; color: var(--tx2)">Choose the .zip from a run's Download button (the smaller logs.zip works too). It opens here as an imported run and never counts in this computer's history.</div></div>
+<label class="btn btn-pri ${h.imp.busy ? 'busy' : ''}" for="results-import-input" style="cursor: pointer; flex: none">${icon('upload', 15)} ${h.imp.busy ? `Importing ${h.imp.name}…` : 'Import a run'}</label></div>
+${h.imp.busy ? html`<div class="bar"><div style="width: ${Math.round(h.imp.pct * 100)}%"></div></div>` : ''}
+${h.imp.error ? banner('fail', 'failc', h.imp.error) : ''}</section>
 </div>`;
 }

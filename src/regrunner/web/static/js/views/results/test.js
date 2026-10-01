@@ -7,6 +7,7 @@ import { banner } from '../shell.js';
 import { failedStepCard } from '../results.js';
 import { resultsUrl } from './actions.js';
 import { trendStrip } from './batch.js';
+import { sessionCard } from './session.js';
 
 function fixInBuilder(wb, testSheet, row, label = 'Fix in builder', cls = 'btn btn-pri') {
   return html`<button class="${cls}" data-act="results-fix-in-builder" data-wb="${wb}" data-test="${testSheet}" data-row="${row || ''}">${icon('pencil', cls.includes('btn-sm') ? 12 : 14)} ${label}</button>`;
@@ -71,8 +72,10 @@ ${banner('fail', 'failc', t.error.message)}</div>`;
 <span class="mono" style="font-size: 12.5px; color: var(--tx3)">${wb} · ${meta.environment || ''} · ${dur(test.duration_s)}${test.ended_at ? ' · ' + timeOf(test.ended_at) : ''}</span>
 </div><span style="flex-grow: 1"></span>${pill(test.status)}
 ${t.run.files && t.run.files.report_html ? html`<a class="btn" href="${runFileUrl(t.runId, 'report.html')}#t-${encodeURIComponent(t.testId)}" target="_blank" rel="noopener" style="text-decoration: none">${icon('external', 14)} HTML report</a>` : ''}
+<a class="btn" href="/api/runs/${encodeURIComponent(t.runId)}/download.zip" download style="text-decoration: none">${icon('download', 14)} Download run</a>
 ${fixInBuilder(wbFile, testSheet, failedSteps[0] && failedSteps[0].row)}
 </div>
+${meta.imported ? banner('acc', 'upload', html`<b>Imported run.</b> It came from another computer, so "Fix in builder" and the block map may not match your workbook.`) : ''}
 <section class="card" style="padding: 14px; display: flex; flex-direction: column; gap: 10px">
 <span class="lbl">Where it stopped</span>${blockMap(t.page.blocks)}
 </section>
@@ -90,5 +93,6 @@ ${t.page.history.length ? trendStrip(t.page.history) : html`<span style="font-si
 <a class="lnk" style="font-size: 12.5px" href="${resultsUrl('compare')}">Compare with other tests</a>
 </section>
 </div></div>
+${sessionCard(t, test)}
 </div>`;
 }
