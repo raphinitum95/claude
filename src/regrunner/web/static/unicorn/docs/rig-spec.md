@@ -54,18 +54,19 @@ Hidden overlap art (so parts rotate without gaps): ears extend into the head; lo
 chest; legs run up under the torso; `tail` has a hidden lilac disc at its root; the head's lower edge sits over the neck; the lid is wider than the eye so it also
 covers the outer lashes when shut.
 
-## 2b. Shading (light comes from the upper left)
+## 2b. Shading (light comes from the upper left; soft, cheap, less is more)
 
-Shading lives INSIDE each part's own group, so a part keeps its shading when it moves (the left leg is still `front-leg-left`; its darker right side is part of it).
-Every shading element has class `shade`:
+Shading lives INSIDE each part's own group, so a part keeps its shading when it moves. Every shading element has class `shade`. No filters, no masks, no stacked hard edges:
 
-- **Overlays**: the part's own outline filled with a gradient that fades from clear to a deep tint on the far (right / lower) side. Gradients: `gRimBody`, `gRimHair`
-  (radial, darker rim), `gSideBody`, `gSideHair` (horizontal, darker right side), `gBottomBody` (darker toward the bottom). Skin tint `#A98FC2`, hair tint `#8A58AE`.
-- **Cast shadows** (no SVG filter): 2 to 4 stacked, widening strokes of the caster's outline, drawn UNDER the caster inside its group. Legs and hooves cast onto the torso
-  and haunches; the fringe casts onto the face and horn; the lilac / teal tail strands cast onto the strand behind. Each is wrapped in a `clip-path` of the surface it may fall on
-  (`cpLegCast` = torso + haunches, `cpFace` = head + horn, `cpTailPink`, `cpTailLilac`) so it can never leave a halo on the background. The clip travels with the group when it moves.
+- **Overlays**: the part's own outline filled with a gradient that fades from clear to a faint tint on the far (right / lower) side: `gRimBody`, `gRimHair` (radial rim),
+  `gSideBody`, `gSideHair` (horizontal), `gBottomBody` (bottom). Skin tint `#A98FC2` (at most 0.34), hair tint `#8A58AE` (at most 0.18).
+- **Soft blobs** (`gBlob`, `gChin`, `gMuzzle`): ovals filled with a radial gradient that fades to nothing on EVERY side, so they have no edge. Used for the chin shadow on the chest,
+  the muzzle highlight and the shade on each front leg's far edge (kept inside its own leg so the neighbouring leg never cuts it off).
+- **The front legs have the same fill as the torso** (`gBody`), so there is no visible line where a leg starts; they read as legs only through the soft blob shade and the ankle shade.
+  Do not add rim overlays, outlines or hard-edged shapes to the torso or legs: that is what made the legs look like separate objects.
+- **One faint cast shadow** remains: the fringe onto the face and horn (two very light stacked strokes, clipped by `cpFace` so it never lands on the background).
 - **Contact shadows**: four small dark ellipses under the hooves in `shadow`, on top of the soft ground shadow.
-- **One knob**: `#unicorn { --shade-strength: 1 }` scales every `.shade` element (0 = flat, 1 = as drawn, about 1.5 = stronger). Change it from CSS or `style.setProperty`.
+- **One knob**: `#unicorn { --shade-strength: 1 }` scales every `.shade` element (0 = flat, 1 = as drawn, about 1.5 = stronger).
 
 ## 3. Pivot table (CSS `transform-origin`, user units)
 

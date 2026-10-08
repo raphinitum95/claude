@@ -52,3 +52,12 @@
 - **Hair shading is lighter than skin shading** (about 0.3 vs 0.55 at the darkest). Why: at skin strength the pastel mane went grey.
 - **Light comes from the upper left; `--shade-strength` (CSS variable on `#unicorn`) scales all shading**, so "more / less shading" is one number. Hooves got a tight dark contact shadow.
 - Not done: no shading on the horn beyond its own gradient, none inside the mane locks beyond rim + side tint, and no separate "highlight" layer system; say so if you want more.
+
+## 2026-10-08 (feedback round 2: shading too rough; soft but cheap)
+
+- **Front legs use the torso's own fill and have no visible start.** Why (user): the leg shading was "too rough, particularly where the leg meets the chest, it makes the leg seem like a separate entity".
+  Cause: a lighter leg fill, rim overlays, rounded tops and stacked cast shadows drew an outline round each leg. Now the legs are only shaded by a soft oval on the far edge and a faint ankle shade.
+- **Soft ovals instead of slivers.** A first try with tapered slivers left hard diagonal edges (spikes). A radial oval that fades to nothing on all sides has no edge, and sits inside its own leg so the other leg's fill never cuts it.
+- **Jaw band under the mouth removed, muzzle highlight now fades out, head rim lighter.** Why (user): "the snout is too rough, it feels like she's got a beard". The band under the mouth was the beard.
+- **Stacked-stroke cast shadows removed** from legs, hooves and tail (they banded); one very faint one stays under the fringe. Torso rim overlay and the haunch crease lines removed.
+- **All shade strengths roughly halved** (skin rim 0.55 to 0.30, hair rim 0.30 to 0.18, side 0.62 to 0.34, hair side 0.26 to 0.16, bottom 0.40 to 0.22). Chosen approach: "soft but cheap" (no blur filter).
