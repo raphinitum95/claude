@@ -32,8 +32,8 @@ coloured (it shares the head's user-space gradient so it matches exactly) and ca
 | `shadow` | soft contact shadow ellipse | scale it with a bounce (squash and stretch) |
 | `tail` | three ribbons: pink, lilac, teal | root hidden under the right haunch; sways about the base |
 | `mane-back` | mass of mane behind the head and shoulders | mostly hidden; keeps gaps from showing when the head moves |
-| `body` | torso + both haunches + hind hooves + the sitting shadow | hind hooves are part of `body` (no own id) |
-| `neck` | neck + chin shadow | overlaps the chest and goes under the head |
+| `body` | torso + both haunches + hind hooves + chin shadow + the crease between the legs | hind hooves are part of `body` (no own id) |
+| `neck` | neck (drawn BEFORE `body`: the torso covers its lower end, so there is no hard edge) | goes under the head and the body |
 | `front-leg-left`, `front-leg-right` | front legs, each contains its hoof | `hoof-left` / `hoof-right` nested inside |
 | `chest-heart` | small pink heart | drawn after the legs so they never cover it |
 | `head-rig` | WRAPPER: everything that follows moves with the head | rotate / translate this for nods and head turns |
@@ -53,6 +53,19 @@ coloured (it shares the head's user-space gradient so it matches exactly) and ca
 Hidden overlap art (so parts rotate without gaps): ears extend into the head; locks start under the head and fringe; the neck runs under the head and over the
 chest; legs run up under the torso; `tail` has a hidden lilac disc at its root; the head's lower edge sits over the neck; the lid is wider than the eye so it also
 covers the outer lashes when shut.
+
+## 2b. Shading (light comes from the upper left)
+
+Shading lives INSIDE each part's own group, so a part keeps its shading when it moves (the left leg is still `front-leg-left`; its darker right side is part of it).
+Every shading element has class `shade`:
+
+- **Overlays**: the part's own outline filled with a gradient that fades from clear to a deep tint on the far (right / lower) side. Gradients: `gRimBody`, `gRimHair`
+  (radial, darker rim), `gSideBody`, `gSideHair` (horizontal, darker right side), `gBottomBody` (darker toward the bottom). Skin tint `#A98FC2`, hair tint `#8A58AE`.
+- **Cast shadows** (no SVG filter): 2 to 4 stacked, widening strokes of the caster's outline, drawn UNDER the caster inside its group. Legs and hooves cast onto the torso
+  and haunches; the fringe casts onto the face and horn; the lilac / teal tail strands cast onto the strand behind. Each is wrapped in a `clip-path` of the surface it may fall on
+  (`cpLegCast` = torso + haunches, `cpFace` = head + horn, `cpTailPink`, `cpTailLilac`) so it can never leave a halo on the background. The clip travels with the group when it moves.
+- **Contact shadows**: four small dark ellipses under the hooves in `shadow`, on top of the soft ground shadow.
+- **One knob**: `#unicorn { --shade-strength: 1 }` scales every `.shade` element (0 = flat, 1 = as drawn, about 1.5 = stronger). Change it from CSS or `style.setProperty`.
 
 ## 3. Pivot table (CSS `transform-origin`, user units)
 

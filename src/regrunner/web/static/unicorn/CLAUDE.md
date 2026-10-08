@@ -68,7 +68,9 @@ chibi), eyes 57 x 64 each at x = 270 +/- 64, y = 262; muzzle at y = 295, mouth a
 - Pivots are set with CSS `transform-origin` in user units (viewBox space) inside the SVG's `<style>`; the table is in the spec.
 - Hidden overlap art under every joint so rotating a part never shows a gap.
 - Eye / brow / mouth / ear / effect states are `data-*` attributes on `#unicorn`; CSS in the SVG does the show/hide. No JS in the SVG.
-- Keep it light: gradients and plain shapes only. No SVG filters or masks inside the rig (they are costly when animated).
+- Keep it light: gradients and plain shapes only. No SVG filters or masks inside the rig (they are costly when animated). `clipPath` is allowed only to keep a static cast shadow on the surface it falls on.
+- Shading: every shade overlay / cast shadow has class `shade` and sits inside its own part's group; light is from the upper left; `--shade-strength` scales it all (see rig-spec section 2b).
+- Eyes: the white of the eye stays visible; the iris is about 75 % of the eye (a full-eye iris looked alien).
 
 ## Performance rules for Phase 2 (the QA app runs several test workers on the same machine)
 

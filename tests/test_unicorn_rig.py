@@ -75,3 +75,26 @@ def test_the_preview_page_is_up_to_date_and_knows_the_six_moods() -> None:
         mapping = build["MOODS"][mood]
         for value in (mapping["eyes"], mapping["brows"], mapping["mouth"], mapping["ears"]):
             assert f"`{value}`" in row, f"rig-spec.md row for {mood} disagrees with MOODS ({value})"
+
+
+def test_every_visible_part_carries_its_own_shading_and_one_css_knob_scales_it() -> None:
+    root = _tree()
+    shaded = {}
+    for g in root.iter(SVG_NS + "g"):
+        if g.get("id"):
+            shaded[g.get("id")] = sum(1 for el in g.iter() if "shade" in (el.get("class") or "").split())
+    for part in ["body", "head", "ear-left", "ear-right", "tail", "mane-front", "front-leg-left", "front-leg-right", "hoof-left", "hoof-right",
+                 "mane-lock-1", "mane-lock-2", "mane-lock-3", "mane-lock-4", "mane-lock-5", "mane-lock-6"]:
+        assert shaded[part] >= 1, f"#{part} has no shade overlay"
+    css = "".join(el.text or "" for el in root.iter(SVG_NS + "style"))
+    assert "--shade-strength" in css and re.search(r"\.shade\s*\{[^}]*opacity:\s*var\(--shade-strength\)", css)
+
+
+def test_cast_shadows_are_clipped_to_the_surface_they_fall_on_and_the_neck_sits_behind_the_body() -> None:
+    root = _tree()
+    defined = {el.get("id") for el in root.iter(SVG_NS + "clipPath")}
+    used = {re.search(r"#([\w-]+)", el.get("clip-path")).group(1) for el in root.iter() if el.get("clip-path")}
+    assert used and used <= defined, f"clip-path points at undefined ids: {used - defined}"
+    ids = _group_ids(root)
+    assert ids.index("neck") < ids.index("body"), "the neck must be drawn before the body, or its lower edge shows as a hard bib"
+    assert ids.index("chest-heart") > ids.index("front-leg-right"), "the heart must be drawn after the legs"

@@ -39,3 +39,16 @@
   Highlights, glow and the sparkle star were scaled to the new iris. Why (user): "the pupil is too big, it makes it look more alien than cute; there should be some white of the eye".
   `.sclera` is no longer a `scared`-only part; `scared` now just shrinks the iris to 78 % again. The sclera has a soft lilac top shade (lid shadow).
 - **Eye white gets a thin soft-lilac rim (1.6 px) and a deeper lid shadow at its top.** Why: pure white on the near-white face did not read at all in the first try.
+
+## 2026-10-08 (feedback round 1: shading and depth)
+
+- **Shading is added inside each part's own group, as `.shade` elements** (overlay = the part's outline with a clear-to-tint gradient on the far side). Why (user): "there is absolutely no
+  shading, can there not be sections to shade, so the left leg is still the left leg but within that you shade the right-hand side". It was not too difficult: the overlay reuses the
+  part's own path, so silhouettes did not change and the shading moves with the part.
+- **Legs cast a shadow on the torso and haunches** (the user's "box shadow" idea), built as stacked widening strokes under the leg, not an SVG filter (filters are costly when animated).
+  Casts are clipped (`clip-path`) to the surface they fall on: the first unclipped try left grey halos on the background around the mane and tail.
+- **Front legs got rounded shoulder tops** (they started as a flat edge, which read as a pale rectangle under the chest) and a crease line between them. The torso is a little wider at the shoulders.
+- **The neck is drawn before the body; the chin shadow moved to the body.** Why: with rim shading on both, the neck's flat lower edge showed as a hard "bib".
+- **Hair shading is lighter than skin shading** (about 0.3 vs 0.55 at the darkest). Why: at skin strength the pastel mane went grey.
+- **Light comes from the upper left; `--shade-strength` (CSS variable on `#unicorn`) scales all shading**, so "more / less shading" is one number. Hooves got a tight dark contact shadow.
+- Not done: no shading on the horn beyond its own gradient, none inside the mane locks beyond rim + side tint, and no separate "highlight" layer system; say so if you want more.
