@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-import runpy
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -15,7 +14,6 @@ REQUIRED_IDS = [
     "brow-left", "brow-right", "cheek-left", "cheek-right", "mouth-neutral", "mouth-smile", "mouth-frown", "mouth-open",
     "mane-back", "mane-front", "tail", "front-leg-left", "front-leg-right", "hoof-left", "hoof-right", "chest-heart", "shadow",
 ]
-MOODS = ["happy", "excited", "joyful", "sad", "scared", "angry"]
 
 
 def _tree() -> ET.Element:
@@ -63,18 +61,12 @@ def test_by_default_only_the_neutral_mouth_and_open_eyes_are_visible() -> None:
         assert hidden in css.split("{", 1)[0], f"{hidden} must be hidden by default"
 
 
-def test_the_preview_page_is_up_to_date_and_knows_the_six_moods() -> None:
-    build = runpy.run_path(str(UNICORN / "tools" / "build_preview.py"))
-    assert list(build["MOODS"]) == ["neutral"] + MOODS
+def test_the_preview_page_is_up_to_date_and_loads_the_idle_and_mood_scripts() -> None:
     preview = (UNICORN / "preview.html").read_text(encoding="utf-8")
     svg = SVG.read_text(encoding="utf-8").split("?>", 1)[1].lstrip()
     assert svg in preview, "preview.html is stale: run tools/build_preview.py"
-    spec = (UNICORN / "docs" / "rig-spec.md").read_text(encoding="utf-8")
-    for mood in MOODS:
-        row = next(r for r in spec.splitlines() if r.startswith(f"| `{mood}` |"))
-        mapping = build["MOODS"][mood]
-        for value in (mapping["eyes"], mapping["brows"], mapping["mouth"], mapping["ears"]):
-            assert f"`{value}`" in row, f"rig-spec.md row for {mood} disagrees with MOODS ({value})"
+    for script in ("js/idle.js", "js/mood.js"):
+        assert f'<script src="{script}"></script>' in preview and (UNICORN / script).is_file()
 
 
 def test_every_visible_part_carries_its_own_shading_and_one_css_knob_scales_it() -> None:

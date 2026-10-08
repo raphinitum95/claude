@@ -22,6 +22,7 @@
   var BLINK_MS = 220;          // close 70, hold 40, open 110
   var DOUBLE_BLINK_GAP_MS = 330;
   var EAR_FLICK_MS = 320;
+  var REACTION_MS = { maneFlick: 800, flinch: 380, hop: 840 };   // short one-shot reactions added on top of the idle motion
   var LOCKS = [1, 2, 3, 4, 5, 6];
   // sway of each mane lock: [amplitude in degrees, period in ms, phase]; different periods so the locks never move in step
   var LOCK_SWAY = [[2.2, 5200, 0.0], [1.6, 4300, 1.7], [1.4, 6100, 3.1], [1.4, 5700, 4.4], [1.7, 4700, 2.3], [2.4, 5400, 5.5]];
@@ -48,7 +49,7 @@
     var t = 0;
     var calm = 1;                // 1 = fully alive, 0 = at rest (settle() ramps it down)
     var calmFrom = 1, calmMs = 0, calmElapsed = 0, settling = false;
-    var blink = null, earFlick = null;
+    var blink = null, earFlick = null, reactions = [];
     var nextBlink = between(2200, 4000), nextEar = between(5000, 9000);
     var blinks = 0;
 
@@ -84,14 +85,31 @@
         else ear = { side: earFlick.side, rot: earFlick.side * 11 * Math.sin(Math.PI * e) * (1 - 0.3 * e) * intensity };
       }
 
+      // one-shot reactions (a result came in): mane flick, flinch, a celebration hop of three shrinking bounces
+      var extra = { headTy: 0, headRot: 0, bodySy: 0, hop: 0, locks: [0, 0, 0, 0, 0, 0] };
+      for (var r = reactions.length - 1; r >= 0; r -= 1) {
+        var ru = t - reactions[r].at, rname = reactions[r].name, rdur = REACTION_MS[rname];
+        if (ru >= rdur) { reactions.splice(r, 1); continue; }
+        if (rname === 'maneFlick') {
+          for (var li = 0; li < 6; li += 1) extra.locks[li] += 5.5 * Math.exp(-ru / 240) * Math.sin(ru / 60 + li * 0.9) * intensity;
+        } else if (rname === 'flinch') {
+          var env = Math.sin(Math.PI * ru / rdur);
+          extra.headTy += 3.2 * env * intensity; extra.headRot -= 2 * env * intensity; extra.bodySy -= 0.008 * env * intensity;
+        } else if (rname === 'hop') {
+          var k = Math.floor(ru / 280);
+          extra.hop = Math.max(extra.hop, 14 * Math.pow(0.55, k) * Math.abs(Math.sin(Math.PI * (ru % 280) / 280)) * intensity);
+        }
+      }
+
       var inhale = (Math.sin((t / 3600) * TAU) + 1) / 2;           // breathing: one breath every 3.6 s
       var locks = [];
       for (var i = 0; i < LOCK_SWAY.length; i += 1) {
-        locks.push(amp * LOCK_SWAY[i][0] * Math.sin((t / LOCK_SWAY[i][1]) * TAU + LOCK_SWAY[i][2]));
+        locks.push(extra.locks[i] + amp * LOCK_SWAY[i][0] * Math.sin((t / LOCK_SWAY[i][1]) * TAU + LOCK_SWAY[i][2]));
       }
       return {
-        head: { ty: -1.4 * inhale * amp, rot: 0.5 * amp * Math.sin((t / 7000) * TAU) },
-        body: { sx: 1 + 0.004 * inhale * amp, sy: 1 + 0.010 * inhale * amp },
+        head: { ty: -1.4 * inhale * amp + extra.headTy, rot: 0.5 * amp * Math.sin((t / 7000) * TAU) + extra.headRot },
+        body: { sx: 1 + 0.004 * inhale * amp, sy: 1 + 0.010 * inhale * amp + extra.bodySy },
+        hop: extra.hop,
         neck: { ty: -1.0 * inhale * amp },
         heart: { ty: -0.8 * inhale * amp, s: 1 + 0.03 * inhale * amp },
         tail: { rot: amp * (3.2 * Math.sin((t / 5200) * TAU) + 1.2 * Math.sin((t / 2300) * TAU + 1)) },
@@ -111,7 +129,9 @@
       wake: function () { settling = false; calm = 1; },
       /** Blink on the next frame (used by the preview button; a result could use it for a reaction). */
       blinkNow: function () { if (!blink) nextBlink = t; },
-      atRest: function () { return settling && calm === 0 && !blink && !earFlick; },
+      atRest: function () { return settling && calm === 0 && !blink && !earFlick && reactions.length === 0; },
+      /** Start a one-shot reaction ('maneFlick', 'flinch', 'hop'). Ignored while settling. Returns whether it started. */
+      trigger: function (name) { if (settling || !REACTION_MS[name]) return false; reactions.push({ name: name, at: t }); return true; },
       blinkCount: function () { return blinks; }
     };
   }
@@ -127,7 +147,7 @@
     var fps = options.fps || 30, frameMs = 1000 / fps;
     var engine = createEngine({ random: options.random, intensity: options.intensity });
     var parts = {};
-    ['head-rig', 'neck', 'body', 'chest-heart', 'tail', 'front-leg-left', 'front-leg-right', 'ear-left', 'ear-right', 'eyelid-left', 'eyelid-right']
+    ['head-rig', 'neck', 'body', 'chest-heart', 'tail', 'front-leg-left', 'front-leg-right', 'mane-back', 'ear-left', 'ear-right', 'eyelid-left', 'eyelid-right']
       .concat(LOCKS.map(function (n) { return 'mane-lock-' + n; }))
       .forEach(function (id) { parts[id] = svg.querySelector('#' + id); });
     var applied = {};
@@ -149,13 +169,15 @@
     function state(name) { return rig ? rig.getAttribute('data-' + name) : null; }
 
     function applyPose(p) {
-      write('head-rig', 'translateY(' + fmt(p.head.ty) + 'px) rotate(' + fmt(p.head.rot) + 'deg)');
-      write('neck', 'translateY(' + fmt(p.neck.ty) + 'px)');
-      write('body', 'scale(' + r3(p.body.sx) + ',' + r3(p.body.sy) + ')');
-      write('chest-heart', 'translateY(' + fmt(p.heart.ty) + 'px) scale(' + r3(p.heart.s) + ')');
-      write('tail', 'rotate(' + fmt(p.tail.rot) + 'deg)');
-      write('front-leg-left', 'rotate(' + fmt(p.front.rot) + 'deg)');
-      write('front-leg-right', 'rotate(' + fmt(-p.front.rot) + 'deg)');
+      var up = -p.hop;                                  // a hop lifts everything but the shadow
+      write('head-rig', 'translateY(' + fmt(p.head.ty + up) + 'px) rotate(' + fmt(p.head.rot) + 'deg)');
+      write('neck', 'translateY(' + fmt(p.neck.ty + up) + 'px)');
+      write('body', 'translateY(' + fmt(up) + 'px) scale(' + r3(p.body.sx) + ',' + r3(p.body.sy) + ')');
+      write('chest-heart', 'translateY(' + fmt(p.heart.ty + up) + 'px) scale(' + r3(p.heart.s) + ')');
+      write('tail', 'translateY(' + fmt(up) + 'px) rotate(' + fmt(p.tail.rot) + 'deg)');
+      write('front-leg-left', 'translateY(' + fmt(up) + 'px) rotate(' + fmt(p.front.rot) + 'deg)');
+      write('front-leg-right', 'translateY(' + fmt(up) + 'px) rotate(' + fmt(-p.front.rot) + 'deg)');
+      write('mane-back', p.hop > 0.01 ? 'translateY(' + fmt(up) + 'px)' : '');
       for (var i = 0; i < LOCKS.length; i += 1) write('mane-lock-' + LOCKS[i], 'rotate(' + fmt(p.locks[i]) + 'deg)');
       // ears and eyelids already have a CSS pose in the sad / angry / scared / droop moods: only touch them when the mood leaves them alone
       var earsFree = (state('ears') || 'neutral') === 'neutral';
@@ -209,6 +231,8 @@
       settle: function (ms) { if (reduced) { clearAll(); return; } engine.settle(ms); wanted = true; sync(); },
       setIntensity: function (x) { engine.setIntensity(x); },
       blinkNow: function () { engine.blinkNow(); },
+      /** A one-shot reaction on top of the idle motion ('maneFlick', 'flinch', 'hop'); skipped while the loop is not running. */
+      react: function (name) { return running() ? engine.trigger(name) : false; },
       isRunning: function () { return !!raf; },
       settled: function () { return finishedSettle; },
       stats: function () { return { frames: stats.frames, writes: stats.writes, running: !!raf, reducedMotion: reduced, hidden: hidden, offscreen: offscreen }; },

@@ -3,28 +3,17 @@
 
 Why a generated page: the rig's states are ``data-*`` attributes on ``#unicorn``, and JavaScript can only flip them when the SVG is inline
 (an ``<object>`` is blocked on ``file://``). The SVG stays the single source of truth; this page only inlines it next to some buttons.
-The MOODS table below is the same one documented in ``docs/rig-spec.md``: keep them in step.
+The moods come from ``js/mood.js`` (``UnicornMood.POSES``, the single source of truth, checked against ``docs/rig-spec.md`` by a test).
 
 Run:  python3 src/regrunner/web/static/unicorn/tools/build_preview.py      (Python 3.9 compatible, standard library only)
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
 SVG = HERE / "svg" / "unicorn-front-sitting.svg"
 OUT = HERE / "preview.html"
-
-MOODS = {
-    "neutral": {"eyes": "open", "brows": "neutral", "mouth": "neutral", "ears": "neutral", "fx": "none"},
-    "happy": {"eyes": "open", "brows": "up", "mouth": "smile", "ears": "neutral", "fx": "none"},
-    "excited": {"eyes": "wide", "brows": "up", "mouth": "open", "ears": "perk", "fx": "sparkle"},
-    "joyful": {"eyes": "closed", "brows": "up", "mouth": "open", "ears": "perk", "fx": "sparkle"},
-    "sad": {"eyes": "sad", "brows": "sad", "mouth": "frown", "ears": "droop", "fx": "none"},
-    "scared": {"eyes": "scared", "brows": "scared", "mouth": "open", "ears": "flat", "fx": "sweat"},
-    "angry": {"eyes": "angry", "brows": "angry", "mouth": "frown", "ears": "back", "fx": "steam"},
-}
 
 PAGE = """<!doctype html>
 <html lang="en">
@@ -49,7 +38,15 @@ PAGE = """<!doctype html>
 <main>
   <h1>Unicorn rig preview <small>(generated: edit svg/unicorn-front-sitting.svg, then run tools/build_preview.py)</small></h1>
   <div class="stage" id="stage">__SVG__</div>
-  <div class="bar" id="moods" role="group" aria-label="Mood"></div>
+  <div class="bar" id="moods" role="group" aria-label="Mood (manual override)"></div>
+  <div class="bar" role="group" aria-label="Run simulator">
+    <button id="run-start" type="button">Start run</button>
+    <button id="run-pass" type="button">Pass</button>
+    <button id="run-fail" type="button">Fail</button>
+    <button id="run-finish" type="button">Finish run</button>
+    <label>auto-run pass rate <input type="range" id="auto-rate" min="0" max="100" step="5" value="85"> <output id="auto-rate-out">85%</output></label>
+    <button id="run-auto" type="button">Auto-run 30 tests</button>
+  </div>
   <div class="bar">
     <label><input type="checkbox" id="idle-toggle" checked> idle animation</label>
     <button id="blink" type="button">Blink now</button>
@@ -58,42 +55,67 @@ PAGE = """<!doctype html>
     <label><input type="checkbox" id="pivots-toggle"> show pivots</label>
   </div>
   <div class="bar">
-    <span>state: <code id="state"></code></span>
+    <span>mood: <code id="mood-now"></code></span>
+    <span>totals: <code id="totals-now"></code></span>
     <span>idle: <code id="idle-stats"></code></span>
   </div>
 </main>
 <script src="js/idle.js"></script>
+<script src="js/mood.js"></script>
 <script>
-const MOODS = __MOODS__;
+const svg = document.querySelector("#stage svg");
 const root = document.getElementById("unicorn");
-const bar = document.getElementById("moods");
-function setMood(name) {
-  const m = MOODS[name];
-  for (const k of Object.keys(m)) root.setAttribute("data-" + k, m[k]);
-  for (const b of bar.children) b.setAttribute("aria-pressed", String(b.dataset.mood === name));
-  document.getElementById("state").textContent = JSON.stringify(m);
+const idle = UnicornIdle.attach(svg);
+function show(mood, totals) {
+  document.getElementById("mood-now").textContent = mood + (manual ? " (manual)" : "");
+  const n = totals.passed + totals.failed;
+  document.getElementById("totals-now").textContent = totals.passed + " pass / " + totals.failed + " fail" + (n ? " (" + Math.round(100 * totals.passed / n) + "%)" : "") + (totals.done ? " - finished" : totals.running ? " - running" : "");
 }
-for (const name of Object.keys(MOODS)) {
+let manual = false;
+const unicorn = UnicornMood.create(svg, { idle: idle, onChange: show });
+window.unicorn = unicorn;                       // the interface from the brief: unicorn.onRunStart / onTestResult / onRunComplete / setMood
+const bar = document.getElementById("moods");
+function setManual(name) { manual = !!name; unicorn.setMood(name); for (const b of bar.children) b.setAttribute("aria-pressed", String(b.dataset.mood === (name || "auto"))); }
+for (const name of ["auto"].concat(Object.keys(UnicornMood.POSES))) {
   const b = document.createElement("button");
   b.type = "button"; b.textContent = name; b.dataset.mood = name;
-  b.addEventListener("click", () => setMood(name));
+  b.addEventListener("click", () => setManual(name === "auto" ? null : name));
   bar.appendChild(b);
 }
+setManual(null);
+const clickTo = (id, fn) => document.getElementById(id).addEventListener("click", fn);
+clickTo("run-start", () => { setManual(null); unicorn.onRunStart({}); });
+clickTo("run-pass", () => unicorn.onTestResult({ status: "pass" }));
+clickTo("run-fail", () => unicorn.onTestResult({ status: "fail" }));
+clickTo("run-finish", () => { const t = unicorn.getTotals(); unicorn.onRunComplete({ passed: t.passed, failed: t.failed, total: t.passed + t.failed }); });
+document.getElementById("auto-rate").addEventListener("input", e => { document.getElementById("auto-rate-out").textContent = e.target.value + "%"; });
+let autoTimer = null;
+clickTo("run-auto", () => {
+  clearInterval(autoTimer); setManual(null);
+  unicorn.onRunStart({ totalTests: 30 });
+  let done = 0;
+  autoTimer = setInterval(() => {
+    const pass = Math.random() * 100 < parseInt(document.getElementById("auto-rate").value, 10);
+    unicorn.onTestResult({ status: pass ? "pass" : "fail" });
+    done += 1;
+    if (done === 30) { clearInterval(autoTimer); const t = unicorn.getTotals(); setTimeout(() => unicorn.onRunComplete({ passed: t.passed, failed: t.failed, total: 30 }), 600); }
+  }, 450);
+});
 document.getElementById("pivots-toggle").addEventListener("change", e => root.classList.toggle("show-pivots", e.target.checked));
 // Idle animation (js/idle.js): one 30 fps loop, paused when the tab is hidden, off under prefers-reduced-motion.
-const idle = UnicornIdle.attach(document.querySelector("#stage svg"));
 const idleToggle = document.getElementById("idle-toggle");
 idleToggle.addEventListener("change", () => (idleToggle.checked ? idle.start() : idle.stop()));
-document.getElementById("blink").addEventListener("click", () => idle.blinkNow());
-document.getElementById("settle").addEventListener("click", () => { idle.settle(); idleToggle.checked = false; });
+clickTo("blink", () => idle.blinkNow());
+clickTo("settle", () => { idle.settle(); idleToggle.checked = false; });
 document.getElementById("intensity").addEventListener("input", e => idle.setIntensity(parseFloat(e.target.value)));
 let lastFrames = 0;
 setInterval(() => {
-  const s = idle.stats();
-  document.getElementById("idle-stats").textContent = (s.running ? ((s.frames - lastFrames) * 2) + " fps, " : "stopped, ") + s.writes + " style writes";
-  lastFrames = s.frames;
+  const st = idle.stats();
+  idleToggle.checked = st.running || idleToggle.checked && !idle.settled();
+  document.getElementById("idle-stats").textContent = (st.running ? ((st.frames - lastFrames) * 2) + " fps, " : "stopped, ") + st.writes + " style writes";
+  lastFrames = st.frames;
 }, 500);
-setMood("neutral");
+unicorn.setMood(null);
 </script>
 </body>
 </html>
@@ -104,7 +126,7 @@ def main() -> None:
     svg = SVG.read_text(encoding="utf-8")
     if svg.startswith("<?xml"):
         svg = svg.split("?>", 1)[1].lstrip()
-    html = PAGE.replace("__SVG__", svg).replace("__MOODS__", json.dumps(MOODS))
+    html = PAGE.replace("__SVG__", svg)
     OUT.write_text(html, encoding="utf-8")
     print("wrote", OUT, len(html), "bytes")
 

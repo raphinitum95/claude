@@ -19,9 +19,9 @@ PREVIEW = (Path(__file__).resolve().parent.parent / "src" / "regrunner" / "web" 
 SEEDED = """(seed) => { let a = seed; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a);
   t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }"""
 
-OWNED = ["head-rig", "neck", "body", "chest-heart", "tail", "front-leg-left", "front-leg-right", "ear-left", "ear-right", "eyelid-left", "eyelid-right",
+OWNED = ["head-rig", "neck", "body", "chest-heart", "tail", "front-leg-left", "front-leg-right", "mane-back", "ear-left", "ear-right", "eyelid-left", "eyelid-right",
          "mane-lock-1", "mane-lock-2", "mane-lock-3", "mane-lock-4", "mane-lock-5", "mane-lock-6"]
-UNTOUCHED = ["horn", "head", "mane-front", "mane-back", "eye-left", "eye-right", "mouth-open", "mouth-neutral", "cheek-left", "shadow", "hoof-left"]
+UNTOUCHED = ["horn", "head", "mane-front", "eye-left", "eye-right", "mouth-open", "mouth-neutral", "cheek-left", "shadow", "hoof-left"]
 
 
 @pytest.fixture
@@ -117,9 +117,9 @@ async def test_the_loop_runs_at_most_thirty_frames_a_second_and_only_writes_the_
     await asyncio.sleep(2.2)
     stats = await page.evaluate("idle.stats()")
     assert 30 <= stats["frames"] <= 70, f"about 30 fps (a 60 Hz screen must not mean 60 frames): {stats['frames']} frames in 2.2 s"
-    assert stats["writes"] > 100 and stats["writes"] / stats["frames"] <= 18, "only changed transforms are written, at most the 17 owned parts a frame"
+    assert stats["writes"] > 100 and stats["writes"] / stats["frames"] <= 19, "only changed transforms are written, at most the 18 owned parts a frame"
     owned = await inline(page, OWNED)
-    assert owned["tail"].startswith("rotate(") and owned["head-rig"].startswith("translateY("), "she is moving"
+    assert "rotate(" in owned["tail"] and owned["head-rig"].startswith("translateY("), "she is moving"
     assert all(v == "" for v in (await inline(page, UNTOUCHED)).values()), "no other part of the locked art gets an inline transform"
 
 

@@ -99,3 +99,18 @@
 - **Settling**: `settle()` eases to rest over 700 ms and stops the loop (for "stop all loops when the run ends and she is at rest"); `start()` wakes her again. `prefers-reduced-motion` = no loop at all.
 - **Preview**: idle on/off, "Blink now", "Rest", a strength slider and a live fps / write counter were added to `preview.html`; the old manual Blink hack was removed (it fought the loop for the lids).
 - Not done yet: blinking in the sad / angry moods, glance / eye tracking, any reaction to results (next rounds).
+
+## 2026-10-08 (Phase 2, round 2: mood state machine)
+
+- **The mood is a pure function of the running totals** (`UnicornMood.moodFor`), with the brief's defaults (95 % celebrate, 60 % happy, below that sad) as config. The controller around it only turns totals into `data-*` attributes and short reactions.
+  Why: easy to test as a table, easy to change a threshold, and the unicorn stays decoupled from the QA app (it only sees four calls).
+- **Mid-run she is calm, the big reactions are for the end.** Mid-run: neutral until 3 results, then happy (60 % and up) or sad; `joyful` and the celebration only come from `onRunComplete` at 95 % and up. Why: a closed-eyed joyful face for a whole 40-minute run
+  would be tiring and would stop her blinking; the brief's "celebration" tier reads best as the final verdict. Easy to change if you want joyful mid-run (`moodFor`).
+- **Scared = three failures in a row mid-run** (the brief's "nervous"); **angry is manual only** for now (the brief lists it as manual / a clear pattern: no rule for a pattern yet).
+- **Minimum 3 results before any verdict** (`minResults`), and a finished run of one test is judged at once. Why: one early fail must not make her sad for the whole run.
+- **Reactions are one-shot impulses on the idle loop, not a new loop**: `idle.react('maneFlick' | 'flinch' | 'hop')`. A pass = sparkle (700 ms) + mane flick; a fail = flinch (head drops about 3 px) + ears back (380 ms); a great ending = a hop (three shrinking bounces, about 14 px at most).
+  A hop lifts every part except the shadow, so she leaves the ground. Nothing runs at rest: after a run she settles and the loop stops.
+- **One mood table**: `UnicornMood.POSES` replaces the copy in `tools/build_preview.py`; a test keeps it equal to `docs/rig-spec.md` section 4 and to the values the SVG's CSS knows.
+- **Two bugs the tests found while building it**: a variable named `root` inside `mood.js` silently resolved to the preview page's own global `root` (use plain `setTimeout`), and the happy-ending sparkle was scheduled after the attributes had been written, so it never showed (`flash()` now applies itself).
+- **Preview**: a run simulator was added (Start run, Pass, Fail, Finish run, Auto-run 30 tests with a pass-rate slider), manual moods are buttons plus "auto", and a live readout shows the mood and the totals. `window.unicorn` is the controller, so the console can call the brief's interface.
+- Not done yet: glitter canvas, rain cloud, boards, intro, eye tracking, blinking while sad / angry, a glance at the FAIL board (needs the boards).

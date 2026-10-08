@@ -138,4 +138,26 @@ before leaving the neutral mood.
 
 Behaviour: capped at 30 fps; pauses while the tab is hidden or she is scrolled out of view (IntersectionObserver); does not run at all under `prefers-reduced-motion`; `settle()` eases to rest over 700 ms (a blink or flick under way finishes, none start) and stops the loop; `stop()` stops at once and clears every inline transform; a long frame gap is clamped to 100 ms so a stalled tab never makes her jump.
 
-Still to come (Phase 2, one round each): mood state machine (setMood + pass-rate thresholds), glitter canvas, rain cloud, PASS/FAIL boards, intro, head / eye tracking, wiring to the run events.
+## 6b. Mood state machine (built: `js/mood.js`)
+
+`UnicornMood.create(svg, {idle, config, onChange})` returns the interface from the brief: `onRunStart({totalTests?})`, `onTestResult({status: 'pass'|'fail', name?})`, `onRunComplete({passed, failed, total})`,
+`setMood(name|null)` (manual override; null = automatic), plus `getMood()`, `getTotals()`, `reset()`, `destroy()`. `idle` is the object from `UnicornIdle.attach` (optional: without it only the attributes change).
+`UnicornMood.POSES` is the mood table of section 4 (a test keeps the two equal) and `UnicornMood.moodFor(totals, config)` is the pure rule: the mood is a function of the running totals only.
+
+| Situation | Mood |
+|---|---|
+| no results yet, or fewer than `minResults` (3) mid-run | `neutral` (no verdict from one or two tests) |
+| mid-run, `scaredStreak` (3) failures in a row | `scared` (nervous: sweat drop, ears flat) |
+| mid-run, pass rate at or above `happy` (60 %) | `happy` |
+| mid-run, pass rate below 60 % | `sad` |
+| run start | `excited` for `startExcitedMs` (1.5 s), then the rule above |
+| run complete, pass rate at or above `celebrate` (95 %) | `joyful` + a celebration (a hop of three shrinking bounces, sparkle) for `celebrateMs`, then she settles |
+| run complete, 60 to 95 % | `happy` + a small sparkle and a mane flick, then she settles after `restAfterMs` |
+| run complete, below 60 % | `sad`, then she settles after `restAfterMs` (the sad pose stays) |
+| `setMood('angry')` etc. | the manual mood, until `setMood(null)` or a new run |
+
+A run of unknown length (no `totalTests`) works the same: the rule only looks at the running totals. `angry` is manual only for now. Per-result reactions (short, one-shot, on the idle loop): a pass = a small sparkle (`passSparkleMs` 700) and a mane flick;
+a fail = a flinch (head drops about 3 px) with the ears back for `flinchMs` (380). Thresholds and times are all in `UnicornMood.DEFAULTS` and can be passed as `config`. A result after the end of a run starts a new open-ended run; an unknown mood name throws, so does a status other than pass / fail.
+Idle-loop reactions: `idle.react('maneFlick' | 'flinch' | 'hop')` (skipped while the loop is not running or she is settling); a hop lifts every part except `shadow`.
+
+Still to come (Phase 2, one round each): glitter canvas, rain cloud, PASS/FAIL boards, intro, head / eye tracking, blinking in the sad / angry moods, wiring to the run events.
