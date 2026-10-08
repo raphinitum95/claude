@@ -48,14 +48,15 @@
     <linearGradient id="gTailPink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FDB1D3"/><stop offset="1" stop-color="#EB9DD4"/></linearGradient>
     <linearGradient id="gTailLilac" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CB9AE5"/><stop offset="1" stop-color="#9896C6"/></linearGradient>
     <linearGradient id="gTailTeal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B1EBE1"/><stop offset="1" stop-color="#69C0CE"/></linearGradient>
-    <radialGradient id="gIrisl" cx="206" cy="285" r="52" fx="206" fy="290" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8A79D1"/><stop offset="0.38" stop-color="#4A365F"/><stop offset="0.85" stop-color="#2A1E36"/><stop offset="1" stop-color="#1A141F"/></radialGradient>
-    <radialGradient id="gIrisr" cx="334" cy="285" r="52" fx="334" fy="290" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8A79D1"/><stop offset="0.38" stop-color="#4A365F"/><stop offset="0.85" stop-color="#2A1E36"/><stop offset="1" stop-color="#1A141F"/></radialGradient>
+    <linearGradient id="gSclera" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CDBFE2"/><stop offset="0.34" stop-color="#F4EEF9"/><stop offset="1" stop-color="#FFFFFF"/></linearGradient>
+    <radialGradient id="gIrisl" cx="206" cy="278" r="30" fx="206" fy="282" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8A79D1"/><stop offset="0.38" stop-color="#4A365F"/><stop offset="0.85" stop-color="#2A1E36"/><stop offset="1" stop-color="#1A141F"/></radialGradient>
+    <radialGradient id="gIrisr" cx="334" cy="278" r="30" fx="334" fy="282" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8A79D1"/><stop offset="0.38" stop-color="#4A365F"/><stop offset="0.85" stop-color="#2A1E36"/><stop offset="1" stop-color="#1A141F"/></radialGradient>
     <radialGradient id="gBlush" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FDB9D2" stop-opacity="1"/><stop offset="0.6" stop-color="#FEC9DB" stop-opacity="0.7"/><stop offset="1" stop-color="#FEC9DB" stop-opacity="0"/></radialGradient>
     <radialGradient id="gShadow" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#8F7AA6" stop-opacity="0.42"/><stop offset="0.6" stop-color="#8F7AA6" stop-opacity="0.18"/><stop offset="1" stop-color="#8F7AA6" stop-opacity="0"/></radialGradient>
   </defs>
   <style>
     /* ---- rig state: set data-eyes / data-brows / data-mouth / data-ears / data-fx on #unicorn (see docs/rig-spec.md) ---- */
-    #unicorn .eye-closed, #unicorn .eye-wide-extra, #unicorn .sclera, #unicorn .fx, #unicorn #pivots,
+    #unicorn .eye-closed, #unicorn .eye-wide-extra, #unicorn .fx, #unicorn #pivots,
     #unicorn #mouth-smile, #unicorn #mouth-frown, #unicorn #mouth-open { display: none; }
     #unicorn.show-pivots #pivots { display: inline; }
 
@@ -63,10 +64,9 @@
     #unicorn[data-eyes="closed"] .eye-open { display: none; }
     #unicorn[data-eyes="closed"] .eye-closed { display: inline; }
     #unicorn[data-eyes="wide"] .eye-wide-extra { display: inline; }
-    #unicorn[data-eyes="scared"] .sclera { display: inline; }
-    #unicorn[data-eyes="scared"] .iris { transform: scale(.74); }
-    #unicorn[data-eyes="scared"] #eye-left .iris { transform-origin: 206px 262px; }
-    #unicorn[data-eyes="scared"] #eye-right .iris { transform-origin: 334px 262px; }
+    #unicorn[data-eyes="scared"] .iris { transform: scale(.78); }
+    #unicorn[data-eyes="scared"] #eye-left .iris { transform-origin: 206px 263px; }
+    #unicorn[data-eyes="scared"] #eye-right .iris { transform-origin: 334px 263px; }
     #unicorn[data-eyes="wide"] #eye-left .eye-open, #unicorn[data-eyes="scared"] #eye-left .eye-open { transform-origin: 206px 262px; transform: scale(1.1); }
     #unicorn[data-eyes="wide"] #eye-right .eye-open, #unicorn[data-eyes="scared"] #eye-right .eye-open { transform-origin: 334px 262px; transform: scale(1.1); }
 
@@ -248,17 +248,17 @@
   <g id="eye-left">
     <!-- pivot: eye centre (206, 262) -->
     <g class="eye-open">
-      <ellipse class="sclera" cx="206" cy="262" rx="31" ry="34" fill="#FFFFFF"/>
+      <ellipse class="sclera" cx="206" cy="262" rx="30.5" ry="33.5" fill="url(#gSclera)" stroke="#CDBCE0" stroke-width="1.6"/>
       <g class="iris">
-        <ellipse cx="206" cy="262" rx="28.5" ry="32" fill="url(#gIrisl)"/>
-        <ellipse cx="206" cy="279" rx="17" ry="9" fill="#9AA0E8" opacity=".35"/>
-        <circle cx="201" cy="246" r="6.8" fill="#FFFFFF"/>
-        <circle cx="215" cy="258" r="2.6" fill="#FFFFFF" opacity=".9"/>
-        <path d="M 192 270 L 193.6 274.6 L 198 276 L 193.6 277.4 L 192 282 L 190.4 277.4 L 186 276 L 190.4 274.6 Z" fill="#FFFFFF"/>
+        <ellipse cx="206" cy="263" rx="22.5" ry="25.5" fill="url(#gIrisl)"/>
+        <ellipse cx="206" cy="278" rx="14" ry="7" fill="#9AA0E8" opacity=".35"/>
+        <circle cx="200" cy="252" r="5.6" fill="#FFFFFF"/>
+        <circle cx="214" cy="261" r="2.2" fill="#FFFFFF" opacity=".9"/>
+        <path d="M 196 267.5 Q 197.54 271.46 201.5 273 Q 197.54 274.54 196 278.5 Q 194.46 274.54 190.5 273 Q 194.46 271.46 196 267.5 Z" fill="#FFFFFF"/>
       </g>
       <g class="eye-wide-extra">
-        <circle cx="218" cy="272" r="3" fill="#FFFFFF"/>
-        <circle cx="188" cy="260" r="2" fill="#FFFFFF"/>
+        <circle cx="217" cy="270" r="2.4" fill="#FFFFFF"/>
+        <circle cx="192" cy="260" r="1.8" fill="#FFFFFF"/>
       </g>
       <path d="M 177 254 C 180 236 192 229 206 229 C 220 229 232 236 235 254" fill="none" stroke="#1A141F" stroke-width="3.2" stroke-linecap="round"/>
       <path d="M 179 248 L 169 239 M 177 256 L 166 251 M 183 241 L 176 231" fill="none" stroke="#1A141F" stroke-width="2.2" stroke-linecap="round"/>
@@ -271,17 +271,17 @@
   <g id="eye-right">
     <!-- pivot: eye centre (334, 262) -->
     <g class="eye-open">
-      <ellipse class="sclera" cx="334" cy="262" rx="31" ry="34" fill="#FFFFFF"/>
+      <ellipse class="sclera" cx="334" cy="262" rx="30.5" ry="33.5" fill="url(#gSclera)" stroke="#CDBCE0" stroke-width="1.6"/>
       <g class="iris">
-        <ellipse cx="334" cy="262" rx="28.5" ry="32" fill="url(#gIrisr)"/>
-        <ellipse cx="334" cy="279" rx="17" ry="9" fill="#9AA0E8" opacity=".35"/>
-        <circle cx="329" cy="246" r="6.8" fill="#FFFFFF"/>
-        <circle cx="343" cy="258" r="2.6" fill="#FFFFFF" opacity=".9"/>
-        <path d="M 320 270 L 321.6 274.6 L 326 276 L 321.6 277.4 L 320 282 L 318.4 277.4 L 314 276 L 318.4 274.6 Z" fill="#FFFFFF"/>
+        <ellipse cx="334" cy="263" rx="22.5" ry="25.5" fill="url(#gIrisr)"/>
+        <ellipse cx="334" cy="278" rx="14" ry="7" fill="#9AA0E8" opacity=".35"/>
+        <circle cx="328" cy="252" r="5.6" fill="#FFFFFF"/>
+        <circle cx="342" cy="261" r="2.2" fill="#FFFFFF" opacity=".9"/>
+        <path d="M 324 267.5 Q 325.54 271.46 329.5 273 Q 325.54 274.54 324 278.5 Q 322.46 274.54 318.5 273 Q 322.46 271.46 324 267.5 Z" fill="#FFFFFF"/>
       </g>
       <g class="eye-wide-extra">
-        <circle cx="346" cy="272" r="3" fill="#FFFFFF"/>
-        <circle cx="316" cy="260" r="2" fill="#FFFFFF"/>
+        <circle cx="345" cy="270" r="2.4" fill="#FFFFFF"/>
+        <circle cx="320" cy="260" r="1.8" fill="#FFFFFF"/>
       </g>
       <path d="M 305 254 C 308 236 320 229 334 229 C 348 229 360 236 363 254" fill="none" stroke="#1A141F" stroke-width="3.2" stroke-linecap="round"/>
       <path d="M 361 248 L 371 239 M 363 256 L 374 251 M 357 241 L 364 231" fill="none" stroke="#1A141F" stroke-width="2.2" stroke-linecap="round"/>

@@ -32,3 +32,10 @@
 - **Known differences from the master, left for art direction:** flatter shading than the painted master; the mane is simplified (no fine curls); the tail ends in a hook, not the
   master's curl; the body column is a little straighter. Measured against the master: head width / figure height is 0.39 (master) vs 0.41 (rig), so the head is the same size;
   eye width / head width is 0.27 vs 0.25, so the eyes are about 7 % smaller.
+
+## 2026-10-08 (feedback round 1: eyes)
+
+- **Eyes: the white of the eye is always visible and the iris is smaller** (iris 45 x 51 inside an eye of 61 x 67, about 75 %; was 57 x 64, which filled the whole eye and read as alien).
+  Highlights, glow and the sparkle star were scaled to the new iris. Why (user): "the pupil is too big, it makes it look more alien than cute; there should be some white of the eye".
+  `.sclera` is no longer a `scared`-only part; `scared` now just shrinks the iris to 78 % again. The sclera has a soft lilac top shade (lid shadow).
+- **Eye white gets a thin soft-lilac rim (1.6 px) and a deeper lid shadow at its top.** Why: pure white on the near-white face did not read at all in the first try.

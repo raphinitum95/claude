@@ -12,7 +12,7 @@ set in the SVG; section 3 is the same table.
 
 | Attribute | Values (default first) | Effect |
 |---|---|---|
-| `data-eyes` | `open`, `closed`, `wide`, `sad`, `scared`, `angry` | `closed` = happy arcs instead of eyes; `wide` = 110 % eyes + extra sparkle; `sad`/`angry` park the eyelids part-way, slanted; `scared` = white ring + small iris + 110 % eyes |
+| `data-eyes` | `open`, `closed`, `wide`, `sad`, `scared`, `angry` | `closed` = happy arcs instead of eyes; `wide` = 110 % eyes + extra sparkle; `sad`/`angry` park the eyelids part-way, slanted; `scared` = smaller iris (78 %) + 110 % eyes. The white of the eye (`.sclera`) is always visible; the iris is about 75 % of the eye |
 | `data-brows` | `neutral`, `up`, `sad`, `angry`, `scared` | rotates / lifts `brow-left`, `brow-right` |
 | `data-mouth` | `neutral`, `smile`, `frown`, `open` | one `mouth-*` group visible (scared + open squeezes the mouth narrow) |
 | `data-ears` | `neutral`, `perk`, `droop`, `back`, `flat` | rotates `ear-left`, `ear-right` about their bases |
