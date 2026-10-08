@@ -17,10 +17,10 @@ workbooks/*.xlsx ──► loader + formula engine ──► step engine (Playwr
 opens in a window of its own (Edge or Chrome in app mode; the default browser if neither is installed; see *Web UI* below):
 pick a workbook, tick the tests, press Run. Everything the command line can do is a control there, and the command it is
 equivalent to is shown next to the Run button. A small launcher window (Terminal / Command Prompt) stays open next to it. Closing the
-UI window stops QA Regression a few seconds later and closes the launcher window too; a run that is still going is finished first
+UI window stops Regina a few seconds later and closes the launcher window too; a run that is still going is finished first
 (`regrunner serve --exit-when-closed`; a reload is not a close). Closing the launcher window stops it straight away.
 
-The first double-click sets the tool up inside its own folder (see *Set up*) and adds a **QA Regression** icon to the desktop,
+The first double-click sets the tool up inside its own folder (see *Set up*) and adds a **Regina** icon to the desktop,
 which starts it from then on (Windows: a shortcut, launcher window minimised; macOS: a small app you can drag to the Dock).
 
 **From a terminal:**
@@ -64,13 +64,13 @@ when every run passed.
 
 **Automatic (what the launchers do).** The first double-click of `Start QA Regression.bat` / `.command` finds Python 3.9 or newer
 (`py -3`, `python` or `python3`), creates `.venv` inside this folder, installs the packages into it (needs the internet), and
-adds a desktop icon (macOS: `QA Regression.app`, made again by the next start if the folder moves; deleting it is fine). Nothing goes into Program Files and no admin rights are needed. If Python is missing, the window says
+adds a desktop icon (macOS: `Regina.app`, made again by the next start if the folder moves; deleting it is fine). Nothing goes into Program Files and no admin rights are needed. If Python is missing, the window says
 where to get it: the python.org installer needs no admin rights when *Use admin privileges when installing py.exe* is unticked. No
 browser is downloaded: the installed Chrome or Edge is used (see below). When a newer copy of the folder changes `pyproject.toml`,
 the next start reinstalls the packages by itself. To start over, delete `.venv`. The folder can be moved or renamed afterwards
 (the launchers put `src/` on `PYTHONPATH`; only the desktop icon has to be made again, by deleting `.venv` or with a new shortcut).
 
-**Sharing it with someone.** Run `python3 dev/make_share_folder.py`. It builds `share/QA Regression/` and `share/QA Regression.zip`
+**Sharing it with someone.** Run `python3 dev/make_share_folder.py`. It builds `share/Regina/` and `share/Regina.zip`
 (git-ignored) with only what is needed to run the tool: the launchers, `src/`, the config files, this manual, a one-page
 `START HERE.txt` and the workbooks (`--no-workbooks` leaves them out). It never includes `dev/`, `tests/`, `.claude/`, `secrets.env`,
 `.auth/`, `runs/` or `.venv/`. The other person unzips it (for example into Documents, not a OneDrive or network folder) and

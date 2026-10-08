@@ -1,4 +1,4 @@
-"""Build the folder that is handed to other people: ``share/QA Regression/`` plus ``share/QA Regression.zip``.
+"""Build the folder that is handed to other people: ``share/Regina/`` plus ``share/Regina.zip``.
 
 It holds only what is needed to run the tool (launchers, ``src/``, config, the user manual and, unless ``--no-workbooks``,
 the workbooks). Everything for developers and AI agents stays behind: ``dev/`` (agent instructions, hand-off briefs, designs),
@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-NAME = "QA Regression"
+NAME = "Regina"
 
 FILES = ["Start QA Regression.bat", "Start QA Regression.command", "README.md", "config.yaml", "selectors.yaml",
          "secrets.env.example", "pyproject.toml"]

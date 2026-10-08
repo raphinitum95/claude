@@ -1,4 +1,4 @@
-QA Regression - how to start
+Regina - how to start
 ============================
 
 1. Put this folder somewhere of your own, for example Documents. Avoid a OneDrive or network folder:
@@ -11,7 +11,7 @@ QA Regression - how to start
    It needs Python 3.9 or newer; if Python is missing, the window says where to get it (no admin rights needed).
    Nothing is installed in Program Files, and no admin rights are needed.
 
-   It also puts a "QA Regression" icon on your desktop. Use that icon from then on
+   It also puts a "Regina" icon on your desktop. Use that icon from then on
    (on a Mac you can drag it to the Dock).
 
    Mac says it "can't be opened" or "Apple could not verify" it? That is macOS being careful with files that came
@@ -21,8 +21,8 @@ QA Regression - how to start
      - Or: System Settings > Privacy & Security, scroll down, "Open Anyway" next to the message about the file.
    If the message names your company or IT instead, the block is IT's: ask them to allow the folder.
 
-3. QA Regression opens in a window of its own. A small black window also opens (on Windows it starts minimised
-   in the taskbar). When you are done, just close the QA Regression window: a few seconds later it stops and the
+3. Regina opens in a window of its own. A small black window also opens (on Windows it starts minimised
+   in the taskbar). When you are done, just close the Regina window: a few seconds later it stops and the
    black window closes too. A run that is still going is finished first.
 
 The full user manual is README.md in this folder.

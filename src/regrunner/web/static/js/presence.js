@@ -1,5 +1,5 @@
 // Tells the server this window is open (every few seconds) and when it closes, so the double-click launcher can stop
-// QA Regression, and close its terminal window, once the last UI window is closed (`serve --exit-when-closed`).
+// Regina, and close its terminal window, once the last UI window is closed (`serve --exit-when-closed`).
 // Without that flag the server just ignores these calls.
 const HEADER = { 'X-Requested-With': 'regrunner', 'Content-Type': 'application/json' };
 const HELLO_EVERY_MS = 10000;
