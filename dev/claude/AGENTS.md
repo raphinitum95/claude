@@ -496,7 +496,7 @@ initialization` at the quote page: separate site bug). `capture:` in config.yaml
 (step note `Warning: ...`, review category `disabled_field_empty`); Results test page card "Session, step by step"; Download run (`/api/runs/{id}/download.zip`) and Import a run (Results tab). Unverified on the real
 sites: how much the per-step page read costs on the work computer (`capture.state: off` is the switch), trace overhead on slow machines, real calendars that fill a field through a widget.
 
-**In progress (2026-10-08): unicorn scorekeeper mascot** (`src/regrunner/web/static/unicorn/`, brief distilled in its `CLAUDE.md`). Phase 1 done: layered SVG rig + 6 mood states + preview; waiting for the user's art direction. Phase 2 (idle animation, mood state machine, glitter canvas, PASS/FAIL boards, intro, wiring to the run events) is NOT started and must not start before the art is approved.
+**In progress (2026-10-08): unicorn scorekeeper mascot** (`src/regrunner/web/static/unicorn/`, brief distilled in its `CLAUDE.md`). Phase 1 DONE and APPROVED by the user 2026-10-08 (layered SVG rig, 6 moods, shading, preview): the art is LOCKED, only specific requested fixes. Phase 2 (idle animation, mood state machine, glitter canvas, PASS/FAIL boards, intro, wiring to the run events) is not started; one thing per round, ask where she lives in the UI before wiring.
 
 Gotchas:
 - Imported runs (`run.json` `imported: true`) must never feed this computer's own data: `history.load_runs`, `run_batch._scan_last_durations`, `scenario_api` and `builder._last_results` skip them; a new scanner of `runs/` must too.

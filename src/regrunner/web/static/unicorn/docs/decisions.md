@@ -79,3 +79,9 @@
 - **The horn's four spiral arcs became one repeating gradient** (`spreadMethod="repeat"`, diagonal bands of darker gold then a pale sheen), which reads as a twisted rope and is one element instead of a path of four curves.
 - **Measured cost of this round:** SVG 38.6 to 43.8 KB (8.0 KB gzipped), paths 107 to 119 (12 overlays), moving groups 52 to 52 (unchanged), gradients 35 to 39. A size / group guard was added to the test (under 60 KB, at most 56 groups).
 - Not done (would cost geometry): iris rays, individual hair strands, fur, ear fluff.
+
+## 2026-10-08 (art approved)
+
+- **The user approved the Phase 1 art ("this is good"). Style is LOCKED.** From here only specific requested fixes (for example "eyes 20 % bigger"). Final numbers at the lock: SVG 43.8 KB (8.0 KB gzipped), 119 paths,
+  52 groups, 39 gradients; 8 rig tests pass. Open known differences from the master that the user did not ask to change: the tail ends in a hook, the mane is simplified, no pink muzzle outline.
+- Phase 2 (idle animation, mood state machine, glitter canvas, PASS/FAIL boards, intro, event wiring) has NOT started.

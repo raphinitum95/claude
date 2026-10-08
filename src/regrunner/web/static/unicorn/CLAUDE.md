@@ -29,7 +29,10 @@ unicorn/
 6. Phase 1 = layered SVG rig only (no scripts, no animation inside the SVG). Phase 2 (animation + logic) starts only after the user approves the art.
 7. GSAP or any library: ask first. Default is none.
 
-## Character (locked once approved)
+## Character (LOCKED: the user approved the art on 2026-10-08; only specific requested fixes from now on)
+
+Status: Phase 1 (layered SVG rig) is APPROVED. Do not restyle, reshape or re-shade anything unprompted. Phase 2 (animation + logic) may start, one round at a time.
+
 
 Original character; do NOT imitate any existing franchise character. Cute chibi baby unicorn: white/lilac body, big round dark-violet eyes
 with white sparkle highlights and lashes, small smile, pink blush, small pink heart on the chest, pink / lilac / teal flowing mane and tail,
