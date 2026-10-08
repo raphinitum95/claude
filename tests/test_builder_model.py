@@ -145,6 +145,22 @@ def test_a_variable_another_enabled_test_provides_is_not_a_problem(tmp_path):
     assert policy["providedBy"] == ["Buy"] and policy["neededBy"] == ["View"] and policy["kind"] == "set"
 
 
+def test_save_the_result_as_a_bare_name_on_a_date_step_becomes_a_variable_other_steps_can_use(tmp_path):
+    def fill(s):
+        s.add("Pick_Date", "Pick the departure date", FindBy="css", FindBy_Value="input[name=dep]", Value="01/01/2030")
+        s.add("Set", "Type the date again", FindBy="css", FindBy_Value="input[name=again]", Value="{departureDate}")
+    path = small(tmp_path, fill)
+    doc = BuildDocument(path)
+    doc.apply([{"op": "update_step", "test": "Buy", "row": 2, "set": {"saveAs": "departureDate"}}])
+    buy = find_test(doc.model(), "Buy")
+    assert step_at(buy, 2)["output"] == "{departureDate}" and step_at(buy, 2)["saveAs"] == "departureDate"
+    assert buy["provides"] == ["DEPARTUREDATE"] and "DEPARTUREDATE" not in buy["needs"]
+    variable = next(v for v in doc.model()["variables"] if v["key"] == "DEPARTUREDATE")
+    assert variable["kind"] == "set" and [s["row"] for s in variable["setBy"]] == [2] and [u["row"] for u in variable["usedBy"]] == [3]
+    doc.apply([{"op": "update_step", "test": "Buy", "row": 2, "set": {"saveAs": ""}}])
+    assert step_at(find_test(doc.model(), "Buy"), 2)["output"] == ""
+
+
 def test_side_effect_steps_are_blocked_on_production_and_suggested_by_their_name(tmp_path):
     def fill(s):
         s.add("js_click", "Click Purchase", FindBy="xpath", FindBy_Value="//button[contains(.,'Purchase')]")

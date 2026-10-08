@@ -1168,7 +1168,19 @@ class _Ops:
                     value = json.dumps([str(x) for x in value])
             elif key == "method" and value is not None:
                 value = str(value).strip()
+            elif key == "saveAs":
+                value = self.save_as_cell(value)
             self.put(sheet, row, FIELD_COLUMNS[key], value)
+
+    @staticmethod
+    def save_as_cell(value: Any) -> Any:
+        """What "Save the result as" writes into Output_Value: ``{NAME}``, whatever the step.  A bare name only means "a variable" to the runner for
+        a few methods (SET_VARIABLE, ASK_USER...) or when the name already is a variable; on a PICK_DATE or a Check step it is a literal that nothing
+        saves and the variables screen never lists.  ``{NAME}`` is read the same way by every method."""
+        text = str(value).strip() if value is not None else ""
+        if not text:
+            return None
+        return "{" + text + "}" if TOKEN_RE.match(text) else text
 
     def refresh_name(self, sheet: str, row: int) -> None:
         step = self.step_at(self.parsed(sheet), row)
