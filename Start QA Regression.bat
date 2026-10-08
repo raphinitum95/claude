@@ -1,9 +1,9 @@
 @echo off
-rem Double-click to start QA Regression. It opens in a window of its own; closing this black window stops it.
-rem The first time, it sets itself up inside this folder (a few minutes, needs the internet) and puts a "QA Regression" icon
+rem Double-click to start Regina. It opens in a window of its own; closing this black window stops it.
+rem The first time, it sets itself up inside this folder (a few minutes, needs the internet) and puts a "Regina" icon
 rem on the desktop. Nothing goes into Program Files and no admin rights are needed. To start over, delete the .venv folder.
 setlocal
-title QA Regression
+title Regina
 cd /d "%~dp0"
 set "HERE=%~dp0"
 set "PYTHONPATH=%HERE%src"
@@ -20,10 +20,12 @@ goto setup
 :venvok
 rem A new version of the folder may need new packages: reinstall when pyproject.toml differs from the one last installed.
 fc /b "pyproject.toml" ".venv\installed-pyproject.toml" >nul 2>&1 || goto install
+rem A folder set up under the old name "QA Regression" gets the Regina icon (and loses the old one) on its next start.
+if not exist ".venv\desktop-icon-regina" call :desktopicon
 goto start
 
 :setup
-echo Setting up QA Regression in this folder. This happens once and takes a few minutes.
+echo Setting up Regina in this folder. This happens once and takes a few minutes.
 echo.
 set "BASE_PY="
 for %%C in ("py -3" "python" "python3") do if not defined BASE_PY %%~C -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>&1 && set "BASE_PY=%%~C"
@@ -31,25 +33,22 @@ if not defined BASE_PY goto nopython
 %BASE_PY% -m venv .venv || goto failed
 
 :install
-echo Installing what QA Regression needs. This needs the internet.
+echo Installing what Regina needs. This needs the internet.
 "%VENV_PY%" -m pip install --disable-pip-version-check --quiet --upgrade pip || goto failed
 "%VENV_PY%" -m pip install --disable-pip-version-check --quiet -e . || goto failed
 copy /y "pyproject.toml" ".venv\installed-pyproject.toml" >nul
-rem Desktop icon, minimised black window. Paths go through environment variables so a quote in a folder name cannot break it.
-set "SHORTCUT_TARGET=%HERE%Start QA Regression.bat"
-set "SHORTCUT_ICON=%HERE%src\regrunner\web\static\app.ico"
-powershell -NoProfile -Command "$s = (New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop') + '\QA Regression.lnk'); $s.TargetPath = $env:SHORTCUT_TARGET; $s.WorkingDirectory = $env:HERE; $s.IconLocation = $env:SHORTCUT_ICON; $s.WindowStyle = 7; $s.Save()" >nul 2>&1 && echo Added a "QA Regression" icon to your desktop. Use it to start QA Regression from now on.
+call :desktopicon
 echo Set up finished.
 echo.
 
 :start
-echo QA Regression is running and opens in its own window.
-echo Closing the QA Regression window stops it and closes this one. Closing this one stops it straight away.
+echo Regina is running and opens in its own window.
+echo Closing the Regina window stops it and closes this one. Closing this one stops it straight away.
 "%VENV_PY%" -m regrunner serve --app --exit-when-closed || goto failed
 goto :eof
 
 :venvlocked
-echo Could not delete the .venv folder in "%HERE%". Close every QA Regression window, delete that folder by hand,
+echo Could not delete the .venv folder in "%HERE%". Close every Regina window, delete that folder by hand,
 echo then double-click "Start QA Regression" again.
 goto failed
 
@@ -63,7 +62,15 @@ goto failed
 
 :failed
 echo.
-echo QA Regression could not start. The messages above say why.
-echo If you cannot fix it, send a screenshot of this window to whoever gave you QA Regression.
+echo Regina could not start. The messages above say why.
+echo If you cannot fix it, send a screenshot of this window to whoever gave you Regina.
 pause
 exit /b 1
+
+:desktopicon
+rem Desktop icon, minimised black window. Paths go through environment variables so a quote in a folder name cannot break it.
+set "SHORTCUT_TARGET=%HERE%Start QA Regression.bat"
+set "SHORTCUT_ICON=%HERE%src\regrunner\web\static\app.ico"
+powershell -NoProfile -Command "$d = [Environment]::GetFolderPath('Desktop'); Remove-Item -LiteralPath ($d + '\QA Regression.lnk') -ErrorAction SilentlyContinue; $s = (New-Object -ComObject WScript.Shell).CreateShortcut($d + '\Regina.lnk'); $s.TargetPath = $env:SHORTCUT_TARGET; $s.WorkingDirectory = $env:HERE; $s.IconLocation = $env:SHORTCUT_ICON; $s.WindowStyle = 7; $s.Save()" >nul 2>&1 && echo Added a "Regina" icon to your desktop. Use it to start Regina from now on.&& echo done>".venv\desktop-icon-regina"
+exit /b 0
+

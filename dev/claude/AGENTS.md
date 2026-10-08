@@ -144,7 +144,7 @@ dev/                 NOT shared (make_share_folder.py leaves it out): everything
   designs/           design briefs (CONTEXT_workbook_builder_design.md); put new design briefs/exports here, not at the root
   designs/workbook-builder-canvas/  scripts that generate every Workbook Builder design board (markup to copy when building a screen)
   plan/              the Workbook Builder build plan: PLAN.md (rules, order, status), CONTRACT.md, phases/Pxx-*.md, YOUR_GUIDE.md (for the user)
-  make_share_folder.py  builds share/QA Regression/ + .zip (git-ignored) for other people: launchers, src/, config, README, workbooks
+  make_share_folder.py  builds share/Regina/ + .zip (git-ignored) for other people: launchers, src/, config, README, workbooks
   share/START HERE.txt  the one-page instructions copied into that folder
 README.md            user manual, 56 KB: read one section at a time (section 8)
 config.yaml          behaviour settings, every key commented; sections: runner browser timeouts waits output screenshots
@@ -153,7 +153,7 @@ config.yaml          behaviour settings, every key commented; sections: runner b
 secrets.env          git-ignored secrets (RR_VAR_<COLUMN>, bypass tokens); never print it. secrets.env.example = the template
 selectors.yaml       logical selector map (sheet Locator column → this → legacy XPath)
 Start QA Regression.command/.bat   double-click launchers: first run creates .venv + installs + desktop icon (Windows .lnk
-                     with app.ico; macOS QA Regression.app bundle with app.icns, remade when the folder moves),
+                     with app.ico; macOS Regina.app bundle with app.icns, remade when the folder moves),
                      reinstalls when pyproject.toml changes, then `python -m regrunner serve --app --exit-when-closed` (own Edge/Chrome window;
                      closing it stops the server, then the .command closes its Terminal window via osascript)
 workbooks/           the user's real workbooks (DO NOT EDIT, DO NOT RUN live). .trash/ = deleted from UI, .chains/ = saved run orders

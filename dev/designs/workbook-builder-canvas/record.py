@@ -5,7 +5,7 @@ W, H = 1440, 900
 SITE_CSS = 'font-family: Georgia, \'Times New Roman\', serif; color: #1D2B36; background: #FFFFFF'
 
 
-def window(url, content, w=1440, h=900, note='Controlled by QA Regression · Build'):
+def window(url, content, w=1440, h=900, note='Controlled by Regina · Build'):
     return ('<div style="width: %dpx; height: %dpx; display: flex; flex-direction: column; background: #D9DDE3; font-family: \'Instrument Sans\', sans-serif">' % (w, h)
             + '<div style="height: 44px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: #E8EBEF; border-bottom: 1px solid #C9CED6">'
             '<span style="display: flex; gap: 7px"><span class="pdot" style="width: 12px; height: 12px; background: #E0605A"></span><span class="pdot" style="width: 12px; height: 12px; background: #E1B94A"></span><span class="pdot" style="width: 12px; height: 12px; background: #5DBB63"></span></span>'

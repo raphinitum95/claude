@@ -47,7 +47,7 @@ ${banner('fail', 'failc', v.error.message, html`<button class="btn btn-sm" data-
 function render() {
   S.now = Date.now();
   if (!S.cfg) {
-    morph(appEl(), html`<div class="page" style="max-width: 640px; margin: 12vh auto"><div class="eyebrow">QA Regression</div>
+    morph(appEl(), html`<div class="page" style="max-width: 640px; margin: 12vh auto"><div class="eyebrow">Regina</div>
 ${S.online ? html`<div class="skel" style="height: 30px; width: 260px; margin-top: 10px"></div>` : banner('fail', 'failc', 'Cannot reach the regrunner server. Is it still running? Start it again, then reload this page.')}</div>`);
     return;
   }

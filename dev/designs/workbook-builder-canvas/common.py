@@ -185,7 +185,7 @@ def tabs(active):
 def header(active, middle='', right=''):
     return ('<header style="height: 60px; flex: none; display: flex; align-items: center; gap: 18px; padding: 0 18px 0 20px; border-bottom: 1px solid var(--line); background: var(--bg)">'
             '<div style="display: flex; align-items: center; gap: 10px">' + LOGO +
-            '<span class="disp" style="font-size: 18px; font-weight: 700; letter-spacing: -.015em">QA Regression</span></div>'
+            '<span class="disp" style="font-size: 18px; font-weight: 700; letter-spacing: -.015em">Regina</span></div>'
             + tabs(active) +
             '<div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex-grow: 1">' + middle + '</div>'
             + right + '</header>')

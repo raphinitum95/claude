@@ -801,11 +801,11 @@ def create_app(cfg: Config, config_path: str | None = None, on_all_windows_close
                 continue
             if busy():
                 if not told_about_run:
-                    print("The QA Regression window was closed while a run is going. It stops by itself when the run finishes;"
+                    print("The Regina window was closed while a run is going. It stops by itself when the run finishes;"
                           " reopen the window to watch it.", flush=True)
                     told_about_run = True
                 continue
-            print("The QA Regression window was closed: stopping.", flush=True)
+            print("The Regina window was closed: stopping.", flush=True)
             on_all_windows_closed()
             return
 

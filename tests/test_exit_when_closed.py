@@ -1,4 +1,4 @@
-"""`serve --exit-when-closed`: the launchers stop QA Regression (and close their terminal window) once the UI window is closed."""
+"""`serve --exit-when-closed`: the launchers stop Regina (and close their terminal window) once the UI window is closed."""
 from __future__ import annotations
 
 import socket

@@ -19,7 +19,7 @@ export function tabs(active) {
 export function headerShell(active, middle = '', right = '', strip = '') {
   return html`<header class="app-header">
 <div class="hdr-brand">${LOGO}
-<div class="disp hdr-title" style="font-size: 19px; font-weight: 700; letter-spacing: -.015em">QA Regression</div></div>
+<div class="disp hdr-title" style="font-size: 19px; font-weight: 700; letter-spacing: -.015em">Regina</div></div>
 ${tabs(active)}
 <div class="hdr-mid">${middle}</div>
 <div class="hdr-strip">${strip}</div><div class="hdr-chips">${right}</div>
