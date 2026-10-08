@@ -65,6 +65,7 @@ Shading lives INSIDE each part's own group, so a part keeps its shading when it 
 - **The front legs have the same fill as the torso** (`gBody`), so there is no visible line where a leg starts; they read as legs only through the soft blob shade and the ankle shade.
   Do not add rim overlays, outlines or hard-edged shapes to the torso or legs: that is what made the legs look like separate objects.
 - **One faint cast shadow** remains: the fringe onto the face and horn (two very light stacked strokes, clipped by `cpFace` so it never lands on the background).
+- **Strand streaks and the horn twist** (class `shade strand` / `twist`): the mane locks, fringe and tail ribbons get a faint multi-stop gradient painted over their own outline (`gStrandV` = vertical streaks for the side locks, `gStrandD` = diagonal for the fringe, `gStrandH` = horizontal for the tail); the horn's spiral is ONE repeating gradient (`gHornTwist`, `spreadMethod="repeat"`). No extra geometry; they scale with `--shade-strength` too.
 - **Contact shadows**: four small dark ellipses under the hooves in `shadow`, on top of the soft ground shadow.
 - **One knob**: `#unicorn { --shade-strength: 1 }` scales every `.shade` element (0 = flat, 1 = as drawn, about 1.5 = stronger).
 

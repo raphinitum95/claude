@@ -98,3 +98,9 @@ def test_cast_shadows_are_clipped_to_the_surface_they_fall_on_and_the_neck_sits_
     ids = _group_ids(root)
     assert ids.index("neck") < ids.index("body"), "the neck must be drawn before the body, or its lower edge shows as a hard bib"
     assert ids.index("chest-heart") > ids.index("front-leg-right"), "the heart must be drawn after the legs"
+
+
+def test_the_rig_stays_light_in_size_and_in_the_number_of_moving_groups() -> None:
+    """Detail must come from gradients on shapes that already exist: a size and a group budget keep a later 'more detail' round honest."""
+    assert SVG.stat().st_size < 60_000, "the SVG grew past 60 KB: add detail with gradients, not with more geometry"
+    assert len(_group_ids(_tree())) <= 56, "more moving groups cost animation time; the rig has 52"

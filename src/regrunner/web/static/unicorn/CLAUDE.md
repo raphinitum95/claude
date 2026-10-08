@@ -70,6 +70,7 @@ chibi), eyes 57 x 64 each at x = 270 +/- 64, y = 262; muzzle at y = 295, mouth a
 - Eye / brow / mouth / ear / effect states are `data-*` attributes on `#unicorn`; CSS in the SVG does the show/hide. No JS in the SVG.
 - Keep it light: gradients and plain shapes only. No SVG filters or masks inside the rig (they are costly when animated). `clipPath` is allowed only to keep a static cast shadow on the surface it falls on.
 - Shading: every shade overlay / cast shadow has class `shade` and sits inside its own part's group; light is from the upper left; `--shade-strength` scales it all (see rig-spec section 2b).
+- Detail budget: add detail with gradients on shapes that already exist (strand streaks `gStrandV/H/D`, the horn twist `gHornTwist` = one repeating gradient), never with extra geometry or extra moving groups. Size guard: under 60 KB, at most 56 groups (`tests/test_unicorn_rig.py`).
 - Eyes: the white of the eye stays visible; the iris is about 75 % of the eye (a full-eye iris looked alien).
 
 ## Performance rules for Phase 2 (the QA app runs several test workers on the same machine)

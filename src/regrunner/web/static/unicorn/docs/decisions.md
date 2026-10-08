@@ -71,3 +71,11 @@
 - **Hair vs horn: the horn is now drawn OVER the fringe** (order is face, fringe, horn) and the strands' roots are behind it or away from it (the teal strand starts at the upper right). A soft shade sits round the
   horn base. Why (user): "the hair by the horn seems to be coming out of the horn". The horn's id order changed: `mane-front` is now drawn BEFORE `horn`.
 - Pink curl moved 8 px outward so it no longer sits on the left lashes; the eyelid is a little bigger so it hides the lashes in a blink, and in the sad mood the lash flicks are hidden (the drooping lid left their tips floating).
+
+## 2026-10-08 (detail without cost)
+
+- **Hair strands are gradient streaks painted over the existing shapes**, not extra paths: one multi-stop gradient (`STRANDS`, 13 stops of faint white / violet) used three ways (vertical, horizontal, diagonal via `gradientTransform`).
+  First try was far too strong (brushed-metal look); alphas were then cut to about a third. Why (user): "more detail only if we can find creative ways that don't cost size or performance".
+- **The horn's four spiral arcs became one repeating gradient** (`spreadMethod="repeat"`, diagonal bands of darker gold then a pale sheen), which reads as a twisted rope and is one element instead of a path of four curves.
+- **Measured cost of this round:** SVG 38.6 to 43.8 KB (8.0 KB gzipped), paths 107 to 119 (12 overlays), moving groups 52 to 52 (unchanged), gradients 35 to 39. A size / group guard was added to the test (under 60 KB, at most 56 groups).
+- Not done (would cost geometry): iris rays, individual hair strands, fur, ear fluff.

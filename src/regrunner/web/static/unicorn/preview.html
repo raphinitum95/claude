@@ -62,6 +62,10 @@
     <radialGradient id="gBlob" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#A98FC2" stop-opacity="0.36"/><stop offset="0.5" stop-color="#A98FC2" stop-opacity="0.18"/><stop offset="1" stop-color="#A98FC2" stop-opacity="0"/></radialGradient>
     <radialGradient id="gChin" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#8F7AA6" stop-opacity="0.16"/><stop offset="1" stop-color="#8F7AA6" stop-opacity="0"/></radialGradient>
     <radialGradient id="gMuzzle" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.8"/><stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+    <linearGradient id="gStrandV" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.08" stop-color="#FFFFFF" stop-opacity="0.13"/><stop offset="0.17" stop-color="#8A58AE" stop-opacity="0.045"/><stop offset="0.27" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0.1"/><stop offset="0.47" stop-color="#8A58AE" stop-opacity="0.06"/><stop offset="0.56" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0.12"/><stop offset="0.75" stop-color="#8A58AE" stop-opacity="0.05"/><stop offset="0.84" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.92" stop-color="#FFFFFF" stop-opacity="0.09"/><stop offset="1" stop-color="#8A58AE" stop-opacity="0"/></linearGradient>
+    <linearGradient id="gStrandH" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.08" stop-color="#FFFFFF" stop-opacity="0.13"/><stop offset="0.17" stop-color="#8A58AE" stop-opacity="0.045"/><stop offset="0.27" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0.1"/><stop offset="0.47" stop-color="#8A58AE" stop-opacity="0.06"/><stop offset="0.56" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0.12"/><stop offset="0.75" stop-color="#8A58AE" stop-opacity="0.05"/><stop offset="0.84" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.92" stop-color="#FFFFFF" stop-opacity="0.09"/><stop offset="1" stop-color="#8A58AE" stop-opacity="0"/></linearGradient>
+    <linearGradient id="gStrandD" x1="0" y1="0" x2="1" y2="0" gradientTransform="rotate(40 .5 .5)"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.08" stop-color="#FFFFFF" stop-opacity="0.13"/><stop offset="0.17" stop-color="#8A58AE" stop-opacity="0.045"/><stop offset="0.27" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0.1"/><stop offset="0.47" stop-color="#8A58AE" stop-opacity="0.06"/><stop offset="0.56" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0.12"/><stop offset="0.75" stop-color="#8A58AE" stop-opacity="0.05"/><stop offset="0.84" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.92" stop-color="#FFFFFF" stop-opacity="0.09"/><stop offset="1" stop-color="#8A58AE" stop-opacity="0"/></linearGradient>
+    <linearGradient id="gHornTwist" gradientUnits="userSpaceOnUse" x1="236" y1="172" x2="262" y2="150" spreadMethod="repeat"><stop offset="0" stop-color="#C98B55" stop-opacity="0"/><stop offset=".5" stop-color="#C98B55" stop-opacity=".62"/><stop offset=".58" stop-color="#FFF6C8" stop-opacity=".55"/><stop offset=".8" stop-color="#FFF6C8" stop-opacity="0"/><stop offset="1" stop-color="#C98B55" stop-opacity="0"/></linearGradient>
     <linearGradient id="gLeg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#F4EAF2"/><stop offset="0.3" stop-color="#FEFAF8"/><stop offset="0.7" stop-color="#FAF1F5"/><stop offset="1" stop-color="#E6D6EC"/></linearGradient>
   </defs>
   <style>
@@ -162,10 +166,13 @@
     <!-- pivot: tail base (378, 470), tucked under the right haunch -->
     <path d="M 372 466 C 366 420 404 392 448 396 C 494 400 524 430 514 468 C 508 488 490 492 484 482 C 480 474 486 468 492 464 C 484 446 458 434 430 440 C 404 446 392 462 388 488 Z" fill="url(#gTailPink)"/>
     <path class="shade" d="M 372 466 C 366 420 404 392 448 396 C 494 400 524 430 514 468 C 508 488 490 492 484 482 C 480 474 486 468 492 464 C 484 446 458 434 430 440 C 404 446 392 462 388 488 Z" fill="url(#gRimHair)"/>
+    <path class="shade strand" d="M 372 466 C 366 420 404 392 448 396 C 494 400 524 430 514 468 C 508 488 490 492 484 482 C 480 474 486 468 492 464 C 484 446 458 434 430 440 C 404 446 392 462 388 488 Z" fill="url(#gStrandH)"/>
     <path d="M 384 512 C 368 478 396 444 436 440 C 472 438 500 458 500 488 C 496 506 480 512 470 506 C 478 492 470 478 448 476 C 424 474 404 488 402 520 Z" fill="url(#gTailLilac)"/>
     <path class="shade" d="M 384 512 C 368 478 396 444 436 440 C 472 438 500 458 500 488 C 496 506 480 512 470 506 C 478 492 470 478 448 476 C 424 474 404 488 402 520 Z" fill="url(#gRimHair)"/>
+    <path class="shade strand" d="M 384 512 C 368 478 396 444 436 440 C 472 438 500 458 500 488 C 496 506 480 512 470 506 C 478 492 470 478 448 476 C 424 474 404 488 402 520 Z" fill="url(#gStrandH)"/>
     <path d="M 386 532 C 378 504 410 488 446 492 C 480 496 508 510 506 532 C 505 546 492 550 484 544 C 490 532 480 520 456 518 C 430 516 410 526 404 548 Z" fill="url(#gTailTeal)"/>
     <path class="shade" d="M 386 532 C 378 504 410 488 446 492 C 480 496 508 510 506 532 C 505 546 492 550 484 544 C 490 532 480 520 456 518 C 430 516 410 526 404 548 Z" fill="url(#gRimHair)"/>
+    <path class="shade strand" d="M 386 532 C 378 504 410 488 446 492 C 480 496 508 510 506 532 C 505 546 492 550 484 544 C 490 532 480 520 456 518 C 430 516 410 526 404 548 Z" fill="url(#gStrandH)"/>
     <path d="M 420 410 C 450 404 484 416 500 440" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".35"/>
     <path d="M 410 462 C 440 452 470 462 482 480" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity=".25"/>
     <circle cx="372" cy="470" r="22" fill="#CB9AE5"/><!-- hidden overlap: root under the haunch -->
@@ -230,18 +237,21 @@
     <path d="M 200 262 C 170 282 150 326 154 376 C 157 414 180 436 208 434 C 194 418 190 394 196 366 C 202 338 214 320 232 308 Z" fill="url(#gLock2)"/>
     <path class="shade" d="M 200 262 C 170 282 150 326 154 376 C 157 414 180 436 208 434 C 194 418 190 394 196 366 C 202 338 214 320 232 308 Z" fill="url(#gRimHair)"/>
     <path class="shade" d="M 200 262 C 170 282 150 326 154 376 C 157 414 180 436 208 434 C 194 418 190 394 196 366 C 202 338 214 320 232 308 Z" fill="url(#gSideHair)"/>
+    <path class="shade strand" d="M 200 262 C 170 282 150 326 154 376 C 157 414 180 436 208 434 C 194 418 190 394 196 366 C 202 338 214 320 232 308 Z" fill="url(#gStrandV)"/>
   </g>
   <g id="mane-lock-5">
     <!-- pivot (root): (326, 262) -->
     <path d="M 340 262 C 370 282 390 326 386 376 C 383 414 360 436 332 434 C 346 418 350 394 344 366 C 338 338 326 320 308 308 Z" fill="url(#gLock5)"/>
     <path class="shade" d="M 340 262 C 370 282 390 326 386 376 C 383 414 360 436 332 434 C 346 418 350 394 344 366 C 338 338 326 320 308 308 Z" fill="url(#gRimHair)"/>
     <path class="shade" d="M 340 262 C 370 282 390 326 386 376 C 383 414 360 436 332 434 C 346 418 350 394 344 366 C 338 338 326 320 308 308 Z" fill="url(#gSideHair)"/>
+    <path class="shade strand" d="M 340 262 C 370 282 390 326 386 376 C 383 414 360 436 332 434 C 346 418 350 394 344 366 C 338 338 326 320 308 308 Z" fill="url(#gStrandV)"/>
   </g>
   <g id="mane-lock-1">
     <!-- pivot (root): (186, 226) -->
     <path d="M 178 200 C 142 212 112 252 108 308 C 105 356 120 398 152 414 C 174 424 196 413 198 396 C 199 386 190 380 182 385 C 170 391 160 383 158 366 C 156 336 168 300 192 276 Z" fill="url(#gLock1)"/>
     <path class="shade" d="M 178 200 C 142 212 112 252 108 308 C 105 356 120 398 152 414 C 174 424 196 413 198 396 C 199 386 190 380 182 385 C 170 391 160 383 158 366 C 156 336 168 300 192 276 Z" fill="url(#gRimHair)"/>
     <path class="shade" d="M 178 200 C 142 212 112 252 108 308 C 105 356 120 398 152 414 C 174 424 196 413 198 396 C 199 386 190 380 182 385 C 170 391 160 383 158 366 C 156 336 168 300 192 276 Z" fill="url(#gSideHair)"/>
+    <path class="shade strand" d="M 178 200 C 142 212 112 252 108 308 C 105 356 120 398 152 414 C 174 424 196 413 198 396 C 199 386 190 380 182 385 C 170 391 160 383 158 366 C 156 336 168 300 192 276 Z" fill="url(#gStrandV)"/>
     <path d="M 140 262 C 126 292 122 330 130 366" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".3"/>
   </g>
   <g id="mane-lock-6">
@@ -249,6 +259,7 @@
     <path d="M 362 200 C 398 212 428 252 432 308 C 435 356 420 398 388 414 C 366 424 344 413 342 396 C 341 386 350 380 358 385 C 370 391 380 383 382 366 C 384 336 372 300 348 276 Z" fill="url(#gLock6)"/>
     <path class="shade" d="M 362 200 C 398 212 428 252 432 308 C 435 356 420 398 388 414 C 366 424 344 413 342 396 C 341 386 350 380 358 385 C 370 391 380 383 382 366 C 384 336 372 300 348 276 Z" fill="url(#gRimHair)"/>
     <path class="shade" d="M 362 200 C 398 212 428 252 432 308 C 435 356 420 398 388 414 C 366 424 344 413 342 396 C 341 386 350 380 358 385 C 370 391 380 383 382 366 C 384 336 372 300 348 276 Z" fill="url(#gSideHair)"/>
+    <path class="shade strand" d="M 362 200 C 398 212 428 252 432 308 C 435 356 420 398 388 414 C 366 424 344 413 342 396 C 341 386 350 380 358 385 C 370 391 380 383 382 366 C 384 336 372 300 348 276 Z" fill="url(#gStrandV)"/>
     <path d="M 400 262 C 414 292 418 330 410 366" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".3"/>
   </g>
   <g id="mane-lock-3">
@@ -256,12 +267,14 @@
     <path d="M 190 154 C 152 164 128 194 128 234 C 128 266 146 280 162 272 C 152 252 158 214 186 196 Z" fill="url(#gLock3)"/>
     <path class="shade" d="M 190 154 C 152 164 128 194 128 234 C 128 266 146 280 162 272 C 152 252 158 214 186 196 Z" fill="url(#gRimHair)"/>
     <path class="shade" d="M 190 154 C 152 164 128 194 128 234 C 128 266 146 280 162 272 C 152 252 158 214 186 196 Z" fill="url(#gSideHair)"/>
+    <path class="shade strand" d="M 190 154 C 152 164 128 194 128 234 C 128 266 146 280 162 272 C 152 252 158 214 186 196 Z" fill="url(#gStrandV)"/>
   </g>
   <g id="mane-lock-4">
     <!-- pivot (root): (360, 190) -->
     <path d="M 350 154 C 388 164 412 194 412 234 C 412 266 394 280 378 272 C 388 252 382 214 354 196 Z" fill="url(#gLock4)"/>
     <path class="shade" d="M 350 154 C 388 164 412 194 412 234 C 412 266 394 280 378 272 C 388 252 382 214 354 196 Z" fill="url(#gRimHair)"/>
     <path class="shade" d="M 350 154 C 388 164 412 194 412 234 C 412 266 394 280 378 272 C 388 252 382 214 354 196 Z" fill="url(#gSideHair)"/>
+    <path class="shade strand" d="M 350 154 C 388 164 412 194 412 234 C 412 266 394 280 378 272 C 388 252 382 214 354 196 Z" fill="url(#gStrandV)"/>
   </g>
   <g id="ear-left">
     <!-- pivot: ear base (172, 176) -->
@@ -379,10 +392,13 @@
     <path class="shade" d="M 252 96 C 206 98 160 132 140 186 C 120 220 126 244 144 250 C 158 254 170 246 170 236 C 170 228 162 224 155 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="none" stroke="#7D6896" stroke-width="5" stroke-opacity="0.045" stroke-linejoin="round" transform="translate(2 4)"/></g>
     <path d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="url(#gLilacLock)"/>
     <path class="shade" d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="url(#gSideHair)"/>
+    <path class="shade strand" d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="url(#gStrandD)"/>
     <path d="M 276 114 C 296 106 318 106 336 112 C 362 124 364 160 322 186 C 312 194 302 202 292 208 C 300 192 302 176 298 160 C 294 140 282 128 276 114 Z" fill="url(#gTealLock)"/>
     <path class="shade" d="M 276 114 C 296 106 318 106 336 112 C 362 124 364 160 322 186 C 312 194 302 202 292 208 C 300 192 302 176 298 160 C 294 140 282 128 276 114 Z" fill="url(#gSideHair)"/>
+    <path class="shade strand" d="M 276 114 C 296 106 318 106 336 112 C 362 124 364 160 322 186 C 312 194 302 202 292 208 C 300 192 302 176 298 160 C 294 140 282 128 276 114 Z" fill="url(#gStrandD)"/>
     <path d="M 252 96 C 206 98 160 132 140 186 C 120 220 126 244 144 250 C 158 254 170 246 170 236 C 170 228 162 224 155 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="url(#gPinkLock)"/>
     <path class="shade" d="M 252 96 C 206 98 160 132 140 186 C 120 220 126 244 144 250 C 158 254 170 246 170 236 C 170 228 162 224 155 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="url(#gRimHair)"/>
+    <path class="shade strand" d="M 252 96 C 206 98 160 132 140 186 C 120 220 126 244 144 250 C 158 254 170 246 170 236 C 170 228 162 224 155 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="url(#gStrandD)"/>
     <path d="M 206 130 C 178 148 156 184 150 214" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".35"/>
     <path d="M 306 126 C 328 136 338 156 336 178" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity=".35"/>
   </g>
@@ -391,7 +407,7 @@
     <circle cx="266" cy="52" r="36" fill="url(#gHornGlow)"/>
     <ellipse class="shade" cx="270" cy="158" rx="36" ry="11" fill="url(#gBlob)"/><!-- soft shade round the horn base, so it sits ON the hair -->
     <path d="M 244 158 C 248 112 257 64 266 26 C 276 64 286 112 296 158 C 282 168 258 168 244 158 Z" fill="url(#gHorn)"/>
-    <path d="M 249 136 Q 270 122 291 138 M 252 112 Q 271 99 288 112 M 255 88 Q 271 77 284 87 M 258 66 Q 270 58 280 64" fill="none" stroke="#DB9E67" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+    <path class="twist" d="M 244 158 C 248 112 257 64 266 26 C 276 64 286 112 296 158 C 282 168 258 168 244 158 Z" fill="url(#gHornTwist)"/><!-- spiral = one repeating gradient -->
     <path d="M 256 150 C 258 110 262 70 266 40" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity=".6"/>
     <path d="M 300 45 Q 301.96 50.04 307 52 Q 301.96 53.96 300 59 Q 298.04 53.96 293 52 Q 298.04 50.04 300 45 Z" fill="#FFF3B8"/>
     <path d="M 236 69 Q 237.4 72.6 241 74 Q 237.4 75.4 236 79 Q 234.6 75.4 231 74 Q 234.6 72.6 236 69 Z" fill="#FFF3B8"/>
