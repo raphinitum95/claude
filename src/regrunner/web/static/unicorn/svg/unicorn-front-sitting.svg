@@ -46,6 +46,7 @@
     <linearGradient id="gStrandD" x1="0" y1="0" x2="1" y2="0" gradientTransform="rotate(40 .5 .5)"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.08" stop-color="#FFFFFF" stop-opacity="0.13"/><stop offset="0.17" stop-color="#8A58AE" stop-opacity="0.045"/><stop offset="0.27" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.38" stop-color="#FFFFFF" stop-opacity="0.1"/><stop offset="0.47" stop-color="#8A58AE" stop-opacity="0.06"/><stop offset="0.56" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0.12"/><stop offset="0.75" stop-color="#8A58AE" stop-opacity="0.05"/><stop offset="0.84" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.92" stop-color="#FFFFFF" stop-opacity="0.09"/><stop offset="1" stop-color="#8A58AE" stop-opacity="0"/></linearGradient>
     <linearGradient id="gHornTwist" gradientUnits="userSpaceOnUse" x1="236" y1="172" x2="262" y2="150" spreadMethod="repeat"><stop offset="0" stop-color="#C98B55" stop-opacity="0"/><stop offset=".5" stop-color="#C98B55" stop-opacity=".62"/><stop offset=".58" stop-color="#FFF6C8" stop-opacity=".55"/><stop offset=".8" stop-color="#FFF6C8" stop-opacity="0"/><stop offset="1" stop-color="#C98B55" stop-opacity="0"/></linearGradient>
     <linearGradient id="gLeg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#F4EAF2"/><stop offset="0.3" stop-color="#FEFAF8"/><stop offset="0.7" stop-color="#FAF1F5"/><stop offset="1" stop-color="#E6D6EC"/></linearGradient>
+  <linearGradient id="gCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D3CCE6"/><stop offset=".55" stop-color="#ABA3C9"/><stop offset="1" stop-color="#8A82AA"/></linearGradient>
   </defs>
   <style>
     /* ---- rig state: set data-eyes / data-brows / data-mouth / data-ears / data-fx on #unicorn (see docs/rig-spec.md) ---- */
@@ -107,6 +108,12 @@
     /* ---- shading: every overlay / cast shadow has class "shade". One knob: --shade-strength (1 = as drawn, 0 = none, 1.5 = stronger) ---- */
     #unicorn { --shade-strength: 1; }
     #unicorn .shade { opacity: var(--shade-strength); }
+
+
+    /* rain cloud (sad mood): fades in and out; hidden otherwise */
+    #fx-rain { opacity: 0; visibility: hidden; transition: opacity .5s, visibility 0s .5s; }
+    #unicorn[data-fx="rain"] #fx-rain { opacity: 1; visibility: visible; transition: opacity .5s, visibility 0s; }
+    @media (prefers-reduced-motion: reduce) { #fx-rain, #unicorn[data-fx="rain"] #fx-rain { transition: none; } }
 
     /* ---- pivots (user units of the 600 x 600 viewBox) ---- */
     #head-rig, #head { transform-origin: 270px 330px; }
@@ -209,6 +216,12 @@
     <!-- pivot: heart centre (270, 400) -->
     <path d="M 270 417.5 C 249.0 402.5 255.0 386.0 262.5 386.0 C 267.0 386.0 270 389.0 270 392.0 C 270 389.0 273.0 386.0 277.5 386.0 C 285.0 386.0 291.0 402.5 270 417.5 Z" fill="#F8CDE4"/>
     <path d="M 259 394 C 261 390 265 390 267 393" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity=".75"/>
+  </g>
+  <g id="fx-rain">
+    <!-- the sad mood's rain cloud: static art above her head, drawn BEHIND the head-rig so the horn pokes through it. The falling rain is canvas (js/fx.js). pivot: (270, 30) -->
+    <path d="M 130 54 C 112 54 104 38 118 30 C 118 14 142 8 154 18 C 164 4 192 2 202 16 C 214 6 240 6 248 18 C 262 8 292 8 300 20 C 312 8 340 10 348 24 C 366 16 388 26 384 42 C 404 44 410 60 392 62 L 140 62 C 134 62 130 58 130 54 Z" fill="url(#gCloud)"/>
+    <path d="M 150 22 C 160 10 184 8 194 18 M 214 14 C 226 8 242 10 246 20 M 278 16 C 290 11 304 14 308 22" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" opacity=".45"/>
+    <ellipse cx="270" cy="58" rx="120" ry="5" fill="#6F6794" opacity=".28"/>
   </g>
   <g id="head-rig">
   <g id="mane-lock-2">

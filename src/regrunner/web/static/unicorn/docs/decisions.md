@@ -114,3 +114,17 @@
 - **Two bugs the tests found while building it**: a variable named `root` inside `mood.js` silently resolved to the preview page's own global `root` (use plain `setTimeout`), and the happy-ending sparkle was scheduled after the attributes had been written, so it never showed (`flash()` now applies itself).
 - **Preview**: a run simulator was added (Start run, Pass, Fail, Finish run, Auto-run 30 tests with a pass-rate slider), manual moods are buttons plus "auto", and a live readout shows the mood and the totals. `window.unicorn` is the controller, so the console can call the brief's interface.
 - Not done yet: glitter canvas, rain cloud, boards, intro, eye tracking, blinking while sad / angry, a glance at the FAIL board (needs the boards).
+
+## 2026-10-08 (Phase 2, round 3: glitter canvas and rain cloud)
+
+- **Rain cloud = one new static SVG group, `fx-rain`** (280 x 60, lilac-grey, above her head), shown by `data-fx="rain"` with a fade. It is drawn BEFORE `head-rig`, so the horn pokes through it. Why: the brief lists a rain cloud for bad runs; static art costs nothing
+  to animate and gives a "gloom" state that stays after the rain stops. The first idea (cloud and drops behind her head) would have hidden the drops; the cloud is wide so the rain can fall beside her head. This is the only change to the locked art in this round
+  (the sad mood's `fx` is now `rain`; 52 to 53 groups, size still under the guard).
+- **Rain and glitter are canvas particles on ONE canvas with ONE loop (`js/fx.js`)**, the brief's "canvas only for particles". The loop runs only while there are particles, drops or pending bursts: at rest nothing runs and the canvas is cleared.
+  Caps: 90 particles at any moment (a burst asked for 2000 gets what room is left), 34 drops, 30 fps, devicePixelRatio at most 2, no shadowBlur or filters. Hidden tab = paused; reduced motion = glitter and rain are no-ops (the cloud still shows).
+- **Rain has three lanes** (beside her head on both sides, falling past the mane; a short one onto the top of her head) so the drops do not streak across her face. It stops by itself after 30 s unless renewed; each failure while sad renews it, and after a sad
+  ending it rains for `sadRainMs` (5 s) before the rain stops and she settles.
+- **Glitter uses only the rig's palette** (gold, pink, lilac, teal, white): a celebration is four staggered bursts (horn, left, right, horn) of 66 particles in all; a pass is 3 tiny sparkles by the horn.
+- **Bugs found while building it**: (1) a pass flash of the SVG sparkle covered the sad cloud, so every pass made it fade out for 0.7 s; flashes never override a mood's own effect now. (2) The preview's rain button had the same id as the new SVG group.
+- **Measured** (headless Chromium, software rendering, 1000 px viewport): at rest 0.1 % of one core; idle only 7.5 %; rain only 7.4 %; rain + idle 10.3 %; celebration + idle 9.6 % for its first seconds. Script time is about 1 % in every case; the rest is painting. Levers if it is ever too much: `fps`, a smaller canvas margin, `max`.
+- Not done yet: PASS/FAIL boards, intro, eye tracking, blinking in sad / angry, a glance at the FAIL board.

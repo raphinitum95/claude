@@ -52,6 +52,8 @@ PAGE = """<!doctype html>
     <button id="blink" type="button">Blink now</button>
     <button id="settle" type="button">Rest</button>
     <label>strength <input type="range" id="intensity" min="0" max="1.5" step="0.1" value="1"></label>
+    <button id="fx-burst" type="button">Glitter burst</button>
+    <button id="fx-rain-toggle" type="button">Rain on / off</button>
     <label><input type="checkbox" id="pivots-toggle"> show pivots</label>
   </div>
   <div class="bar">
@@ -61,6 +63,7 @@ PAGE = """<!doctype html>
   </div>
 </main>
 <script src="js/idle.js"></script>
+<script src="js/fx.js"></script>
 <script src="js/mood.js"></script>
 <script>
 const svg = document.querySelector("#stage svg");
@@ -72,7 +75,8 @@ function show(mood, totals) {
   document.getElementById("totals-now").textContent = totals.passed + " pass / " + totals.failed + " fail" + (n ? " (" + Math.round(100 * totals.passed / n) + "%)" : "") + (totals.done ? " - finished" : totals.running ? " - running" : "");
 }
 let manual = false;
-const unicorn = UnicornMood.create(svg, { idle: idle, onChange: show });
+const fx = UnicornFx.attach(document.getElementById("stage"), { svg: svg });
+const unicorn = UnicornMood.create(svg, { idle: idle, fx: fx, onChange: show });
 window.unicorn = unicorn;                       // the interface from the brief: unicorn.onRunStart / onTestResult / onRunComplete / setMood
 const bar = document.getElementById("moods");
 function setManual(name) { manual = !!name; unicorn.setMood(name); for (const b of bar.children) b.setAttribute("aria-pressed", String(b.dataset.mood === (name || "auto"))); }
@@ -101,6 +105,8 @@ clickTo("run-auto", () => {
     if (done === 30) { clearInterval(autoTimer); const t = unicorn.getTotals(); setTimeout(() => unicorn.onRunComplete({ passed: t.passed, failed: t.failed, total: 30 }), 600); }
   }, 450);
 });
+clickTo("fx-burst", () => fx.celebrate());
+clickTo("fx-rain-toggle", () => fx.rain(!fx.isRaining()));
 document.getElementById("pivots-toggle").addEventListener("change", e => root.classList.toggle("show-pivots", e.target.checked));
 // Idle animation (js/idle.js): one 30 fps loop, paused when the tab is hidden, off under prefers-reduced-motion.
 const idleToggle = document.getElementById("idle-toggle");
@@ -112,7 +118,8 @@ let lastFrames = 0;
 setInterval(() => {
   const st = idle.stats();
   idleToggle.checked = st.running || idleToggle.checked && !idle.settled();
-  document.getElementById("idle-stats").textContent = (st.running ? ((st.frames - lastFrames) * 2) + " fps, " : "stopped, ") + st.writes + " style writes";
+  const fs = fx.stats();
+  document.getElementById("idle-stats").textContent = (st.running ? ((st.frames - lastFrames) * 2) + " fps, " : "stopped, ") + st.writes + " style writes; fx: " + (fs.running ? fs.live + " particles" : "off");
   lastFrames = st.frames;
 }, 500);
 unicorn.setMood(null);

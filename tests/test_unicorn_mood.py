@@ -18,7 +18,7 @@ PREVIEW = (UNICORN / "preview.html").as_uri()
 
 FAKE_IDLE = """window.fakeIdle = { calls: [], start() { this.calls.push('start'); }, settle() { this.calls.push('settle'); },
   react(name) { this.calls.push('react:' + name); return true; } };"""
-FAST = "{ startExcitedMs: 80, passSparkleMs: 80, flinchMs: 80, celebrateMs: 150, endSparkleMs: 100, restAfterMs: 100 }"
+FAST = "{ startExcitedMs: 80, passSparkleMs: 80, flinchMs: 80, celebrateMs: 150, endSparkleMs: 100, restAfterMs: 100, sadRainMs: 100 }"
 
 
 @pytest.fixture

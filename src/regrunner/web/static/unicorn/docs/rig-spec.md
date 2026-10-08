@@ -16,7 +16,7 @@ set in the SVG; section 3 is the same table.
 | `data-brows` | `neutral`, `up`, `sad`, `angry`, `scared` | rotates / lifts `brow-left`, `brow-right` |
 | `data-mouth` | `neutral`, `smile`, `frown`, `open` | one `mouth-*` group visible (scared + open squeezes the mouth narrow) |
 | `data-ears` | `neutral`, `perk`, `droop`, `back`, `flat` | rotates `ear-left`, `ear-right` about their bases |
-| `data-fx` | `none`, `sparkle`, `sweat`, `steam` | shows `fx-sparkle` / `fx-sweat` / `fx-steam` (the rain cloud is Phase 2 art) |
+| `data-fx` | `none`, `sparkle`, `sweat`, `steam`, `rain` | shows `fx-sparkle` / `fx-sweat` / `fx-steam`, or the rain cloud `fx-rain` (it fades in and out; the falling rain itself is canvas, `js/fx.js`) |
 | class `show-pivots` on `#unicorn` | present / absent | debug: shows pink pivot dots (`#pivots`) |
 
 Blink: `#eyelid-left` / `#eyelid-right` rest at `scaleY(0)` (open). A blink animates them to `scaleY(1)` and back (about 90 ms each way). The lid is skin
@@ -36,6 +36,7 @@ coloured (it shares the head's user-space gradient so it matches exactly) and ca
 | `neck` | neck (drawn BEFORE `body`: the torso covers its lower end, so there is no hard edge) | goes under the head and the body |
 | `front-leg-left`, `front-leg-right` | front legs, each contains its hoof | `hoof-left` / `hoof-right` nested inside |
 | `chest-heart` | small pink heart | drawn after the legs so they never cover it |
+| `fx-rain` | the sad mood's rain cloud (static art, 280 x 60 above her head) | drawn BEFORE `head-rig`, so the horn pokes through it; fades in with `data-fx="rain"`; the rain is canvas |
 | `head-rig` | WRAPPER: everything that follows moves with the head | rotate / translate this for nods and head turns |
 | `mane-lock-2`, `-5`, `-1`, `-6`, `-3`, `-4` | 6 side locks: 1 left outer (pink), 2 left inner (lilac to teal), 3 left top (pink), 4 right top (lilac), 5 right inner (lilac to pink), 6 right outer (teal) | behind the head; each sways independently about its root |
 | `ear-left`, `ear-right` | ears (white + pink inner) | bases hidden under the head and fringe |
@@ -96,7 +97,7 @@ A mood is a combination of the five attributes above. Same table as `MOODS` in `
 | `happy` | `open` | `up` | `smile` | `neutral` | `none` | pass rate 60 to 95 %: small sparkle, nod |
 | `excited` | `wide` | `up` | `open` | `perk` | `sparkle` | a streak of passes, run start |
 | `joyful` | `closed` | `up` | `open` | `perk` | `sparkle` | pass rate >= 95 %: celebration |
-| `sad` | `sad` | `sad` | `frown` | `droop` | `none` (Phase 2: rain cloud) | pass rate < 60 %: droopy, sigh, rain cloud |
+| `sad` | `sad` | `sad` | `frown` | `droop` | `rain` (cloud + falling rain) | pass rate < 60 %: droopy, sigh, rain cloud |
 | `scared` | `scared` | `scared` | `open` | `flat` | `sweat` | nervous: failures piling up mid-run |
 | `angry` | `angry` | `angry` | `frown` | `back` | `steam` | manual / failures with a clear pattern |
 
@@ -140,8 +141,8 @@ Behaviour: capped at 30 fps; pauses while the tab is hidden or she is scrolled o
 
 ## 6b. Mood state machine (built: `js/mood.js`)
 
-`UnicornMood.create(svg, {idle, config, onChange})` returns the interface from the brief: `onRunStart({totalTests?})`, `onTestResult({status: 'pass'|'fail', name?})`, `onRunComplete({passed, failed, total})`,
-`setMood(name|null)` (manual override; null = automatic), plus `getMood()`, `getTotals()`, `reset()`, `destroy()`. `idle` is the object from `UnicornIdle.attach` (optional: without it only the attributes change).
+`UnicornMood.create(svg, {idle, fx, config, onChange})` returns the interface from the brief: `onRunStart({totalTests?})`, `onTestResult({status: 'pass'|'fail', name?})`, `onRunComplete({passed, failed, total})`,
+`setMood(name|null)` (manual override; null = automatic), plus `getMood()`, `getTotals()`, `reset()`, `destroy()`. `idle` is the object from `UnicornIdle.attach` and `fx` the one from `UnicornFx.attach` (section 6c); both are optional: without them only the attributes change. An SVG flash (the pass sparkle) never covers a mood's own effect (rain, sweat, steam).
 `UnicornMood.POSES` is the mood table of section 4 (a test keeps the two equal) and `UnicornMood.moodFor(totals, config)` is the pure rule: the mood is a function of the running totals only.
 
 | Situation | Mood |
@@ -153,11 +154,28 @@ Behaviour: capped at 30 fps; pauses while the tab is hidden or she is scrolled o
 | run start | `excited` for `startExcitedMs` (1.5 s), then the rule above |
 | run complete, pass rate at or above `celebrate` (95 %) | `joyful` + a celebration (a hop of three shrinking bounces, sparkle) for `celebrateMs`, then she settles |
 | run complete, 60 to 95 % | `happy` + a small sparkle and a mane flick, then she settles after `restAfterMs` |
-| run complete, below 60 % | `sad`, then she settles after `restAfterMs` (the sad pose stays) |
+| run complete, below 60 % | `sad` with the rain cloud; it rains for `sadRainMs` (5 s), then the rain stops and she settles (the sad pose and the cloud stay) |
 | `setMood('angry')` etc. | the manual mood, until `setMood(null)` or a new run |
 
 A run of unknown length (no `totalTests`) works the same: the rule only looks at the running totals. `angry` is manual only for now. Per-result reactions (short, one-shot, on the idle loop): a pass = a small sparkle (`passSparkleMs` 700) and a mane flick;
 a fail = a flinch (head drops about 3 px) with the ears back for `flinchMs` (380). Thresholds and times are all in `UnicornMood.DEFAULTS` and can be passed as `config`. A result after the end of a run starts a new open-ended run; an unknown mood name throws, so does a status other than pass / fail.
 Idle-loop reactions: `idle.react('maneFlick' | 'flinch' | 'hop')` (skipped while the loop is not running or she is settling); a hop lifts every part except `shadow`.
 
-Still to come (Phase 2, one round each): glitter canvas, rain cloud, PASS/FAIL boards, intro, head / eye tracking, blinking in the sad / angry moods, wiring to the run events.
+## 6c. Glitter and rain (built: `js/fx.js`)
+
+`UnicornFx.attach(stageElement, {svg, max: 90, fps: 30, rainMaxMs: 30000})` lays ONE `<canvas>` over the rig (the stage gets `position: relative`; the canvas covers the svg plus a 20 % margin so glitter can leave her outline;
+`pointer-events: none`, `aria-hidden`) and returns `{sparkle(), celebrate(), burst({x, y, count, from, to, speed, life, size}), rain(on), isRaining(), clear(), stats(), destroy(), canvas}`. Coordinates are the rig's 0..600 units.
+`UnicornFx.createEngine({random, max})` is the pure motion (no DOM), used by the tests.
+
+| Effect | What | Asked for by |
+|---|---|---|
+| `sparkle()` | 3 tiny sparkles drift up by the horn (900 ms) | every pass (mood.js) and a happy ending |
+| `celebrate()` | four staggered glitter bursts: horn (22), left side (14), right side (14), horn again (16); about 1.7 s each | a joyful ending (95 % and up), with the hop |
+| `rain(true)` | about 40 drops a second in three lanes (beside her head on both sides, falling past the mane; a short lane onto her head), at most 34 in the air | the sad mood; each failure while sad renews it |
+| `rain(false)` | no new drops; the ones in the air finish | leaving sad, or 5 s after a sad ending (`sadRainMs`) |
+
+Rules: at most `max` (90) particles are alive whatever is asked for; the loop runs ONLY while there are particles, drops or pending bursts (at rest nothing runs and the canvas is cleared); capped at 30 fps; paused while the tab is hidden or she is
+scrolled out of view; a no-op under `prefers-reduced-motion` (the cloud itself still shows: it is static); `rain` stops by itself after `rainMaxMs` unless renewed. No shadowBlur, no filters, device pixel ratio capped at 2.
+Glitter uses the rig's palette only (gold, pink, lilac, teal, white).
+
+Still to come (Phase 2, one round each): PASS/FAIL boards, intro, head / eye tracking, blinking in the sad / angry moods, wiring to the run events.
