@@ -14,6 +14,7 @@ unicorn/
   docs/decisions.md  running log of every design decision and change (date + reason)
   reference/         the user's concept images (01 = MASTER); loose guides only, the master wins
   svg/               unicorn-front-sitting.svg (the rig); later poses
+  js/idle.js         Phase 2 round 1: idle animation (one 30 fps loop; classic script so it works from file://). `UnicornIdle.attach(svg)`
   tools/build_preview.py   regenerates preview.html (the SVG inlined + mood buttons) from svg/
   preview.html       GENERATED, open it in a browser (file:// works). Never edit by hand.
 ```
@@ -75,6 +76,10 @@ chibi), eyes 57 x 64 each at x = 270 +/- 64, y = 262; muzzle at y = 295, mouth a
 - Shading: every shade overlay / cast shadow has class `shade` and sits inside its own part's group; light is from the upper left; `--shade-strength` scales it all (see rig-spec section 2b).
 - Detail budget: add detail with gradients on shapes that already exist (strand streaks `gStrandV/H/D`, the horn twist `gHornTwist` = one repeating gradient), never with extra geometry or extra moving groups. Size guard: under 60 KB, at most 56 groups (`tests/test_unicorn_rig.py`).
 - Eyes: the white of the eye stays visible; the iris is about 75 % of the eye (a full-eye iris looked alien).
+
+## Idle animation rules (js/idle.js)
+
+One loop for everything, capped at 30 fps; it only writes an inline `transform` on the parts it owns (head-rig, neck, body, chest-heart, tail, front legs, six mane locks, and the ears / eyelids ONLY when the mood leaves them alone) and clears it when it stops. Pure engine (`createEngine`, injected randomness) + thin DOM adapter (`attach`). Never add a second loop or a CSS animation per part; extend the engine's pose instead.
 
 ## Performance rules for Phase 2 (the QA app runs several test workers on the same machine)
 

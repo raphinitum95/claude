@@ -121,8 +121,21 @@ Mood is a pure function of the running totals (`passed`, `failed`); thresholds a
 A run of unknown length (no `totalTests`) uses the running pass rate. Do not judge a verdict on the first few results: wait for a small minimum count (configurable)
 before leaving the neutral mood.
 
-## 6. Phase 2 hints (not built yet)
+## 6. Idle animation (built: `js/idle.js`) and what is still to come
 
-Idle: breathing = `body` / `head-rig` scale about 1 to 1.015 and a tiny y shift; blink every 3 to 5 s (random) with the lids; slow `tail` swish (rotate +-4 deg);
-occasional ear flick; gentle `mane-lock-*` sway (+-2 to 3 deg, offset phases). Glitter = canvas overlay only for particles, capped. All loops pause when the tab is hidden,
-stop when the run ends and she is at rest, and are replaced by static poses under `prefers-reduced-motion`.
+`UnicornIdle.attach(svg, {fps: 30, intensity: 1, random, autoStart})` returns `{start, stop, settle(ms), setIntensity(x), blinkNow(), isRunning(), settled(), stats(), destroy()}`.
+`UnicornIdle.createEngine({random, intensity})` is the pure motion (`step(dtMs)` returns the pose), used by the tests.
+
+| What | Motion | Part ids (pivot from section 3) |
+|---|---|---|
+| Breathing, one breath every 3.6 s | body scale (1.004, 1.010); head, neck and heart rise 1.4 / 1.0 / 0.8 px | `body`, `head-rig`, `neck`, `chest-heart` |
+| Head | a slow +-0.5 deg tilt (7 s) | `head-rig` |
+| Blink every 3 to 5 s (random), one in six a double blink | lids `scaleY` 0 to 1 and back in 220 ms | `eyelid-left`, `eyelid-right` (only while `data-eyes` is open / wide / scared) |
+| Tail swish | rotate +-3.2 deg (5.2 s) plus a faster +-1.2 deg ripple (2.3 s) | `tail` |
+| Ear flick every 6 to 12 s | one ear, 11 deg out and back in 320 ms | `ear-left` / `ear-right` (only while `data-ears` is neutral) |
+| Mane sway | each lock +-1.4 to 2.4 deg, its own period 4.3 to 6.1 s and phase | `mane-lock-1` to `-6` |
+| Front legs | a barely visible +-0.8 deg | `front-leg-left`, `front-leg-right` |
+
+Behaviour: capped at 30 fps; pauses while the tab is hidden or she is scrolled out of view (IntersectionObserver); does not run at all under `prefers-reduced-motion`; `settle()` eases to rest over 700 ms (a blink or flick under way finishes, none start) and stops the loop; `stop()` stops at once and clears every inline transform; a long frame gap is clamped to 100 ms so a stalled tab never makes her jump.
+
+Still to come (Phase 2, one round each): mood state machine (setMood + pass-rate thresholds), glitter canvas, rain cloud, PASS/FAIL boards, intro, head / eye tracking, wiring to the run events.

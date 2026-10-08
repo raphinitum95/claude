@@ -28,7 +28,7 @@ regrunner = "regrunner.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-regrunner = ["web/static/*", "web/static/js/*", "web/static/js/views/*", "web/static/js/views/build/*", "web/static/js/views/results/*", "web/static/unicorn/*", "web/static/unicorn/svg/*", "build/*.js", "reporting/*.css", "reporting/*.js"]
+regrunner = ["web/static/*", "web/static/js/*", "web/static/js/views/*", "web/static/js/views/build/*", "web/static/js/views/results/*", "web/static/unicorn/*", "web/static/unicorn/svg/*", "web/static/unicorn/js/*", "build/*.js", "reporting/*.css", "reporting/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -51,11 +51,18 @@ PAGE = """<!doctype html>
   <div class="stage" id="stage">__SVG__</div>
   <div class="bar" id="moods" role="group" aria-label="Mood"></div>
   <div class="bar">
-    <button id="blink" type="button">Blink</button>
+    <label><input type="checkbox" id="idle-toggle" checked> idle animation</label>
+    <button id="blink" type="button">Blink now</button>
+    <button id="settle" type="button">Rest</button>
+    <label>strength <input type="range" id="intensity" min="0" max="1.5" step="0.1" value="1"></label>
     <label><input type="checkbox" id="pivots-toggle"> show pivots</label>
+  </div>
+  <div class="bar">
     <span>state: <code id="state"></code></span>
+    <span>idle: <code id="idle-stats"></code></span>
   </div>
 </main>
+<script src="js/idle.js"></script>
 <script>
 const MOODS = __MOODS__;
 const root = document.getElementById("unicorn");
@@ -73,12 +80,19 @@ for (const name of Object.keys(MOODS)) {
   bar.appendChild(b);
 }
 document.getElementById("pivots-toggle").addEventListener("change", e => root.classList.toggle("show-pivots", e.target.checked));
-// Blink = scale the two eyelids shut and back (what Phase 2's idle blink will animate).
-document.getElementById("blink").addEventListener("click", () => {
-  const lids = [document.getElementById("eyelid-left"), document.getElementById("eyelid-right")];
-  for (const l of lids) { l.style.transition = "transform 90ms"; l.style.transform = "scaleY(1)"; }
-  setTimeout(() => { for (const l of lids) l.style.transform = ""; }, 140);
-});
+// Idle animation (js/idle.js): one 30 fps loop, paused when the tab is hidden, off under prefers-reduced-motion.
+const idle = UnicornIdle.attach(document.querySelector("#stage svg"));
+const idleToggle = document.getElementById("idle-toggle");
+idleToggle.addEventListener("change", () => (idleToggle.checked ? idle.start() : idle.stop()));
+document.getElementById("blink").addEventListener("click", () => idle.blinkNow());
+document.getElementById("settle").addEventListener("click", () => { idle.settle(); idleToggle.checked = false; });
+document.getElementById("intensity").addEventListener("input", e => idle.setIntensity(parseFloat(e.target.value)));
+let lastFrames = 0;
+setInterval(() => {
+  const s = idle.stats();
+  document.getElementById("idle-stats").textContent = (s.running ? ((s.frames - lastFrames) * 2) + " fps, " : "stopped, ") + s.writes + " style writes";
+  lastFrames = s.frames;
+}, 500);
 setMood("neutral");
 </script>
 </body>

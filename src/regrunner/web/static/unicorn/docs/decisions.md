@@ -85,3 +85,17 @@
 - **The user approved the Phase 1 art ("this is good"). Style is LOCKED.** From here only specific requested fixes (for example "eyes 20 % bigger"). Final numbers at the lock: SVG 43.8 KB (8.0 KB gzipped), 119 paths,
   52 groups, 39 gradients; 8 rig tests pass. Open known differences from the master that the user did not ask to change: the tail ends in a hook, the mane is simplified, no pink muzzle outline.
 - Phase 2 (idle animation, mood state machine, glitter canvas, PASS/FAIL boards, intro, event wiring) has NOT started.
+
+## 2026-10-08 (Phase 2, round 1: idle animation)
+
+- **One engine, one loop, 30 fps** (`js/idle.js`), not a CSS animation per part. Why: the QA app runs several test workers on the same machine; a single throttled loop is the cheapest thing to pause, cap, test and settle,
+  and it only writes parts whose transform changed. Measured in headless Chromium (software rendering): about 5 % of one core with her moving (script itself 0.8 %, the rest is painting the SVG), 0 % with idle stopped, 30 fps,
+  about 12 style writes per frame. Lower `fps` or `intensity` if that is ever too much.
+- **Pure engine + thin DOM adapter.** The motion is a function of a virtual clock with injected randomness, so blink timing (3 to 5 s, one in six a double), ear flicks and settling are tested exactly. The virtual clock only advances
+  while the loop runs, and a long frame gap is clamped to 100 ms, so a hidden or stalled tab never makes her jump.
+- **The loop leaves a mood's own pose alone**: ears are flicked only when `data-ears` is neutral and the eyelids blink only when `data-eyes` is open / wide / scared (sad and angry park the lids with CSS; an inline transform would override that).
+  Blinking while sad or angry is therefore not done yet. Revisit when the mood state machine exists (it can hand the idle engine a "base pose" instead).
+- **Classic script, not an ES module**, so `preview.html` keeps working from `file://` (module scripts are blocked there). The same file can be loaded by the app with a normal script tag (the UI's CSP allows same-origin scripts).
+- **Settling**: `settle()` eases to rest over 700 ms and stops the loop (for "stop all loops when the run ends and she is at rest"); `start()` wakes her again. `prefers-reduced-motion` = no loop at all.
+- **Preview**: idle on/off, "Blink now", "Rest", a strength slider and a live fps / write counter were added to `preview.html`; the old manual Blink hack was removed (it fought the loop for the lids).
+- Not done yet: blinking in the sad / angry moods, glance / eye tracking, any reaction to results (next rounds).
