@@ -61,3 +61,13 @@
 - **Jaw band under the mouth removed, muzzle highlight now fades out, head rim lighter.** Why (user): "the snout is too rough, it feels like she's got a beard". The band under the mouth was the beard.
 - **Stacked-stroke cast shadows removed** from legs, hooves and tail (they banded); one very faint one stays under the fringe. Torso rim overlay and the haunch crease lines removed.
 - **All shade strengths roughly halved** (skin rim 0.55 to 0.30, hair rim 0.30 to 0.18, side 0.62 to 0.34, hair side 0.26 to 0.16, bottom 0.40 to 0.22). Chosen approach: "soft but cheap" (no blur filter).
+
+## 2026-10-08 (feedback round 3: eyes like the reference, less round face, hair vs horn)
+
+- **Eye rebuilt from the reference**: a violet RING (23 x 29, light blue glow at the bottom) with a darker PUPIL (17.5 x 22) inside it. Both sit toward the nose (ring 4.5 px, pupil 7 px), so the white of the
+  eye is only a crescent on the outer side. Highlights follow the reference: big dot top, small dot below, a star lower left, a small light-blue dot on the lower outer ring. The eye white has a thin dark outline,
+  the top lash line is thicker and the flicks are shorter and curved. Why (user): "the pupils on the reference are an outer and an inner circle, closer to the nose, so the white of the eye is on the outside".
+- **Head is a rounded square with straighter sides** (widest at the cheeks, flatter forehead, a slightly lower chin) instead of a near circle. Why (user): "the face is less round on the reference".
+- **Hair vs horn: the horn is now drawn OVER the fringe** (order is face, fringe, horn) and the strands' roots are behind it or away from it (the teal strand starts at the upper right). A soft shade sits round the
+  horn base. Why (user): "the hair by the horn seems to be coming out of the horn". The horn's id order changed: `mane-front` is now drawn BEFORE `horn`.
+- Pink curl moved 8 px outward so it no longer sits on the left lashes; the eyelid is a little bigger so it hides the lashes in a blink, and in the sad mood the lash flicks are hidden (the drooping lid left their tips floating).

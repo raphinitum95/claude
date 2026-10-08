@@ -23,7 +23,7 @@
   <div class="stage" id="stage"><!-- Baby unicorn rig, front-facing, sitting. Phase 1 deliverable: art + rig only (no scripts, no animation).
      viewBox 600 x 600, axis of symmetry x = 270. Part ids, pivots and states: docs/rig-spec.md.
      Draw order (back to front): shadow, tail, mane-back, body, neck, chest-heart, front legs, head-rig
-     (mane locks, ears, head, face, horn, mane-front), fx. CSS transform replaces an SVG transform attribute, so animated groups carry none. -->
+     (mane locks, ears, head, face, mane-front, horn), fx. CSS transform replaces an SVG transform attribute, so animated groups carry none. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600" role="img" aria-label="Baby unicorn mascot">
   <title>Baby unicorn mascot (sitting, front view)</title>
   <defs>
@@ -49,8 +49,8 @@
     <linearGradient id="gTailLilac" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CB9AE5"/><stop offset="1" stop-color="#9896C6"/></linearGradient>
     <linearGradient id="gTailTeal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B1EBE1"/><stop offset="1" stop-color="#69C0CE"/></linearGradient>
     <linearGradient id="gSclera" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CDBFE2"/><stop offset="0.34" stop-color="#F4EEF9"/><stop offset="1" stop-color="#FFFFFF"/></linearGradient>
-    <radialGradient id="gIrisl" cx="206" cy="278" r="30" fx="206" fy="282" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8A79D1"/><stop offset="0.38" stop-color="#4A365F"/><stop offset="0.85" stop-color="#2A1E36"/><stop offset="1" stop-color="#1A141F"/></radialGradient>
-    <radialGradient id="gIrisr" cx="334" cy="278" r="30" fx="334" fy="282" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8A79D1"/><stop offset="0.38" stop-color="#4A365F"/><stop offset="0.85" stop-color="#2A1E36"/><stop offset="1" stop-color="#1A141F"/></radialGradient>
+    <radialGradient id="gRing" cx="0.5" cy="0.8" r="0.75" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#67B0EA"/><stop offset="0.3" stop-color="#6C63C6"/><stop offset="0.7" stop-color="#4B3C8E"/><stop offset="1" stop-color="#2F2562"/></radialGradient>
+    <radialGradient id="gPupil" cx="0.45" cy="0.35" r="0.8" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#3A2A4C"/><stop offset="0.6" stop-color="#1F1428"/><stop offset="1" stop-color="#150E1C"/></radialGradient>
     <radialGradient id="gBlush" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FDB9D2" stop-opacity="1"/><stop offset="0.6" stop-color="#FEC9DB" stop-opacity="0.7"/><stop offset="1" stop-color="#FEC9DB" stop-opacity="0"/></radialGradient>
     <radialGradient id="gShadow" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#8F7AA6" stop-opacity="0.42"/><stop offset="0.6" stop-color="#8F7AA6" stop-opacity="0.18"/><stop offset="1" stop-color="#8F7AA6" stop-opacity="0"/></radialGradient>
     <radialGradient id="gRimBody" cx="0.36" cy="0.28" r="0.85" gradientUnits="objectBoundingBox"><stop offset="0.5" stop-color="#A98FC2" stop-opacity="0"/><stop offset="1" stop-color="#A98FC2" stop-opacity="0.3"/></radialGradient>
@@ -58,7 +58,7 @@
     <linearGradient id="gSideBody" x1="0" y1="0" x2="1" y2="0"><stop offset="0.4" stop-color="#A98FC2" stop-opacity="0"/><stop offset="1" stop-color="#A98FC2" stop-opacity="0.34"/></linearGradient>
     <linearGradient id="gSideHair" x1="0" y1="0" x2="1" y2="0"><stop offset="0.35" stop-color="#8A58AE" stop-opacity="0"/><stop offset="1" stop-color="#8A58AE" stop-opacity="0.16"/></linearGradient>
     <linearGradient id="gBottomBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="#A98FC2" stop-opacity="0"/><stop offset="1" stop-color="#A98FC2" stop-opacity="0.22"/></linearGradient>
-    <clipPath id="cpFace"><path d="M 270 134 C 336 134 382 176 382 242 C 384 304 350 346 270 348 C 190 346 156 304 158 242 C 158 176 204 134 270 134 Z"/><path d="M 244 158 C 248 112 257 64 266 26 C 276 64 286 112 296 158 C 282 168 258 168 244 158 Z"/></clipPath>
+    <clipPath id="cpFace"><path d="M 270 136 C 322 136 366 150 378 196 C 384 224 384 262 380 292 C 374 328 336 352 270 352 C 204 352 166 328 160 292 C 156 262 156 224 162 196 C 174 150 218 136 270 136 Z"/><path d="M 244 158 C 248 112 257 64 266 26 C 276 64 286 112 296 158 C 282 168 258 168 244 158 Z"/></clipPath>
     <radialGradient id="gBlob" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#A98FC2" stop-opacity="0.36"/><stop offset="0.5" stop-color="#A98FC2" stop-opacity="0.18"/><stop offset="1" stop-color="#A98FC2" stop-opacity="0"/></radialGradient>
     <radialGradient id="gChin" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#8F7AA6" stop-opacity="0.16"/><stop offset="1" stop-color="#8F7AA6" stop-opacity="0"/></radialGradient>
     <radialGradient id="gMuzzle" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.8"/><stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
@@ -74,9 +74,10 @@
     #unicorn[data-eyes="closed"] .eye-open { display: none; }
     #unicorn[data-eyes="closed"] .eye-closed { display: inline; }
     #unicorn[data-eyes="wide"] .eye-wide-extra { display: inline; }
+    #unicorn[data-eyes="sad"] .flicks { display: none; } /* the drooping lid would leave the tips floating */
     #unicorn[data-eyes="scared"] .iris { transform: scale(.78); }
-    #unicorn[data-eyes="scared"] #eye-left .iris { transform-origin: 206px 263px; }
-    #unicorn[data-eyes="scared"] #eye-right .iris { transform-origin: 334px 263px; }
+    #unicorn[data-eyes="scared"] #eye-left .iris { transform-origin: 211px 264px; }
+    #unicorn[data-eyes="scared"] #eye-right .iris { transform-origin: 329px 264px; }
     #unicorn[data-eyes="wide"] #eye-left .eye-open, #unicorn[data-eyes="scared"] #eye-left .eye-open { transform-origin: 206px 262px; transform: scale(1.1); }
     #unicorn[data-eyes="wide"] #eye-right .eye-open, #unicorn[data-eyes="scared"] #eye-right .eye-open { transform-origin: 334px 262px; transform: scale(1.1); }
 
@@ -279,32 +280,33 @@
   </g>
   <g id="head">
     <!-- pivot: neck joint (270, 330) -->
-    <path d="M 270 134 C 336 134 382 176 382 242 C 384 304 350 346 270 348 C 190 346 156 304 158 242 C 158 176 204 134 270 134 Z" fill="url(#gHead)"/>
-    <path class="shade" d="M 270 134 C 336 134 382 176 382 242 C 384 304 350 346 270 348 C 190 346 156 304 158 242 C 158 176 204 134 270 134 Z" fill="url(#gRimBody)"/>
+    <path d="M 270 136 C 322 136 366 150 378 196 C 384 224 384 262 380 292 C 374 328 336 352 270 352 C 204 352 166 328 160 292 C 156 262 156 224 162 196 C 174 150 218 136 270 136 Z" fill="url(#gHead)"/>
+    <path class="shade" d="M 270 136 C 322 136 366 150 378 196 C 384 224 384 262 380 292 C 374 328 336 352 270 352 C 204 352 166 328 160 292 C 156 262 156 224 162 196 C 174 150 218 136 270 136 Z" fill="url(#gRimBody)"/>
     <ellipse cx="270" cy="301" rx="48" ry="33" fill="url(#gMuzzle)"/><!-- muzzle, fades out softly -->
-    <ellipse cx="258" cy="292" rx="3.8" ry="2.6" fill="#B07A9C" opacity=".75"/>
-    <ellipse cx="282" cy="292" rx="3.8" ry="2.6" fill="#B07A9C" opacity=".75"/>
+    <ellipse cx="258" cy="292" rx="2.6" ry="4.2" transform="rotate(-18 258 292)" fill="#B07A9C" opacity=".75"/>
+    <ellipse cx="282" cy="292" rx="2.6" ry="4.2" transform="rotate(18 282 292)" fill="#B07A9C" opacity=".75"/>
     <ellipse cx="236" cy="168" rx="38" ry="12" fill="#FFFFFF" opacity=".5"/>
   </g>
-  <g id="cheek-left"><ellipse cx="190" cy="306" rx="31" ry="19" fill="url(#gBlush)"/></g>
-  <g id="cheek-right"><ellipse cx="350" cy="306" rx="31" ry="19" fill="url(#gBlush)"/></g>
+  <g id="cheek-left"><ellipse cx="194" cy="306" rx="31" ry="19" fill="url(#gBlush)"/></g>
+  <g id="cheek-right"><ellipse cx="346" cy="306" rx="31" ry="19" fill="url(#gBlush)"/></g>
   <g id="eye-left">
     <!-- pivot: eye centre (206, 262) -->
     <g class="eye-open">
-      <ellipse class="sclera" cx="206" cy="262" rx="30.5" ry="33.5" fill="url(#gSclera)" stroke="#CDBCE0" stroke-width="1.6"/>
+      <ellipse class="sclera" cx="206" cy="262" rx="27.5" ry="31" fill="url(#gSclera)" stroke="#4A3A5C" stroke-opacity=".75" stroke-width="1.3"/>
       <g class="iris">
-        <ellipse cx="206" cy="263" rx="22.5" ry="25.5" fill="url(#gIrisl)"/>
-        <ellipse cx="206" cy="278" rx="14" ry="7" fill="#9AA0E8" opacity=".35"/>
-        <circle cx="200" cy="252" r="5.6" fill="#FFFFFF"/>
-        <circle cx="214" cy="261" r="2.2" fill="#FFFFFF" opacity=".9"/>
-        <path d="M 196 267.5 Q 197.54 271.46 201.5 273 Q 197.54 274.54 196 278.5 Q 194.46 274.54 190.5 273 Q 194.46 271.46 196 267.5 Z" fill="#FFFFFF"/>
+        <ellipse cx="210.5" cy="263" rx="23" ry="29" fill="url(#gRing)"/>
+        <ellipse cx="213" cy="261" rx="17.5" ry="22" fill="url(#gPupil)"/>
+        <circle cx="216" cy="250" r="6" fill="#FFFFFF"/>
+        <circle cx="215" cy="262" r="2.3" fill="#FFFFFF" opacity=".9"/>
+        <path d="M 207 266.6 Q 208.512 270.488 212.4 272 Q 208.512 273.512 207 277.4 Q 205.488 273.512 201.6 272 Q 205.488 270.488 207 266.6 Z" fill="#FFFFFF"/>
+        <circle cx="197.5" cy="278" r="2.2" fill="#B9DFF7" opacity=".9"/>
       </g>
       <g class="eye-wide-extra">
-        <circle cx="217" cy="270" r="2.4" fill="#FFFFFF"/>
-        <circle cx="192" cy="260" r="1.8" fill="#FFFFFF"/>
+        <circle cx="224" cy="269" r="2" fill="#FFFFFF"/>
+        <circle cx="201" cy="258" r="1.6" fill="#FFFFFF"/>
       </g>
-      <path d="M 177 254 C 180 236 192 229 206 229 C 220 229 232 236 235 254" fill="none" stroke="#1A141F" stroke-width="3.2" stroke-linecap="round"/>
-      <path d="M 179 248 L 169 239 M 177 256 L 166 251 M 183 241 L 176 231" fill="none" stroke="#1A141F" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M 178 256 C 180 238 192 230 206 230 C 220 230 232 238 234 256" fill="none" stroke="#1A141F" stroke-width="4" stroke-linecap="round"/>
+      <path d="M 180 248 Q 175 245 172 239 M 178 256 Q 173 254 170 249 M 183 241 Q 180 237 179 232" class="flicks" fill="none" stroke="#1A141F" stroke-width="3.2" stroke-linecap="round"/>
     </g>
     <g class="eye-closed">
       <path d="M 181 270 Q 206 240 231 270" fill="none" stroke="#1A141F" stroke-width="3.6" stroke-linecap="round"/>
@@ -314,20 +316,21 @@
   <g id="eye-right">
     <!-- pivot: eye centre (334, 262) -->
     <g class="eye-open">
-      <ellipse class="sclera" cx="334" cy="262" rx="30.5" ry="33.5" fill="url(#gSclera)" stroke="#CDBCE0" stroke-width="1.6"/>
+      <ellipse class="sclera" cx="334" cy="262" rx="27.5" ry="31" fill="url(#gSclera)" stroke="#4A3A5C" stroke-opacity=".75" stroke-width="1.3"/>
       <g class="iris">
-        <ellipse cx="334" cy="263" rx="22.5" ry="25.5" fill="url(#gIrisr)"/>
-        <ellipse cx="334" cy="278" rx="14" ry="7" fill="#9AA0E8" opacity=".35"/>
-        <circle cx="328" cy="252" r="5.6" fill="#FFFFFF"/>
-        <circle cx="342" cy="261" r="2.2" fill="#FFFFFF" opacity=".9"/>
-        <path d="M 324 267.5 Q 325.54 271.46 329.5 273 Q 325.54 274.54 324 278.5 Q 322.46 274.54 318.5 273 Q 322.46 271.46 324 267.5 Z" fill="#FFFFFF"/>
+        <ellipse cx="329.5" cy="263" rx="23" ry="29" fill="url(#gRing)"/>
+        <ellipse cx="327" cy="261" rx="17.5" ry="22" fill="url(#gPupil)"/>
+        <circle cx="330" cy="250" r="6" fill="#FFFFFF"/>
+        <circle cx="329" cy="262" r="2.3" fill="#FFFFFF" opacity=".9"/>
+        <path d="M 321 266.6 Q 322.512 270.488 326.4 272 Q 322.512 273.512 321 277.4 Q 319.488 273.512 315.6 272 Q 319.488 270.488 321 266.6 Z" fill="#FFFFFF"/>
+        <circle cx="342.5" cy="278" r="2.2" fill="#B9DFF7" opacity=".9"/>
       </g>
       <g class="eye-wide-extra">
-        <circle cx="345" cy="270" r="2.4" fill="#FFFFFF"/>
-        <circle cx="320" cy="260" r="1.8" fill="#FFFFFF"/>
+        <circle cx="338" cy="269" r="2" fill="#FFFFFF"/>
+        <circle cx="315" cy="258" r="1.6" fill="#FFFFFF"/>
       </g>
-      <path d="M 305 254 C 308 236 320 229 334 229 C 348 229 360 236 363 254" fill="none" stroke="#1A141F" stroke-width="3.2" stroke-linecap="round"/>
-      <path d="M 361 248 L 371 239 M 363 256 L 374 251 M 357 241 L 364 231" fill="none" stroke="#1A141F" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M 306 256 C 308 238 320 230 334 230 C 348 230 360 238 362 256" fill="none" stroke="#1A141F" stroke-width="4" stroke-linecap="round"/>
+      <path d="M 360 248 Q 365 245 368 239 M 362 256 Q 367 254 370 249 M 357 241 Q 360 237 361 232" class="flicks" fill="none" stroke="#1A141F" stroke-width="3.2" stroke-linecap="round"/>
     </g>
     <g class="eye-closed">
       <path d="M 309 270 Q 334 240 359 270" fill="none" stroke="#1A141F" stroke-width="3.6" stroke-linecap="round"/>
@@ -336,12 +339,12 @@
   </g>
   <g id="eyelid-left">
     <!-- pivot: lid hinge, top of the eye (206, 226); scaleY(0) = open -->
-    <ellipse cx="202" cy="262" rx="44" ry="40" fill="url(#gHead)"/>
+    <ellipse cx="204" cy="259" rx="41" ry="43" fill="url(#gHead)"/>
     <path d="M 176 282 Q 206 304 236 282" fill="none" stroke="#1A141F" stroke-width="3.4" stroke-linecap="round"/>
   </g>
   <g id="eyelid-right">
     <!-- pivot: lid hinge, top of the eye (334, 226) -->
-    <ellipse cx="338" cy="262" rx="44" ry="40" fill="url(#gHead)"/>
+    <ellipse cx="336" cy="259" rx="41" ry="43" fill="url(#gHead)"/>
     <path d="M 304 282 Q 334 304 364 282" fill="none" stroke="#1A141F" stroke-width="3.4" stroke-linecap="round"/>
   </g>
   <g id="brow-left">
@@ -368,30 +371,31 @@
     <path d="M 252 346 C 258 338 282 338 288 346 C 284 354 276 357 270 357 C 264 357 256 354 252 346 Z" fill="#F4A0BC"/>
     <path d="M 242 316 Q 270 322 298 316" fill="none" stroke="#B07A9C" stroke-width="2.4" stroke-linecap="round"/>
   </g>
+  <g id="mane-front">
+    <!-- pivot: forehead root (262, 120) -->
+    <g clip-path="url(#cpFace)"><path class="shade" d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="none" stroke="#7D6896" stroke-width="10" stroke-opacity="0.03" stroke-linejoin="round" transform="translate(1 3)"/>
+    <path class="shade" d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="none" stroke="#7D6896" stroke-width="5" stroke-opacity="0.045" stroke-linejoin="round" transform="translate(1 3)"/><path class="shade" d="M 276 114 C 296 106 318 106 336 112 C 362 124 364 160 322 186 C 312 194 302 202 292 208 C 300 192 302 176 298 160 C 294 140 282 128 276 114 Z" fill="none" stroke="#7D6896" stroke-width="10" stroke-opacity="0.03" stroke-linejoin="round" transform="translate(1 3)"/>
+    <path class="shade" d="M 276 114 C 296 106 318 106 336 112 C 362 124 364 160 322 186 C 312 194 302 202 292 208 C 300 192 302 176 298 160 C 294 140 282 128 276 114 Z" fill="none" stroke="#7D6896" stroke-width="5" stroke-opacity="0.045" stroke-linejoin="round" transform="translate(1 3)"/><path class="shade" d="M 252 96 C 206 98 160 132 140 186 C 120 220 126 244 144 250 C 158 254 170 246 170 236 C 170 228 162 224 155 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="none" stroke="#7D6896" stroke-width="10" stroke-opacity="0.03" stroke-linejoin="round" transform="translate(2 4)"/>
+    <path class="shade" d="M 252 96 C 206 98 160 132 140 186 C 120 220 126 244 144 250 C 158 254 170 246 170 236 C 170 228 162 224 155 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="none" stroke="#7D6896" stroke-width="5" stroke-opacity="0.045" stroke-linejoin="round" transform="translate(2 4)"/></g>
+    <path d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="url(#gLilacLock)"/>
+    <path class="shade" d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="url(#gSideHair)"/>
+    <path d="M 276 114 C 296 106 318 106 336 112 C 362 124 364 160 322 186 C 312 194 302 202 292 208 C 300 192 302 176 298 160 C 294 140 282 128 276 114 Z" fill="url(#gTealLock)"/>
+    <path class="shade" d="M 276 114 C 296 106 318 106 336 112 C 362 124 364 160 322 186 C 312 194 302 202 292 208 C 300 192 302 176 298 160 C 294 140 282 128 276 114 Z" fill="url(#gSideHair)"/>
+    <path d="M 252 96 C 206 98 160 132 140 186 C 120 220 126 244 144 250 C 158 254 170 246 170 236 C 170 228 162 224 155 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="url(#gPinkLock)"/>
+    <path class="shade" d="M 252 96 C 206 98 160 132 140 186 C 120 220 126 244 144 250 C 158 254 170 246 170 236 C 170 228 162 224 155 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="url(#gRimHair)"/>
+    <path d="M 206 130 C 178 148 156 184 150 214" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".35"/>
+    <path d="M 306 126 C 328 136 338 156 336 178" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity=".35"/>
+  </g>
   <g id="horn">
     <!-- pivot: horn base (270, 150) -->
     <circle cx="266" cy="52" r="36" fill="url(#gHornGlow)"/>
+    <ellipse class="shade" cx="270" cy="158" rx="36" ry="11" fill="url(#gBlob)"/><!-- soft shade round the horn base, so it sits ON the hair -->
     <path d="M 244 158 C 248 112 257 64 266 26 C 276 64 286 112 296 158 C 282 168 258 168 244 158 Z" fill="url(#gHorn)"/>
     <path d="M 249 136 Q 270 122 291 138 M 252 112 Q 271 99 288 112 M 255 88 Q 271 77 284 87 M 258 66 Q 270 58 280 64" fill="none" stroke="#DB9E67" stroke-width="3" stroke-linecap="round" opacity=".7"/>
     <path d="M 256 150 C 258 110 262 70 266 40" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity=".6"/>
     <path d="M 300 45 Q 301.96 50.04 307 52 Q 301.96 53.96 300 59 Q 298.04 53.96 293 52 Q 298.04 50.04 300 45 Z" fill="#FFF3B8"/>
     <path d="M 236 69 Q 237.4 72.6 241 74 Q 237.4 75.4 236 79 Q 234.6 75.4 231 74 Q 234.6 72.6 236 69 Z" fill="#FFF3B8"/>
     <circle cx="288" cy="22" r="2.2" fill="#FFF3B8"/>
-  </g>
-  <g id="mane-front">
-    <!-- pivot: forehead root (262, 120) -->
-    <g clip-path="url(#cpFace)"><path class="shade" d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="none" stroke="#7D6896" stroke-width="10" stroke-opacity="0.03" stroke-linejoin="round" transform="translate(1 3)"/>
-    <path class="shade" d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="none" stroke="#7D6896" stroke-width="5" stroke-opacity="0.045" stroke-linejoin="round" transform="translate(1 3)"/><path class="shade" d="M 288 108 C 314 104 338 122 342 152 C 344 172 336 186 322 194 C 312 200 300 206 292 206 C 300 196 306 184 306 170 C 306 152 298 140 286 134 Z" fill="none" stroke="#7D6896" stroke-width="10" stroke-opacity="0.03" stroke-linejoin="round" transform="translate(1 3)"/>
-    <path class="shade" d="M 288 108 C 314 104 338 122 342 152 C 344 172 336 186 322 194 C 312 200 300 206 292 206 C 300 196 306 184 306 170 C 306 152 298 140 286 134 Z" fill="none" stroke="#7D6896" stroke-width="5" stroke-opacity="0.045" stroke-linejoin="round" transform="translate(1 3)"/><path class="shade" d="M 252 96 C 206 98 160 132 140 186 C 128 220 134 244 152 250 C 166 254 178 246 178 236 C 178 228 170 224 163 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="none" stroke="#7D6896" stroke-width="10" stroke-opacity="0.03" stroke-linejoin="round" transform="translate(2 4)"/>
-    <path class="shade" d="M 252 96 C 206 98 160 132 140 186 C 128 220 134 244 152 250 C 166 254 178 246 178 236 C 178 228 170 224 163 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="none" stroke="#7D6896" stroke-width="5" stroke-opacity="0.045" stroke-linejoin="round" transform="translate(2 4)"/></g>
-    <path d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="url(#gLilacLock)"/>
-    <path class="shade" d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="url(#gSideHair)"/>
-    <path d="M 288 108 C 314 104 338 122 342 152 C 344 172 336 186 322 194 C 312 200 300 206 292 206 C 300 196 306 184 306 170 C 306 152 298 140 286 134 Z" fill="url(#gTealLock)"/>
-    <path class="shade" d="M 288 108 C 314 104 338 122 342 152 C 344 172 336 186 322 194 C 312 200 300 206 292 206 C 300 196 306 184 306 170 C 306 152 298 140 286 134 Z" fill="url(#gSideHair)"/>
-    <path d="M 252 96 C 206 98 160 132 140 186 C 128 220 134 244 152 250 C 166 254 178 246 178 236 C 178 228 170 224 163 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="url(#gPinkLock)"/>
-    <path class="shade" d="M 252 96 C 206 98 160 132 140 186 C 128 220 134 244 152 250 C 166 254 178 246 178 236 C 178 228 170 224 163 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="url(#gRimHair)"/>
-    <path d="M 206 130 C 178 148 156 184 150 214" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".35"/>
-    <path d="M 306 126 C 328 136 338 156 336 178" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity=".35"/>
   </g>
   </g>
   <g id="fx-sparkle" class="fx">

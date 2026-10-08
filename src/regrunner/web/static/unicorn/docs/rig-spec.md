@@ -45,8 +45,8 @@ coloured (it shares the head's user-space gradient so it matches exactly) and ca
 | `eyelid-left`, `eyelid-right` | skin-coloured lids + closed lash line | `scaleY(0)` = open |
 | `brow-left`, `brow-right` | small lilac arcs | |
 | `mouth-neutral`, `mouth-smile`, `mouth-frown`, `mouth-open` | the four mouths; only neutral is visible by default | `mouth-open` has the tongue |
-| `horn` | glow, golden spiral horn, tiny sparkles | base hidden under the fringe |
-| `mane-front` | fringe: lilac + teal strands and a pink swoop ending in a curl at the left | drawn last so it covers the ear and horn bases |
+| `mane-front` | fringe: lilac + teal strands and a pink swoop ending in a curl at the left | drawn before the horn; covers the ear bases |
+| `horn` | glow, golden spiral horn, tiny sparkles, soft shade round its base | drawn AFTER `mane-front`: the hair goes behind the horn |
 | `fx-sparkle`, `fx-sweat`, `fx-steam` | effect art, hidden by default | shown by `data-fx` |
 | `pivots` | debug dots, hidden | shown by class `show-pivots` |
 
