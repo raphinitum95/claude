@@ -548,6 +548,7 @@ Gotchas:
 - `order.after_ui` is gone: an API test linked to a stream also waits for the rest of that stream (`order.after_stream`, a note each);
   for API readers a UI test counts as setting a parameter if any Output step of its sheet writes it (`Flow.may_set`), whatever blnExecute says.
 - A bare name in Output_Value is a variable only for `SAVE_METHODS` or an already-known variable (`model.output_name`, builder `sets`); on any other step (PICK_DATE, Check...) it is a literal. So the inspector's "Save the result as" always writes `{NAME}` (`_Ops.save_as_cell`); workbooks saved before this keep a bare name until the box is edited again.
+- The add-step menu (`.add-menu`, `editor.js` `addStepMenu`) is capped to the window height (`max-height` in app.css): only `.add-menu-list` scrolls, the search box stays on top and is focused on open. Keep new menu rows inside that list.
 - `morph.js` never patches a `<textarea>`'s value: code that changes one programmatically (Insert variable) sets `.value` itself.
 - `headerShell`'s `middle` slot (`views/shell.js`) is a shrinkable flex-1 area with `overflow:hidden`: keep its content short/non-wrapping so a
   narrow window clips it instead of pushing the header wider than the viewport (see the `Run` tab's version tag vs. the `Build` tab's breadcrumb).
