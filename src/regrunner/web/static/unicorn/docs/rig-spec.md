@@ -183,5 +183,5 @@ Still to come (Phase 2, one round each): PASS/FAIL boards, intro, head / eye tra
 ## 6d. The corner widget (built: `js/carrie.js`, app side `static/js/carrie.js`)
 
 `UnicornCarrie.create({base: '/static/unicorn', onClose})` -> `{host, update(snap), hide(), state(), parts(), destroy()}`. `snap = {id, passed, failed, total, running, done}`.
-Needs idle.js, fx.js, mood.js loaded first. Host `#carrie-root` (fixed, bottom-right, click-through; only the `.x` button takes clicks) with a shadow root: `.wrap > .stage > .rig` (the inlined SVG, built on first `update`),
+Needs idle.js, fx.js, mood.js loaded first. Host `#carrie-root` (fixed, bottom-left over the sidebar, click-through; only the `.x` button takes clicks) with a shadow root: `.wrap > .stage > .rig` (the inlined SVG, built on first `update`),
 `.board.pass` / `.board.fail` (`.n` = the number) and `.x`. A new `id` = a new run (silent catch-up unless it is running with nothing finished); the same `id` = deltas become `onTestResult` / `onRunComplete`.

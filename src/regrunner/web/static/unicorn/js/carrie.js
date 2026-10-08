@@ -8,7 +8,7 @@
  * (a new pass = onTestResult pass, a new fail = fail, running to done = onRunComplete), so the app only has to say how things stand.
  *  - The first time it sees a run it catches up SILENTLY (no celebration for a run that is already over, no replay of old results); a run it
  *    sees from its very start gets the "run started" excitement.
- *  - Everything lives in a shadow root on a fixed, click-through box in the bottom-right corner (its ids and CSS cannot touch the app's); only the
+ *  - Everything lives in a shadow root on a fixed, click-through box in the bottom-left corner, over the app's run-history sidebar (its ids and CSS cannot touch the app's); only the
  *    small close button takes clicks. The rig, the boards and the canvas are built only when she is first shown, so Carrie mode off costs nothing.
  *  - Needs js/idle.js, js/fx.js and js/mood.js loaded first. Classic script (the app loads it with a plain script tag).
  */
@@ -22,7 +22,7 @@
   var MAX_REACTIONS = 8;     // a bigger jump than this (a tab that was in the background) is caught up silently instead of replayed
 
   var CSS = [
-    ':host { all: initial; position: fixed; right: 18px; bottom: 14px; z-index: 30; width: min(330px, 34vw); pointer-events: none; }',
+    ':host { all: initial; position: fixed; left: 6px; bottom: 10px; z-index: 30; width: 252px; pointer-events: none; }',          // over the "previous runs" sidebar (264 px wide, 232 px under 1100 px)
     '[hidden] { display: none !important; }',
     '.wrap { position: relative; width: 100%; }',
     '.stage { position: relative; width: 100%; }',
@@ -35,7 +35,7 @@
     '.pass { left: 0; --bd: var(--pass, #34b27b); }',
     '.fail { right: 0; --bd: var(--fail, #e5534b); }',
     '.n.pop { animation: carrie-num .45s cubic-bezier(.3, 1.6, .5, 1); }',
-    '.x { position: absolute; top: -4px; right: -2px; width: 22px; height: 22px; border: 0; border-radius: 50%; background: rgba(40, 30, 55, .55); color: #fff; font: 700 14px/22px system-ui, sans-serif;',
+    '.x { position: absolute; top: -4px; left: 4px; width: 22px; height: 22px; border: 0; border-radius: 50%; background: rgba(40, 30, 55, .55); color: #fff; font: 700 14px/22px system-ui, sans-serif;',
     '  cursor: pointer; pointer-events: auto; opacity: .45; padding: 0; }',
     '.x:hover, .x:focus-visible { opacity: 1; }',
     '.wrap.intro .stage { animation: carrie-in .95s cubic-bezier(.2, .9, .3, 1) both; transform-origin: 50% 96%; }',
@@ -43,6 +43,7 @@
     '@keyframes carrie-in { 0% { transform: translateX(125%) scale(.92, 1.08); } 55% { transform: translateX(-3%) scale(1.05, .93); } 75% { transform: translateX(0) scale(.97, 1.05); } 100% { transform: none; } }',
     '@keyframes carrie-pop { from { transform: scale(0); opacity: 0; } to { transform: none; opacity: 1; } }',
     '@keyframes carrie-num { from { transform: scale(1.6); } to { transform: none; } }',
+    '@media (max-width: 1100px) { :host { width: 220px; } }',
     '@media (max-width: 760px) { :host { display: none; } }',
     '@media (prefers-reduced-motion: reduce) { .wrap.intro .stage, .wrap.intro .board, .n.pop { animation: none; } }'
   ].join('\n');

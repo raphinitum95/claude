@@ -130,7 +130,7 @@
 - Not done yet: eye tracking, blinking in sad / angry, a glance at the FAIL board.
 
 ## 2026-10-08, Phase 2 round 4: she moves into the app (PASS/FAIL boards, intro, wiring, "Carrie mode")
-- **Where she lives** (the user's choice): bottom-right corner of the live run screen, switched on by a **"Carrie mode"** toggle in the Run tab's settings, next to browser / environment / the other toggles. Off by default.
+- **Where she lives** (the user's choice): bottom-left corner of the live run screen, over the run-history sidebar (moved there at the user's request; still `position: fixed`), switched on by a **"Carrie mode"** toggle in the Run tab's settings, next to browser / environment / the other toggles. Off by default.
 - **The toggle is a preference of this browser** (`localStorage rr.carrie`), not a setting of the run: it never appears in the command preview or the request. The widget's x turns it off.
 - **`js/carrie.js` is a self-contained widget** (shadow DOM host `#carrie-root`, fixed bottom-right, `pointer-events: none` except the x, hidden under 760 px) so its ids and CSS cannot touch the app. It is given snapshots of the numbers (`update({id, passed, failed, total, running, done})`)
   and works out what happened from the difference: a new pass / fail = `onTestResult`, running to done = `onRunComplete`. A run seen for the first time from its start gets the start excitement; a run that is already going or over is caught up SILENTLY (`UnicornMood.restore`, new): no

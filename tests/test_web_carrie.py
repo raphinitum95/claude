@@ -65,8 +65,8 @@ async def test_a_finished_run_opens_with_her_already_at_rest_showing_the_final_s
         assert got["mood"] == "sad"
         root = page.locator("#carrie-root")
         box = await root.bounding_box()
-        vw = await page.evaluate("innerWidth")
-        assert box["x"] + box["width"] > vw - 40                                # bottom-right corner
+        vh = await page.evaluate("innerHeight")
+        assert box["x"] < 20 and box["x"] + box["width"] <= 264 and box["y"] + box["height"] > vh - 40     # bottom-left, over the sidebar
         assert (await page.evaluate("getComputedStyle(document.getElementById('carrie-root')).pointerEvents")) == "none"
         assert not page.errors
 
