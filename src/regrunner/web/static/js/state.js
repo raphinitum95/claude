@@ -12,6 +12,7 @@ export const S = {
   modal: null,               // { kind, ... }
   build: freshBuild(),       // the Workbook Builder (views/build/*)
   results: freshResults(),   // the Results tab (views/results/*)
+  carrieOn: false,           // "Carrie mode" (the unicorn scorekeeper); saved in localStorage by carrie.js
 };
 
 /** The Results tab's state: which screen (history/batch/test/compare) and what each has loaded. */

@@ -127,4 +127,17 @@
 - **Glitter uses only the rig's palette** (gold, pink, lilac, teal, white): a celebration is four staggered bursts (horn, left, right, horn) of 66 particles in all; a pass is 3 tiny sparkles by the horn.
 - **Bugs found while building it**: (1) a pass flash of the SVG sparkle covered the sad cloud, so every pass made it fade out for 0.7 s; flashes never override a mood's own effect now. (2) The preview's rain button had the same id as the new SVG group.
 - **Measured** (headless Chromium, software rendering, 1000 px viewport): at rest 0.1 % of one core; idle only 7.5 %; rain only 7.4 %; rain + idle 10.3 %; celebration + idle 9.6 % for its first seconds. Script time is about 1 % in every case; the rest is painting. Levers if it is ever too much: `fps`, a smaller canvas margin, `max`.
-- Not done yet: PASS/FAIL boards, intro, eye tracking, blinking in sad / angry, a glance at the FAIL board.
+- Not done yet: eye tracking, blinking in sad / angry, a glance at the FAIL board.
+
+## 2026-10-08, Phase 2 round 4: she moves into the app (PASS/FAIL boards, intro, wiring, "Carrie mode")
+- **Where she lives** (the user's choice): bottom-right corner of the live run screen, switched on by a **"Carrie mode"** toggle in the Run tab's settings, next to browser / environment / the other toggles. Off by default.
+- **The toggle is a preference of this browser** (`localStorage rr.carrie`), not a setting of the run: it never appears in the command preview or the request. The widget's x turns it off.
+- **`js/carrie.js` is a self-contained widget** (shadow DOM host `#carrie-root`, fixed bottom-right, `pointer-events: none` except the x, hidden under 760 px) so its ids and CSS cannot touch the app. It is given snapshots of the numbers (`update({id, passed, failed, total, running, done})`)
+  and works out what happened from the difference: a new pass / fail = `onTestResult`, running to done = `onRunComplete`. A run seen for the first time from its start gets the start excitement; a run that is already going or over is caught up SILENTLY (`UnicornMood.restore`, new): no
+  celebration for an old run, no replay. A jump of more than 8 results, or numbers going backwards, is also caught up silently.
+- **Boards**: two small signs (PASS left, FAIL right) in the app's pass / fail colours with a number that pops when it changes. **Intro**: CSS only (squash-and-stretch slide-in, boards pop up), replayed each time she is shown; reduced motion = none.
+  The optional "bounce onto the P of Pass" idea is not built.
+- **Costs nothing when off**: her scripts (idle, fx, mood, carrie) and the SVG are requested only when the toggle is on AND a run page is open; leaving the page hides her and stops her loops (`hide()`).
+- **App adapter `static/js/carrie.js`**: builds the snapshot from the open run (events reducer while live, saved results when opened after it ended) or a batch (sums); a cancelled / not-run test is neither a pass nor a fail. Called at the end of every `render()`.
+- Found while testing: the widget used a `root` that only exists in the UMD wrapper (now a local `G`); a finished run opened fresh has an empty reducer run, its numbers are in `results`.
+

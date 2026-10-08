@@ -12,6 +12,7 @@ import { modalView } from './views/modals.js';
 import { buildHeader, buildView } from './views/build/index.js';
 import { resultsHeader, resultsTabView } from './views/results/index.js';
 import * as A from './actions.js';
+import * as CA from './carrie.js';
 import * as AB from './views/build/actions.js';
 import * as BS from './views/build/session.js';
 import * as BA from './views/build/api_editor.js';
@@ -22,7 +23,7 @@ import * as AR from './views/results/actions.js';
 import { startPresence } from './presence.js';
 
 const acts = { ...A.acts, ...AB.acts, ...BS.acts, ...BA.acts, ...SC.acts, ...BV.acts, ...AR.acts };
-const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes, ...BV.changes, ...AR.changes };
+const changes = { ...A.changes, ...AB.changes, ...BA.changes, ...SC.changes, ...BV.changes, ...AR.changes, ...CA.changes };
 const inputs = { ...A.inputs, ...AB.inputs, ...BS.inputs, ...BA.inputs, ...SC.inputs, ...BV.inputs, ...AR.inputs };
 const enters = { ...A.enters, ...BV.enters };
 
@@ -83,6 +84,7 @@ ${S.online ? html`<div class="skel" style="height: 30px; width: 260px; margin-to
     const el = document.getElementById(S.scrollTo);
     if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); S.scrollTo = null; }
   }
+  CA.syncCarrie();
 }
 
 let returnFocus = null;
@@ -201,6 +203,7 @@ document.addEventListener('drop', (ev) => {
 // ---- boot ----------------------------------------------------------------------------------------------------------------------
 async function boot() {
   setRenderer(render);
+  S.carrieOn = CA.carrieSaved();
   startPresence();
   window.addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) A.refreshEnv(); });

@@ -176,6 +176,16 @@
         override = name || null;
         return apply();
       },
+      /** Catch up silently with a run that is already going or already over (no reactions, no celebration, no rain for a finished run). */
+      restore: function (snapshot) {
+        cancelTimers(); reset(); override = null;
+        rainSuppressed = !!snapshot.done;
+        totals.passed = snapshot.passed || 0; totals.failed = snapshot.failed || 0;
+        totals.total = snapshot.total != null ? snapshot.total : null;
+        totals.done = !!snapshot.done; totals.running = !!snapshot.running && !snapshot.done;
+        if (totals.running) wake();
+        return apply();
+      },
       getMood: function () { return currentMood(); },
       getTotals: function () { return copy(totals); },
       reset: function () { cancelTimers(); reset(); override = null; rainSuppressed = false; return apply(); },

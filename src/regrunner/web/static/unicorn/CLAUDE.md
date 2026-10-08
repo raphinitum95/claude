@@ -17,6 +17,7 @@ unicorn/
   js/idle.js         Phase 2 round 1: idle animation (one 30 fps loop; classic script so it works from file://). `UnicornIdle.attach(svg)`
   js/mood.js         Phase 2 round 2: mood state machine + the interface from the brief (`UnicornMood.create(svg, {idle})`: onRunStart / onTestResult / onRunComplete / setMood). `UnicornMood.POSES` is the single mood table.
   js/fx.js           Phase 2 round 3: glitter + rain on ONE canvas over the rig (`UnicornFx.attach(stage, {svg})`: sparkle / celebrate / burst / rain). Loop only while particles exist.
+  js/carrie.js       Phase 2 round 4: the corner widget for the QA app (`UnicornCarrie.create({base,onClose})`, `update({id,passed,failed,total,running,done})`): shadow DOM, PASS/FAIL boards, intro. The app side is `static/js/carrie.js`; the Run tab's "Carrie mode" toggle switches her on.
   tools/build_preview.py   regenerates preview.html (the SVG inlined + mood buttons) from svg/
   preview.html       GENERATED, open it in a browser (file:// works). Never edit by hand.
 ```

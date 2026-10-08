@@ -534,11 +534,11 @@ const stepper = (key, label, value) => html`<div style="display: flex; align-ite
 <div class="mono" style="width: 42px; text-align: center; font-size: 17px; font-weight: 600" aria-live="polite">${value}</div>
 <button class="stp" aria-label="More ${label}" data-act="step" data-field="${key}" data-d="1">${icon('plus', 16)}</button></div>`;
 
-const toggle = (key, title, flag, sub, on, subColor) => html`<label style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface2); cursor: pointer">
+const toggle = (key, title, flag, sub, on, subColor, change = 'toggle') => html`<label style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface2); cursor: pointer">
 <span style="flex: 1; min-width: 0"><span style="display: block; font-weight: 600; font-size: 13.5px">${title}</span>
 ${sub ? html`<span style="display: block; font-size: 12px; color: ${subColor || 'var(--tx3)'}; margin-top: 2px">${sub}</span>` : ''}
 ${flag ? html`<span class="flag" style="display: block; margin-top: 2px">${flag}</span>` : ''}</span>
-<input type="checkbox" class="sw" ${on ? raw('checked') : ''} data-change="toggle" data-field="${key}" aria-label="${title}"></label>`;
+<input type="checkbox" class="sw" ${on ? raw('checked') : ''} data-change="${change}" data-field="${key}" aria-label="${title}"></label>`;
 
 /** "Not downloaded yet. Run: /path/python -m playwright install webkit" -> the sentence, then the command as code. */
 function withCommand(text) {
@@ -627,7 +627,8 @@ ${browserControl(S)}
 ${toggle('pdf', 'PDF report', '--pdf', '', f.pdf)}
 ${toggle('harvest', 'Harvest selectors', '--harvest', '', f.harvest)}
 ${toggle('headed', 'Show browsers', '--headed', 'Takes focus. Debugging only.', f.headed, 'var(--warn)')}
-${toggle('nice', 'Low OS priority', '', f.nice ? 'Off adds --no-nice' : 'On adds --nice', f.nice)}</div>
+${toggle('nice', 'Low OS priority', '', f.nice ? 'Off adds --no-nice' : 'On adds --nice', f.nice)}
+${toggle('carrie', 'Carrie mode', '', 'A little unicorn keeps score in the corner while a run is on.', S.carrieOn, null, 'carrie')}</div>
 <details class="more" style="margin-top: 16px" ${f.showMore ? raw('open') : ''}>
 <summary data-act="toggle-more">More options</summary>
 <div style="margin-top: 12px">${toggle('noReport', 'Skip the HTML report', '--no-report', 'Only results.json is written.', f.noReport)}</div></details>
