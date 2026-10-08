@@ -332,7 +332,15 @@ details.more > summary::-webkit-details-marker { display: none }
 .b-aside { width: var(--w, 340px); flex: none; border-left: 1px solid var(--line); background: var(--rail); display: flex; flex-direction: column; min-height: 0 }
 .b-lcol { width: var(--w, 300px); flex: none; border-right: 1px solid var(--line) }
 .b-cols { flex: 1; display: flex; min-height: 0; min-width: 0 }
-.add-menu { position: absolute; right: 16px; top: 8px; width: min(320px, calc(100% - 32px)); z-index: 6 }
+.add-menu { position: absolute; right: 16px; top: 8px; width: min(340px, calc(100% - 32px)); z-index: 6; padding: 6px; display: flex; flex-direction: column;
+  max-height: min(640px, calc(100vh - 150px)) }   /* never taller than the window: the list under the search box scrolls, not the page */
+.add-menu-search { display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 6px; height: 36px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 10px; background: var(--bg); color: var(--tx3) }
+.add-menu-search:focus-within { border-color: var(--acc) }
+.add-menu-search .fld { flex: 1; min-width: 0; height: 100%; font: 500 13px var(--f-mono) }
+.add-menu-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain }
+.add-menu-group { display: block; position: sticky; top: 0; z-index: 1; padding: 6px 10px 4px; background: var(--surface) }   /* the heading stays while its actions scroll */
+.add-menu-kw { flex: none; font-size: 10.5px; color: var(--tx3) }
+.add-menu-empty { padding: 14px 10px; font-size: 13px; color: var(--tx3) }
 .seg { max-width: 100% }
 .pane-switch { padding: 3px; margin: 10px 12px 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); gap: 2px; flex: none }
 .pane-tab { flex: 1 1 0; min-width: 0; text-align: center; height: 40px; border-radius: 9px; font-weight: 600; font-size: 14px; color: var(--tx2) }
@@ -402,7 +410,7 @@ details.more > summary::-webkit-details-marker { display: none }
   .app-body[data-pane="details"] .pane-details { flex: 1 }
   .bulk-bar { position: fixed !important; left: 50% !important; top: auto !important; bottom: 80px !important; transform: translateX(-50%) !important; z-index: 50 }
   .bulk-bar .bulk-grip { display: none }
-  .add-menu { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 70vh; overflow: auto; z-index: 55 }
+  .add-menu { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 70vh; z-index: 55 }
   .toast-root { bottom: auto; top: 76px; max-width: calc(100vw - 24px) }
   .sess-bar { flex-wrap: wrap; white-space: normal; overflow: visible }
   .sess-bar > .sess-line { flex: 1 1 100%; max-width: none }

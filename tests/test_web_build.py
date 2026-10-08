@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 
 import openpyxl
@@ -252,6 +253,32 @@ async def test_the_selected_bar_wraps_inside_a_narrow_window(web, build_copy):
         column = await page.locator(".bulk-bar").evaluate("el => el.offsetParent.getBoundingClientRect().toJSON()")
         assert bar["x"] >= column["x"] and bar["x"] + bar["width"] <= column["x"] + column["width"] + 1      # nothing cut off at the sides
         assert await page.evaluate("document.documentElement.scrollWidth") <= page_width                      # the bar never widens the page
+        assert not page.errors, page.errors
+    finally:
+        await browser.close()
+        await pw.stop()
+
+
+async def test_the_add_step_menu_fits_the_window_and_its_list_scrolls_to_the_last_action(web, build_copy):
+    pw, browser, page = await open_ui(web, f"/#/build/{build_copy}/test/FlowA")
+    try:
+        await page.set_viewport_size({"width": 1280, "height": 620})
+        await js_until(page, "document.querySelectorAll('.scard').length > 1")
+        await page.locator('[data-act="build-toggle-menu"]').first.click()
+        await js_until(page, "document.querySelectorAll('.add-menu .mitem[data-method]').length > 10")
+        box = await page.locator(".add-menu").bounding_box()
+        assert box["y"] >= 0 and box["y"] + box["height"] <= 620                                        # never runs off the bottom of the window
+        assert await page.evaluate("document.activeElement && document.activeElement.dataset.input") == "build-menu-query"
+        list_ = page.locator(".add-menu-list")
+        assert await list_.evaluate("el => el.scrollHeight > el.clientHeight")                           # long: it scrolls inside the menu
+        await list_.evaluate("el => { el.scrollTop = el.scrollHeight }")
+        last = page.locator(".add-menu .mitem[data-method]").last
+        last_box, list_box = await last.bounding_box(), await list_.bounding_box()
+        assert last_box["y"] + last_box["height"] <= list_box["y"] + list_box["height"] + 1               # the last action can be reached and clicked
+        if os.environ.get("RR_SHOTS"):
+            await page.screenshot(path=os.path.join(os.environ["RR_SHOTS"], "add_menu_bottom.png"))
+        await page.locator('[data-input="build-menu-query"]').fill("zzz-no-such-action")
+        await js_until(page, "!!document.querySelector('.add-menu-empty')")
         assert not page.errors, page.errors
     finally:
         await browser.close()

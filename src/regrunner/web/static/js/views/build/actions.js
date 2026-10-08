@@ -283,6 +283,7 @@ export function toggleMenu() {
   S.build.ed.menu = !S.build.ed.menu;
   if (S.build.ed.menu && !S.build.keywords) buildApi.keywords().then((k) => { S.build.keywords = k; rerender(); }).catch(() => {});
   rerender();
+  if (S.build.ed.menu) setTimeout(() => { const el = document.querySelector('[data-input="build-menu-query"]'); if (el) el.focus(); }, 30);   // type to search at once
 }
 export function closeMenu() { S.build.ed.menu = false; rerender(); }
 

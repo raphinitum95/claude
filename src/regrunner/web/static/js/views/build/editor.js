@@ -210,8 +210,11 @@ function addStepMenu(S) {
   if (!ed.menu) return '';
   const q = (ed.menuQuery || '').toLowerCase();
   const groups = (S.build.keywords && S.build.keywords.groups) || [];
-  return html`<div class="menu add-menu" style="padding: 6px" role="menu">
-<div class="field" style="margin-bottom: 6px">${icon('search', 14)}<input class="fld" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Search actions…" value="${ed.menuQuery || ''}" data-input="build-menu-query" autocomplete="off"></div>
+  const shown = groups.map((g) => ({ group: g.group, methods: g.methods.filter((m) => !q || m.method.toLowerCase().includes(q) || (m.label || '').toLowerCase().includes(q) || g.group.toLowerCase().includes(q)) })).filter((g) => g.methods.length);
+  // The search box stays put; only the list under it scrolls (the whole menu is never taller than the window).
+  return html`<div class="menu add-menu" role="menu">
+<div class="field add-menu-search">${icon('search', 14)}<input class="fld" style="border: 0; height: auto; padding: 0; background: transparent" placeholder="Search actions…" value="${ed.menuQuery || ''}" data-input="build-menu-query" autocomplete="off"></div>
+<div class="add-menu-list" data-key="add-menu-list">
 ${ed.pendingBlock ? html`<div class="bn bn-acc" style="padding: 8px 10px; margin-bottom: 6px">${icon('layers', 13, 'color: var(--acc)')}<span style="flex: 1">The step you pick starts the new page <b>${ed.pendingBlock}</b>, at the end of the test.</span>
 <button class="icon-btn" style="width: 22px; height: 22px" data-act="build-new-page-cancel" aria-label="Not a new page">${icon('x', 11)}</button></div>` : ''}
 <button class="mitem" data-act="build-open-insert-template">${icon('layers', 14)}<span style="flex: 1">Insert a template</span></button>
@@ -222,8 +225,10 @@ ${sessionOpen() ? html`<button class="mitem" data-act="build-rec-here">${icon('r
 ${sessionOpen() ? html`<button class="mitem" data-act="build-sess-pick">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>`
   : html`<button class="mitem" disabled style="opacity: .5; cursor: default" title="Open the site first (the button under the test's header)">${icon('target', 14)}<span style="flex: 1">Pick an element on the page</span></button>`}
 <div class="hr" style="margin: 5px 0"></div>
-${groups.map((g) => { const methods = g.methods.filter((m) => !q || m.method.toLowerCase().includes(q) || (m.label || '').toLowerCase().includes(q)); return methods.length ? html`<span class="lbl" style="padding: 4px 10px; display: block">${g.group}</span>
-${methods.map((m) => html`<button class="mitem" data-act="build-insert" data-method="${m.method}">${icon(m.element ? 'target' : 'bolt', 13)}<span style="flex: 1">${m.label || m.method}</span></button>`)}` : ''; })}
+${shown.map((g) => html`<span class="lbl add-menu-group">${g.group}</span>
+${g.methods.map((m) => html`<button class="mitem" data-act="build-insert" data-method="${m.method}" title="${m.method}">${icon(m.element ? 'target' : 'bolt', 13)}<span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">${m.label || m.method}</span><span class="mono add-menu-kw">${m.method}</span></button>`)}`)}
+${q && !shown.length ? html`<div class="add-menu-empty">No action matches “${ed.menuQuery}”.</div>` : ''}
+</div>
 </div>`;
 }
 
