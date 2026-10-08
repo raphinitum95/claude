@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unicorn rig preview</title>
+<style>
+  body { margin: 0; font: 15px/1.4 system-ui, sans-serif; background: #CDCDCD; color: #2a2133; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; margin: 4px 0 12px; }
+  .stage { background: #CDCDCD; border-radius: 16px; }
+  .stage svg { display: block; width: 100%; height: auto; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; align-items: center; }
+  button { font: inherit; padding: 8px 14px; border: 0; border-radius: 999px; background: #fff; color: #2a2133; cursor: pointer; }
+  button[aria-pressed="true"] { background: #7a4fa3; color: #fff; }
+  label { display: inline-flex; gap: 6px; align-items: center; }
+  code { background: #fff8; padding: 2px 6px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Unicorn rig preview <small>(generated: edit svg/unicorn-front-sitting.svg, then run tools/build_preview.py)</small></h1>
+  <div class="stage" id="stage"><!-- Baby unicorn rig, front-facing, sitting. Phase 1 deliverable: art + rig only (no scripts, no animation).
+     viewBox 600 x 600, axis of symmetry x = 270. Part ids, pivots and states: docs/rig-spec.md.
+     Draw order (back to front): shadow, tail, mane-back, body, neck, chest-heart, front legs, head-rig
+     (mane locks, ears, head, face, horn, mane-front), fx. CSS transform replaces an SVG transform attribute, so animated groups carry none. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600" role="img" aria-label="Baby unicorn mascot">
+  <title>Baby unicorn mascot (sitting, front view)</title>
+  <defs>
+    <radialGradient id="gHead" cx="252" cy="212" r="190" fx="238" fy="190" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFDFC"/><stop offset="0.55" stop-color="#FCF5F5"/><stop offset="1" stop-color="#F1E4EF"/></radialGradient>
+    <radialGradient id="gBody" cx="262" cy="400" r="190" fx="250" fy="380" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FEF9F7"/><stop offset="0.6" stop-color="#FAF1F5"/><stop offset="1" stop-color="#EADCEE"/></radialGradient>
+    <radialGradient id="gHaunchL" cx="180" cy="480" r="70" fx="170" fy="470" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FEF9F7"/><stop offset="1" stop-color="#E9DAED"/></radialGradient>
+    <radialGradient id="gHaunchR" cx="360" cy="480" r="70" fx="370" fy="470" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FEF9F7"/><stop offset="1" stop-color="#E9DAED"/></radialGradient>
+    <linearGradient id="gEar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F4BED0"/><stop offset="1" stop-color="#EE9FBF"/></linearGradient>
+    <linearGradient id="gHoof" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D7C3E1"/><stop offset="0.55" stop-color="#BCA0CF"/><stop offset="1" stop-color="#A185B8"/></linearGradient>
+    <linearGradient id="gHorn" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FCEFC3"/><stop offset="0.45" stop-color="#FCE09E"/><stop offset="0.75" stop-color="#F4C77B"/><stop offset="1" stop-color="#DB9E67"/></linearGradient>
+    <radialGradient id="gHornGlow" cx="266" cy="52" r="36" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFF6C8" stop-opacity="0.9"/><stop offset="1" stop-color="#FFF6C8" stop-opacity="0"/></radialGradient>
+    <linearGradient id="gPinkLock" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FDB1D3"/><stop offset="0.55" stop-color="#F597C9"/><stop offset="1" stop-color="#DB8BBD"/></linearGradient>
+    <linearGradient id="gLilacLock" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D9B4EE"/><stop offset="0.5" stop-color="#CB9AE5"/><stop offset="1" stop-color="#9F76BC"/></linearGradient>
+    <linearGradient id="gTealLock" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B1EBE1"/><stop offset="0.5" stop-color="#86D4D5"/><stop offset="1" stop-color="#69C0CE"/></linearGradient>
+    <linearGradient id="gLock1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FDB1D3"/><stop offset="0.6" stop-color="#F597C9"/><stop offset="1" stop-color="#E58BC0"/></linearGradient>
+    <linearGradient id="gLock2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CB9AE5"/><stop offset="0.45" stop-color="#B6BFE6"/><stop offset="0.75" stop-color="#86D4D5"/><stop offset="1" stop-color="#69C0CE"/></linearGradient>
+    <linearGradient id="gLock3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FDB1D3"/><stop offset="1" stop-color="#CB9AE5"/></linearGradient>
+    <linearGradient id="gLock4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CB9AE5"/><stop offset="1" stop-color="#FDB1D3"/></linearGradient>
+    <linearGradient id="gLock5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CB9AE5"/><stop offset="0.5" stop-color="#E3A6DC"/><stop offset="1" stop-color="#F597C9"/></linearGradient>
+    <linearGradient id="gLock6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B1EBE1"/><stop offset="0.6" stop-color="#86D4D5"/><stop offset="1" stop-color="#69C0CE"/></linearGradient>
+    <linearGradient id="gManeBack" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#F7A4CF"/><stop offset="0.5" stop-color="#CB9AE5"/><stop offset="1" stop-color="#9FD3DC"/></linearGradient>
+    <linearGradient id="gTailPink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FDB1D3"/><stop offset="1" stop-color="#EB9DD4"/></linearGradient>
+    <linearGradient id="gTailLilac" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CB9AE5"/><stop offset="1" stop-color="#9896C6"/></linearGradient>
+    <linearGradient id="gTailTeal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B1EBE1"/><stop offset="1" stop-color="#69C0CE"/></linearGradient>
+    <radialGradient id="gIrisl" cx="206" cy="285" r="52" fx="206" fy="290" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8A79D1"/><stop offset="0.38" stop-color="#4A365F"/><stop offset="0.85" stop-color="#2A1E36"/><stop offset="1" stop-color="#1A141F"/></radialGradient>
+    <radialGradient id="gIrisr" cx="334" cy="285" r="52" fx="334" fy="290" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8A79D1"/><stop offset="0.38" stop-color="#4A365F"/><stop offset="0.85" stop-color="#2A1E36"/><stop offset="1" stop-color="#1A141F"/></radialGradient>
+    <radialGradient id="gBlush" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FDB9D2" stop-opacity="1"/><stop offset="0.6" stop-color="#FEC9DB" stop-opacity="0.7"/><stop offset="1" stop-color="#FEC9DB" stop-opacity="0"/></radialGradient>
+    <radialGradient id="gShadow" cx="0.5" cy="0.5" r="0.5" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#8F7AA6" stop-opacity="0.42"/><stop offset="0.6" stop-color="#8F7AA6" stop-opacity="0.18"/><stop offset="1" stop-color="#8F7AA6" stop-opacity="0"/></radialGradient>
+  </defs>
+  <style>
+    /* ---- rig state: set data-eyes / data-brows / data-mouth / data-ears / data-fx on #unicorn (see docs/rig-spec.md) ---- */
+    #unicorn .eye-closed, #unicorn .eye-wide-extra, #unicorn .sclera, #unicorn .fx, #unicorn #pivots,
+    #unicorn #mouth-smile, #unicorn #mouth-frown, #unicorn #mouth-open { display: none; }
+    #unicorn.show-pivots #pivots { display: inline; }
+
+    /* eyes: open (default) | closed | wide | sad | scared | angry */
+    #unicorn[data-eyes="closed"] .eye-open { display: none; }
+    #unicorn[data-eyes="closed"] .eye-closed { display: inline; }
+    #unicorn[data-eyes="wide"] .eye-wide-extra { display: inline; }
+    #unicorn[data-eyes="scared"] .sclera { display: inline; }
+    #unicorn[data-eyes="scared"] .iris { transform: scale(.74); }
+    #unicorn[data-eyes="scared"] #eye-left .iris { transform-origin: 206px 262px; }
+    #unicorn[data-eyes="scared"] #eye-right .iris { transform-origin: 334px 262px; }
+    #unicorn[data-eyes="wide"] #eye-left .eye-open, #unicorn[data-eyes="scared"] #eye-left .eye-open { transform-origin: 206px 262px; transform: scale(1.1); }
+    #unicorn[data-eyes="wide"] #eye-right .eye-open, #unicorn[data-eyes="scared"] #eye-right .eye-open { transform-origin: 334px 262px; transform: scale(1.1); }
+
+    /* eyelids: scaleY(0) = open. A blink animates to scaleY(1) and back. Sad / angry park the lid part-way, slanted. */
+    #eyelid-left, #eyelid-right { transform: scaleY(0); }
+    #eyelid-left { transform-origin: 206px 226px; }
+    #eyelid-right { transform-origin: 334px 226px; }
+    #unicorn[data-eyes="sad"] #eyelid-left { transform: rotate(-16deg) scaleY(.34); }
+    #unicorn[data-eyes="sad"] #eyelid-right { transform: rotate(16deg) scaleY(.34); }
+    #unicorn[data-eyes="angry"] #eyelid-left { transform: rotate(20deg) scaleY(.4); }
+    #unicorn[data-eyes="angry"] #eyelid-right { transform: rotate(-20deg) scaleY(.4); }
+
+    /* brows: neutral (default) | up | sad | angry | scared */
+    #brow-left { transform-origin: 205px 198px; }
+    #brow-right { transform-origin: 335px 198px; }
+    #unicorn[data-brows="up"] #brow-left, #unicorn[data-brows="up"] #brow-right { transform: translateY(-6px); }
+    #unicorn[data-brows="sad"] #brow-left { transform: translateY(-2px) rotate(-20deg); }
+    #unicorn[data-brows="sad"] #brow-right { transform: translateY(-2px) rotate(20deg); }
+    #unicorn[data-brows="angry"] #brow-left { transform: translateY(9px) rotate(22deg) scale(1.1); }
+    #unicorn[data-brows="angry"] #brow-right { transform: translateY(9px) rotate(-22deg) scale(1.1); }
+    #unicorn[data-brows="scared"] #brow-left { transform: translateY(-9px) rotate(-12deg); }
+    #unicorn[data-brows="scared"] #brow-right { transform: translateY(-9px) rotate(12deg); }
+
+    /* mouths: neutral (default) | smile | frown | open */
+    #unicorn[data-mouth="smile"] #mouth-neutral, #unicorn[data-mouth="frown"] #mouth-neutral, #unicorn[data-mouth="open"] #mouth-neutral { display: none; }
+    #unicorn[data-mouth="smile"] #mouth-smile, #unicorn[data-mouth="frown"] #mouth-frown, #unicorn[data-mouth="open"] #mouth-open { display: inline; }
+    #mouth-open { transform-origin: 270px 316px; }
+    #unicorn[data-eyes="scared"][data-mouth="open"] #mouth-open { transform: scale(.62, 1.05); }
+
+    /* ears: neutral (default) | perk | droop | back | flat */
+    #ear-left { transform-origin: 172px 176px; }
+    #ear-right { transform-origin: 368px 176px; }
+    #unicorn[data-ears="perk"] #ear-left, #unicorn[data-ears="perk"] #ear-right { transform: translateY(-4px) scale(1.05); }
+    #unicorn[data-ears="droop"] #ear-left { transform: rotate(-30deg); }
+    #unicorn[data-ears="droop"] #ear-right { transform: rotate(30deg); }
+    #unicorn[data-ears="back"] #ear-left { transform: rotate(-40deg) scaleY(.92); }
+    #unicorn[data-ears="back"] #ear-right { transform: rotate(40deg) scaleY(.92); }
+    #unicorn[data-ears="flat"] #ear-left { transform: rotate(-58deg) scaleY(.88); }
+    #unicorn[data-ears="flat"] #ear-right { transform: rotate(58deg) scaleY(.88); }
+
+    /* effect hints: sparkle | sweat | steam (rain cloud is Phase 2 art) */
+    #unicorn[data-fx="sparkle"] #fx-sparkle, #unicorn[data-fx="sweat"] #fx-sweat, #unicorn[data-fx="steam"] #fx-steam { display: inline; }
+
+    /* ---- pivots (user units of the 600 x 600 viewBox) ---- */
+    #head-rig, #head { transform-origin: 270px 330px; }
+    #neck { transform-origin: 270px 340px; }
+    #horn { transform-origin: 270px 150px; }
+    #tail { transform-origin: 378px 470px; }
+    #body { transform-origin: 270px 470px; }
+    #chest-heart { transform-origin: 270px 400px; }
+    #mane-front { transform-origin: 262px 120px; }
+    #mane-back { transform-origin: 270px 300px; }
+    #mane-lock-1 { transform-origin: 186px 226px; }
+    #mane-lock-2 { transform-origin: 214px 262px; }
+    #mane-lock-3 { transform-origin: 180px 190px; }
+    #mane-lock-4 { transform-origin: 360px 190px; }
+    #mane-lock-5 { transform-origin: 326px 262px; }
+    #mane-lock-6 { transform-origin: 354px 226px; }
+    #front-leg-left { transform-origin: 240px 400px; }
+    #front-leg-right { transform-origin: 300px 400px; }
+    #hoof-left { transform-origin: 237px 532px; }
+    #hoof-right { transform-origin: 303px 532px; }
+    #eye-left { transform-origin: 206px 262px; }
+    #eye-right { transform-origin: 334px 262px; }
+    #cheek-left { transform-origin: 188px 306px; }
+    #cheek-right { transform-origin: 352px 306px; }
+    #shadow { transform-origin: 270px 570px; }
+  </style>
+  <g id="unicorn" data-eyes="open" data-brows="neutral" data-mouth="neutral" data-ears="neutral" data-fx="none">
+  <g id="shadow">
+    <ellipse cx="270" cy="568" rx="200" ry="20" fill="url(#gShadow)"/>
+  </g>
+  <g id="tail">
+    <!-- pivot: tail base (378, 470), tucked under the right haunch -->
+    <path d="M 372 466 C 366 420 404 392 448 396 C 494 400 524 430 514 468 C 508 488 490 492 484 482 C 480 474 486 468 492 464 C 484 446 458 434 430 440 C 404 446 392 462 388 488 Z" fill="url(#gTailPink)"/>
+    <path d="M 384 512 C 368 478 396 444 436 440 C 472 438 500 458 500 488 C 496 506 480 512 470 506 C 478 492 470 478 448 476 C 424 474 404 488 402 520 Z" fill="url(#gTailLilac)"/>
+    <path d="M 386 532 C 378 504 410 488 446 492 C 480 496 508 510 506 532 C 505 546 492 550 484 544 C 490 532 480 520 456 518 C 430 516 410 526 404 548 Z" fill="url(#gTailTeal)"/>
+    <path d="M 420 410 C 450 404 484 416 500 440" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".35"/>
+    <path d="M 410 462 C 440 452 470 462 482 480" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity=".25"/>
+    <circle cx="372" cy="470" r="22" fill="#CB9AE5"/><!-- hidden overlap: root under the haunch -->
+  </g>
+  <g id="mane-back">
+    <!-- pivot: mane root behind the neck (270, 300) -->
+    <path d="M 270 120 C 348 118 412 164 414 250 C 416 310 400 350 380 372 C 340 350 200 350 160 372 C 140 350 124 310 126 250 C 128 164 192 120 270 120 Z" fill="url(#gManeBack)"/>
+  </g>
+  <g id="body">
+    <!-- pivot: body centre (270, 470) -->
+    <path d="M 172 442 C 204 442 214 482 210 520 C 208 546 192 558 172 558 C 150 558 134 546 134 518 C 134 480 146 442 172 442 Z" fill="url(#gHaunchL)"/>
+    <path d="M 132 536 C 132 524 146 518 164 518 C 184 518 196 526 196 538 C 196 553 182 562 162 562 C 142 562 132 551 132 536 Z" fill="url(#gHoof)"/>
+    <ellipse cx="160" cy="526" rx="17" ry="7" fill="#FFFFFF" opacity=".28"/>
+    <path d="M 206 462 C 214 490 214 520 204 548" fill="none" stroke="#E4D3EB" stroke-width="3" stroke-linecap="round" opacity=".8"/>
+    <path d="M 368 442 C 336 442 326 482 330 520 C 332 546 348 558 368 558 C 390 558 406 546 406 518 C 406 480 394 442 368 442 Z" fill="url(#gHaunchR)"/>
+    <path d="M 334 462 C 326 490 326 520 336 548" fill="none" stroke="#E4D3EB" stroke-width="3" stroke-linecap="round" opacity=".8"/>
+    <path d="M 408 536 C 408 524 394 518 376 518 C 356 518 344 526 344 538 C 344 553 358 562 378 562 C 398 562 408 551 408 536 Z" fill="url(#gHoof)"/>
+    <ellipse cx="380" cy="526" rx="17" ry="7" fill="#FFFFFF" opacity=".22"/>
+    <path d="M 214 336 C 196 380 190 440 200 500 C 204 530 220 548 236 550 L 304 550 C 320 548 336 530 340 500 C 350 440 344 380 326 336 Z" fill="url(#gBody)"/>
+  </g>
+  <g id="neck">
+    <!-- pivot: neck base (270, 340) -->
+    <path d="M 226 316 C 226 352 214 376 204 398 L 336 398 C 326 376 314 352 314 316 Z" fill="url(#gBody)"/>
+    <ellipse cx="270" cy="356" rx="46" ry="12" fill="#E2D0EA" opacity=".32"/><!-- chin shadow, kept inside the neck -->
+  </g>
+  <g id="front-leg-left">
+    <!-- pivot: shoulder (240, 400) -->
+    <path d="M 214 398 C 204 440 200 500 204 546 L 268 546 C 270 500 270 450 270 398 Z" fill="url(#gBody)"/>
+    <path d="M 214 412 C 209 452 208 500 210 538" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity=".35"/>
+    <g id="hoof-left">
+      <!-- pivot: top of the hoof (237, 532) -->
+      <path d="M 203 548 C 203 534 222 528 238 528 C 254 528 270 534 270 548 C 270 563 256 573 237 573 C 218 573 203 563 203 548 Z" fill="url(#gHoof)"/>
+      <ellipse cx="236" cy="540" rx="22" ry="7" fill="#E3D3EC" opacity=".6"/>
+      <ellipse cx="226" cy="536" rx="9" ry="3.2" fill="#FFFFFF" opacity=".55"/>
+    </g>
+  </g>
+  <g id="front-leg-right">
+    <!-- pivot: shoulder (300, 400) -->
+    <path d="M 326 398 C 336 440 340 500 336 546 L 272 546 C 270 500 270 450 270 398 Z" fill="url(#gBody)"/>
+    <path d="M 328 412 C 332 452 333 500 331 538" fill="none" stroke="#E9DAED" stroke-width="4" stroke-linecap="round" opacity=".6"/>
+    <g id="hoof-right">
+      <!-- pivot: top of the hoof (303, 532) -->
+      <path d="M 337 548 C 337 534 318 528 302 528 C 286 528 270 534 270 548 C 270 563 284 573 303 573 C 322 573 337 563 337 548 Z" fill="url(#gHoof)"/>
+      <ellipse cx="304" cy="540" rx="22" ry="7" fill="#E3D3EC" opacity=".6"/>
+      <ellipse cx="294" cy="536" rx="9" ry="3.2" fill="#FFFFFF" opacity=".55"/>
+    </g>
+  </g>
+  <g id="chest-heart">
+    <!-- pivot: heart centre (270, 400) -->
+    <path d="M 270 417.5 C 249.0 402.5 255.0 386.0 262.5 386.0 C 267.0 386.0 270 389.0 270 392.0 C 270 389.0 273.0 386.0 277.5 386.0 C 285.0 386.0 291.0 402.5 270 417.5 Z" fill="#F8CDE4"/>
+    <path d="M 259 394 C 261 390 265 390 267 393" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity=".75"/>
+  </g>
+  <g id="head-rig">
+  <g id="mane-lock-2">
+    <!-- pivot (root): (214, 262) -->
+    <path d="M 200 262 C 170 282 150 326 154 376 C 157 414 180 436 208 434 C 194 418 190 394 196 366 C 202 338 214 320 232 308 Z" fill="url(#gLock2)"/>
+  </g>
+  <g id="mane-lock-5">
+    <!-- pivot (root): (326, 262) -->
+    <path d="M 340 262 C 370 282 390 326 386 376 C 383 414 360 436 332 434 C 346 418 350 394 344 366 C 338 338 326 320 308 308 Z" fill="url(#gLock5)"/>
+  </g>
+  <g id="mane-lock-1">
+    <!-- pivot (root): (186, 226) -->
+    <path d="M 178 200 C 142 212 112 252 108 308 C 105 356 120 398 152 414 C 174 424 196 413 198 396 C 199 386 190 380 182 385 C 170 391 160 383 158 366 C 156 336 168 300 192 276 Z" fill="url(#gLock1)"/>
+    <path d="M 140 262 C 126 292 122 330 130 366" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".3"/>
+  </g>
+  <g id="mane-lock-6">
+    <!-- pivot (root): (354, 226) -->
+    <path d="M 362 200 C 398 212 428 252 432 308 C 435 356 420 398 388 414 C 366 424 344 413 342 396 C 341 386 350 380 358 385 C 370 391 380 383 382 366 C 384 336 372 300 348 276 Z" fill="url(#gLock6)"/>
+    <path d="M 400 262 C 414 292 418 330 410 366" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".3"/>
+  </g>
+  <g id="mane-lock-3">
+    <!-- pivot (root): (180, 190) -->
+    <path d="M 190 154 C 152 164 128 194 128 234 C 128 266 146 280 162 272 C 152 252 158 214 186 196 Z" fill="url(#gLock3)"/>
+  </g>
+  <g id="mane-lock-4">
+    <!-- pivot (root): (360, 190) -->
+    <path d="M 350 154 C 388 164 412 194 412 234 C 412 266 394 280 378 272 C 388 252 382 214 354 196 Z" fill="url(#gLock4)"/>
+  </g>
+  <g id="ear-left">
+    <!-- pivot: ear base (172, 176) -->
+    <path d="M 182 190 C 134 186 112 134 138 80 Q 146 62 162 70 C 196 88 218 134 214 182 Z" fill="#FDFAF9"/>
+    <path d="M 182 190 C 134 186 112 134 138 80 Q 146 62 162 70 C 196 88 218 134 214 182 Z" fill="url(#gHead)"/>
+    <path d="M 180 178 C 148 172 130 134 148 94 Q 154 84 164 90 C 190 106 202 138 198 172 Z" fill="url(#gEar)"/>
+  </g>
+  <g id="ear-right">
+    <!-- pivot: ear base (368, 176) -->
+    <path d="M 358 190 C 406 186 428 134 402 80 Q 394 62 378 70 C 344 88 322 134 326 182 Z" fill="url(#gHead)"/>
+    <path d="M 360 178 C 392 172 410 134 392 94 Q 386 84 376 90 C 350 106 338 138 342 172 Z" fill="url(#gEar)"/>
+  </g>
+  <g id="head">
+    <!-- pivot: neck joint (270, 330) -->
+    <path d="M 270 134 C 336 134 382 176 382 242 C 384 304 350 346 270 348 C 190 346 156 304 158 242 C 158 176 204 134 270 134 Z" fill="url(#gHead)"/>
+    <ellipse cx="270" cy="300" rx="44" ry="30" fill="#FFFFFF" opacity=".55"/><!-- muzzle -->
+    <ellipse cx="258" cy="292" rx="3.8" ry="2.6" fill="#B07A9C" opacity=".75"/>
+    <ellipse cx="282" cy="292" rx="3.8" ry="2.6" fill="#B07A9C" opacity=".75"/>
+    <path d="M 190 326 C 208 348 240 356 270 356 C 300 356 332 348 350 326 C 336 340 306 346 270 346 C 234 346 204 340 190 326 Z" fill="#E6D6EC" opacity=".55"/><!-- soft jaw shade -->
+    <ellipse cx="236" cy="168" rx="38" ry="12" fill="#FFFFFF" opacity=".5"/>
+  </g>
+  <g id="cheek-left"><ellipse cx="190" cy="306" rx="31" ry="19" fill="url(#gBlush)"/></g>
+  <g id="cheek-right"><ellipse cx="350" cy="306" rx="31" ry="19" fill="url(#gBlush)"/></g>
+  <g id="eye-left">
+    <!-- pivot: eye centre (206, 262) -->
+    <g class="eye-open">
+      <ellipse class="sclera" cx="206" cy="262" rx="31" ry="34" fill="#FFFFFF"/>
+      <g class="iris">
+        <ellipse cx="206" cy="262" rx="28.5" ry="32" fill="url(#gIrisl)"/>
+        <ellipse cx="206" cy="279" rx="17" ry="9" fill="#9AA0E8" opacity=".35"/>
+        <circle cx="201" cy="246" r="6.8" fill="#FFFFFF"/>
+        <circle cx="215" cy="258" r="2.6" fill="#FFFFFF" opacity=".9"/>
+        <path d="M 192 270 L 193.6 274.6 L 198 276 L 193.6 277.4 L 192 282 L 190.4 277.4 L 186 276 L 190.4 274.6 Z" fill="#FFFFFF"/>
+      </g>
+      <g class="eye-wide-extra">
+        <circle cx="218" cy="272" r="3" fill="#FFFFFF"/>
+        <circle cx="188" cy="260" r="2" fill="#FFFFFF"/>
+      </g>
+      <path d="M 177 254 C 180 236 192 229 206 229 C 220 229 232 236 235 254" fill="none" stroke="#1A141F" stroke-width="3.2" stroke-linecap="round"/>
+      <path d="M 179 248 L 169 239 M 177 256 L 166 251 M 183 241 L 176 231" fill="none" stroke="#1A141F" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+    <g class="eye-closed">
+      <path d="M 181 270 Q 206 240 231 270" fill="none" stroke="#1A141F" stroke-width="3.6" stroke-linecap="round"/>
+      <path d="M 182 264 L 172 257 M 185 257 L 177 248" fill="none" stroke="#1A141F" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+  </g>
+  <g id="eye-right">
+    <!-- pivot: eye centre (334, 262) -->
+    <g class="eye-open">
+      <ellipse class="sclera" cx="334" cy="262" rx="31" ry="34" fill="#FFFFFF"/>
+      <g class="iris">
+        <ellipse cx="334" cy="262" rx="28.5" ry="32" fill="url(#gIrisr)"/>
+        <ellipse cx="334" cy="279" rx="17" ry="9" fill="#9AA0E8" opacity=".35"/>
+        <circle cx="329" cy="246" r="6.8" fill="#FFFFFF"/>
+        <circle cx="343" cy="258" r="2.6" fill="#FFFFFF" opacity=".9"/>
+        <path d="M 320 270 L 321.6 274.6 L 326 276 L 321.6 277.4 L 320 282 L 318.4 277.4 L 314 276 L 318.4 274.6 Z" fill="#FFFFFF"/>
+      </g>
+      <g class="eye-wide-extra">
+        <circle cx="346" cy="272" r="3" fill="#FFFFFF"/>
+        <circle cx="316" cy="260" r="2" fill="#FFFFFF"/>
+      </g>
+      <path d="M 305 254 C 308 236 320 229 334 229 C 348 229 360 236 363 254" fill="none" stroke="#1A141F" stroke-width="3.2" stroke-linecap="round"/>
+      <path d="M 361 248 L 371 239 M 363 256 L 374 251 M 357 241 L 364 231" fill="none" stroke="#1A141F" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+    <g class="eye-closed">
+      <path d="M 309 270 Q 334 240 359 270" fill="none" stroke="#1A141F" stroke-width="3.6" stroke-linecap="round"/>
+      <path d="M 358 264 L 368 257 M 355 257 L 363 248" fill="none" stroke="#1A141F" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+  </g>
+  <g id="eyelid-left">
+    <!-- pivot: lid hinge, top of the eye (206, 226); scaleY(0) = open -->
+    <ellipse cx="202" cy="262" rx="44" ry="40" fill="url(#gHead)"/>
+    <path d="M 176 282 Q 206 304 236 282" fill="none" stroke="#1A141F" stroke-width="3.4" stroke-linecap="round"/>
+  </g>
+  <g id="eyelid-right">
+    <!-- pivot: lid hinge, top of the eye (334, 226) -->
+    <ellipse cx="338" cy="262" rx="44" ry="40" fill="url(#gHead)"/>
+    <path d="M 304 282 Q 334 304 364 282" fill="none" stroke="#1A141F" stroke-width="3.4" stroke-linecap="round"/>
+  </g>
+  <g id="brow-left">
+    <!-- pivot: brow centre (205, 198) -->
+    <path d="M 186 204 Q 203 192 224 199" fill="none" stroke="#B79AD0" stroke-width="4.2" stroke-linecap="round" opacity=".85"/>
+  </g>
+  <g id="brow-right">
+    <!-- pivot: brow centre (335, 198) -->
+    <path d="M 354 204 Q 337 192 316 199" fill="none" stroke="#B79AD0" stroke-width="4.2" stroke-linecap="round" opacity=".85"/>
+  </g>
+  <g id="mouth-neutral">
+    <!-- pivot: mouth centre (270, 322) -->
+    <path d="M 244 320 Q 270 340 296 320" fill="none" stroke="#B07A9C" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+  <g id="mouth-smile">
+    <path d="M 238 316 Q 270 348 302 316" fill="none" stroke="#B07A9C" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M 236 313 L 240 319 M 304 313 L 300 319" stroke="#B07A9C" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+  <g id="mouth-frown">
+    <path d="M 248 332 Q 270 316 292 332" fill="none" stroke="#B07A9C" stroke-width="2.6" stroke-linecap="round"/>
+  </g>
+  <g id="mouth-open">
+    <path d="M 242 316 Q 270 322 298 316 C 296 346 284 358 270 358 C 256 358 244 346 242 316 Z" fill="#8E4F73"/>
+    <path d="M 252 346 C 258 338 282 338 288 346 C 284 354 276 357 270 357 C 264 357 256 354 252 346 Z" fill="#F4A0BC"/>
+    <path d="M 242 316 Q 270 322 298 316" fill="none" stroke="#B07A9C" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+  <g id="horn">
+    <!-- pivot: horn base (270, 150) -->
+    <circle cx="266" cy="52" r="36" fill="url(#gHornGlow)"/>
+    <path d="M 244 158 C 248 112 257 64 266 26 C 276 64 286 112 296 158 C 282 168 258 168 244 158 Z" fill="url(#gHorn)"/>
+    <path d="M 249 136 Q 270 122 291 138 M 252 112 Q 271 99 288 112 M 255 88 Q 271 77 284 87 M 258 66 Q 270 58 280 64" fill="none" stroke="#DB9E67" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+    <path d="M 256 150 C 258 110 262 70 266 40" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity=".6"/>
+    <path d="M 300 45 Q 301.96 50.04 307 52 Q 301.96 53.96 300 59 Q 298.04 53.96 293 52 Q 298.04 50.04 300 45 Z" fill="#FFF3B8"/>
+    <path d="M 236 69 Q 237.4 72.6 241 74 Q 237.4 75.4 236 79 Q 234.6 75.4 231 74 Q 234.6 72.6 236 69 Z" fill="#FFF3B8"/>
+    <circle cx="288" cy="22" r="2.2" fill="#FFF3B8"/>
+  </g>
+  <g id="mane-front">
+    <!-- pivot: forehead root (262, 120) -->
+    <path d="M 262 104 C 236 118 216 144 208 176 C 204 192 206 202 212 206 C 220 188 236 172 262 154 C 282 140 290 122 284 106 Z" fill="url(#gLilacLock)"/>
+    <path d="M 288 108 C 314 104 338 122 342 152 C 344 172 336 186 322 194 C 312 200 300 206 292 206 C 300 196 306 184 306 170 C 306 152 298 140 286 134 Z" fill="url(#gTealLock)"/>
+    <path d="M 252 96 C 206 98 160 132 140 186 C 128 220 134 244 152 250 C 166 254 178 246 178 236 C 178 228 170 224 163 228 C 160 206 178 178 206 158 C 232 140 254 128 264 110 Z" fill="url(#gPinkLock)"/>
+    <path d="M 206 130 C 178 148 156 184 150 214" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" opacity=".35"/>
+    <path d="M 306 126 C 328 136 338 156 336 178" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" opacity=".35"/>
+  </g>
+  </g>
+  <g id="fx-sparkle" class="fx">
+    <path d="M 98 128 Q 101.36 136.64 110 140 Q 101.36 143.36 98 152 Q 94.64 143.36 86 140 Q 94.64 136.64 98 128 Z" fill="#FFF3B8"/><path d="M 444 110 Q 446.8 117.2 454 120 Q 446.8 122.8 444 130 Q 441.2 122.8 434 120 Q 441.2 117.2 444 110 Z" fill="#FFF3B8"/><path d="M 412 175 Q 413.96 180.04 419 182 Q 413.96 183.96 412 189 Q 410.04 183.96 405 182 Q 410.04 180.04 412 175 Z" fill="#FFF3B8"/><path d="M 130 93 Q 131.96 98.04 137 100 Q 131.96 101.96 130 107 Q 128.04 101.96 123 100 Q 128.04 98.04 130 93 Z" fill="#FFF3B8"/>
+  </g>
+  <g id="fx-sweat" class="fx">
+    <path d="M 392 196 C 380 214 378 226 392 232 C 406 226 404 214 392 196 Z" fill="#CFEFFA" stroke="#86C8E6" stroke-width="1.5"/>
+    <ellipse cx="388" cy="222" rx="2.4" ry="4" fill="#FFFFFF" opacity=".8"/>
+  </g>
+  <g id="fx-steam" class="fx">
+    <g fill="#FFFFFF" stroke="#D9C8E4" stroke-width="1.5"><circle cx="112" cy="104" r="11"/><circle cx="126" cy="90" r="9"/><circle cx="100" cy="92" r="7"/></g>
+    <g fill="#FFFFFF" stroke="#D9C8E4" stroke-width="1.5"><circle cx="428" cy="104" r="11"/><circle cx="414" cy="90" r="9"/><circle cx="440" cy="92" r="7"/></g>
+  </g>
+  <g id="pivots">
+    <g fill="#FF2D95" stroke="#FFFFFF" stroke-width="1">
+      <circle cx="270" cy="338" r="4"/><circle cx="172" cy="176" r="4"/><circle cx="368" cy="176" r="4"/><circle cx="270" cy="150" r="4"/>
+      <circle cx="378" cy="470" r="4"/><circle cx="186" cy="226" r="4"/><circle cx="354" cy="226" r="4"/><circle cx="214" cy="262" r="4"/>
+      <circle cx="326" cy="262" r="4"/><circle cx="180" cy="190" r="4"/><circle cx="360" cy="190" r="4"/><circle cx="262" cy="120" r="4"/>
+      <circle cx="240" cy="400" r="4"/><circle cx="300" cy="400" r="4"/><circle cx="270" cy="470" r="4"/><circle cx="237" cy="532" r="4"/><circle cx="303" cy="532" r="4"/><circle cx="270" cy="340" r="4"/><circle cx="270" cy="300" r="4"/>
+    </g>
+  </g>
+  </g>
+</svg>
+</div>
+  <div class="bar" id="moods" role="group" aria-label="Mood"></div>
+  <div class="bar">
+    <button id="blink" type="button">Blink</button>
+    <label><input type="checkbox" id="pivots-toggle"> show pivots</label>
+    <span>state: <code id="state"></code></span>
+  </div>
+</main>
+<script>
+const MOODS = {"neutral": {"eyes": "open", "brows": "neutral", "mouth": "neutral", "ears": "neutral", "fx": "none"}, "happy": {"eyes": "open", "brows": "up", "mouth": "smile", "ears": "neutral", "fx": "none"}, "excited": {"eyes": "wide", "brows": "up", "mouth": "open", "ears": "perk", "fx": "sparkle"}, "joyful": {"eyes": "closed", "brows": "up", "mouth": "open", "ears": "perk", "fx": "sparkle"}, "sad": {"eyes": "sad", "brows": "sad", "mouth": "frown", "ears": "droop", "fx": "none"}, "scared": {"eyes": "scared", "brows": "scared", "mouth": "open", "ears": "flat", "fx": "sweat"}, "angry": {"eyes": "angry", "brows": "angry", "mouth": "frown", "ears": "back", "fx": "steam"}};
+const root = document.getElementById("unicorn");
+const bar = document.getElementById("moods");
+function setMood(name) {
+  const m = MOODS[name];
+  for (const k of Object.keys(m)) root.setAttribute("data-" + k, m[k]);
+  for (const b of bar.children) b.setAttribute("aria-pressed", String(b.dataset.mood === name));
+  document.getElementById("state").textContent = JSON.stringify(m);
+}
+for (const name of Object.keys(MOODS)) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = name; b.dataset.mood = name;
+  b.addEventListener("click", () => setMood(name));
+  bar.appendChild(b);
+}
+document.getElementById("pivots-toggle").addEventListener("change", e => root.classList.toggle("show-pivots", e.target.checked));
+// Blink = scale the two eyelids shut and back (what Phase 2's idle blink will animate).
+document.getElementById("blink").addEventListener("click", () => {
+  const lids = [document.getElementById("eyelid-left"), document.getElementById("eyelid-right")];
+  for (const l of lids) { l.style.transition = "transform 90ms"; l.style.transform = "scaleY(1)"; }
+  setTimeout(() => { for (const l of lids) l.style.transform = ""; }, 140);
+});
+setMood("neutral");
+</script>
+</body>
+</html>

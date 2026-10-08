@@ -14,3 +14,21 @@
   (what Phase 2 animates) replaces the SVG `transform` attribute, so a mirrored group would un-mirror itself when animated.
 - **Reference images saved as `reference/01..04-*.webp`** (01 = MASTER, 02 turnaround, 03 emotion sheet, 04 views). Palette sampled from 01
   (see CLAUDE.md); values not present in the master as flat colours are marked "derived".
+- **Rig built in one SVG, 600 x 600, axis x = 270.** Why: the master's figure plus tail is wider than tall; centring the axis at 270 keeps the whole
+  bounding box (x 100 to 515) centred in the canvas. Draw order and ids: `rig-spec.md`.
+- **States are `data-*` attributes on `#unicorn` plus CSS inside the SVG** (eyes, brows, mouth, ears, fx), pivots as CSS `transform-origin`. Why: the brief wants
+  eye/brow states swappable by class or attribute and a documented pivot table; Phase 2 then only sets attributes and animates transforms. No JS in the SVG.
+- **Eyelids are separate skin-coloured groups at `scaleY(0)`** (blink = scale to 1). Why: a blink and a sad/angry droop are then the same mechanism, and the lid
+  shares the head's user-space gradient so it matches the face exactly. The lid is wider than the eye so it also hides the outer lashes when shut.
+- **`head-rig` wrapper group** around locks, ears, head, face, horn and fringe. Why: one id to nod / turn the whole head; the brief's per-part ids all still exist inside it.
+- **Hind legs and hind hooves live inside `body`; front hooves are nested in their legs.** Why: the brief lists only front hooves and `body`; nesting keeps legs and hooves moving together.
+- **Chest heart is drawn after the legs.** Why: the legs' top edge overlapped the heart in the first render and cut it in half.
+- **Chin shadow lives inside `neck`** (not `body`). Why: in `body` its ends stuck out past the neck as lilac tabs.
+- **Hand-simplified mane: 6 locks (3 per side) + a 3-strand fringe + a small `mane-back`.** Why: the brief asks for 4 to 6 large locks that sway independently,
+  not every curl. Left side is pink / lilac-teal / pink, right side teal / lilac-pink / lilac, matching where each hue sits in the master.
+- **Rain cloud art is not drawn yet** (the `sad` mood lists it as a Phase 2 effect). `fx-sparkle`, `fx-sweat`, `fx-steam` are simple placeholders so every mood reads in the preview.
+- **`tests/test_unicorn_rig.py`** (fast): every required id exists once, no scripts / animation / filters / transform attributes, every pivot is in the CSS, defaults are
+  neutral mouth + open eyes, `preview.html` is not stale and rig-spec's mood rows match `MOODS`.
+- **Known differences from the master, left for art direction:** flatter shading than the painted master; the mane is simplified (no fine curls); the tail ends in a hook, not the
+  master's curl; the body column is a little straighter. Measured against the master: head width / figure height is 0.39 (master) vs 0.41 (rig), so the head is the same size;
+  eye width / head width is 0.27 vs 0.25, so the eyes are about 7 % smaller.
